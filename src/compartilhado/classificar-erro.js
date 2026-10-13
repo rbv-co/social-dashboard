@@ -21,8 +21,15 @@ export const CONTA_DESATIVADA = Object.freeze({
   acao: null,
 })
 
+export const MUITAS_TENTATIVAS = Object.freeze({
+  tipo: 'limite',
+  mensagem: 'Muitas tentativas. Espere alguns minutos e tente de novo.',
+  acao: null,
+})
+
 export function classificarErro(status, corpo) {
   const codigo = corpo?.code || ''
+
 
   if (status === 401 || codigo === 'PGRST301') {
     return { tipo: 'sessao', mensagem: 'Sua sessão expirou — entre de novo.', acao: 'entrar' }

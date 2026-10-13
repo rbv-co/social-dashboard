@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,6 +69,8 @@ var publicas = map[string]bool{
 	"POST /receber-opt-out-chatwoot": true,
 	// Plano 5.0: links de senha (sem enumeração, limite por IP e por e-mail no handler)
 	"POST /auth/esqueci-senha": true, "POST /auth/definir-senha": true,
+	// Plano 5.1: o pedido de acesso da tela de login (JSON obrigatório, 10 por IP e 100 no total por hora, validação no handler)
+	"POST /pedir-acesso": true,
 }
 
 func webhooksPublicos() []string {
@@ -82,7 +85,6 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 	st := auth.NovoStore(p)
 	h := Rotas(p, st, auth.NovoLimitador(), config.Config{ShopifySegredos: []string{"s"}, ChatwootSegredo: "c"})
 	semModulo := fixtureUsuarios(t, p, st)["nenhum"]
-	testebanco.TabelasDoEscopo(t, p) // o escopo carrega: uma rota de domínio aberta responde 200, não 500
 	const clienteID = "88888888-8888-4888-a888-888888888888"
 	p.Exec(context.Background(), `insert into usuarios (id, email) values ($1, 'cliente-walk@x.com')`, clienteID)
 	tokCliente, _ := st.Criar(context.Background(), clienteID, "cliente", nil)
@@ -136,6 +138,20 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 			t.Errorf("rota só-sessão %s não está montada", chave)
 		}
 	}
+	// Plano 5.1: estar na lista pública e montada não basta: sem sessão, o pedido de acesso responde 201 com JSON
+	// (montá-la no grupo autenticado faria 401; o 415 sem o cabeçalho é do handler, não de sessão).
+	if _, err := p.Exec(context.Background(), `create table access_requests (id uuid primary key default gen_random_uuid(), name text not null,
+		email text not null, message text, status text not null, created_at timestamptz not null default now())`); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/pedir-acesso", strings.NewReader(`{"name":"Sem Sessão","email":"sem-sessao@x.com","message":"oi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(r, req)
+	var pedido struct{ ID string }
+	if r.Code != http.StatusCreated || json.Unmarshal(r.Body.Bytes(), &pedido) != nil || pedido.ID == "" {
+		t.Errorf("POST /pedir-acesso sem sessão = %d %s, esperava 201 com {\"id\"}", r.Code, r.Body)
+	}
 	for _, c := range webhooksPublicos() {
 		r := httptest.NewRecorder()
 		h.ServeHTTP(r, httptest.NewRequest("POST", c, strings.NewReader(`{"a":1}`)))
@@ -167,6 +183,7 @@ const conta = "33333333-3333-3333-3333-333333333333"
 func fixtureUsuarios(t *testing.T, p *pgxpool.Pool, s *auth.Store) map[string]string {
 	t.Helper()
 	ctx := context.Background()
+	testebanco.TabelasDoEscopo(t, p) // as rotas ao vivo passam por autz.ComEscopo (lê perfil e equipes)
 	if _, err := p.Exec(ctx, `create table accounts (id uuid primary key, instagram_id text, ad_account_id text);
 		insert into accounts values ('`+conta+`', '1784', 'act_1')`); err != nil {
 		t.Fatal(err)
@@ -212,6 +229,56 @@ var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "G
 	// responde para nome registrado, cada um com o seu portão (sem registro: 404).
 	"POST /auth/trocar-senha": true, "GET /eu/perfil": true, "POST /invite-user": true,
 	"POST /entrar-como-usuario": true, "POST /conferir-senha": true, "POST /rpc/{nome}": true,
+	// Plano 5.6: portão = catálogo, provado pela matriz de cada rota em `internal/redes`; vazamento entre
+	// contas, impersonado e segredo por `TestNadaVazaEntreContas`, `TestEscritasRecusamImpersonado` e
+	// `TestSegredoDaContaNuncaSai`.
+	"GET /redes/contas": true, "PATCH /redes/contas/{id}": true, "GET /redes/seguidores": true,
+	"GET /redes/leituras-de-seguidores": true, "GET /redes/engajamento": true, "GET /redes/conteudo": true,
+	"GET /redes/campanhas": true, "GET /redes/conjuntos": true, "GET /redes/anuncios": true,
+	"GET /redes/insights-de-campanha": true, "GET /redes/insights-da-conta": true,
+	"GET /redes/campanhas-por-hora": true, "GET /redes/anuncios-por-hora": true, "GET /redes/visitas-por-hora": true,
+	"GET /redes/metas": true, "PUT /redes/metas": true, "GET /redes/filtros-de-campanha": true,
+	"PUT /redes/filtros-de-campanha/{account_id}": true,
+	// Plano 5.12: leituras com a regra do catálogo (`true` para sessão); a matriz por papel é
+	// TestPaineisPelaMontagemReal.
+	"GET /noticias/rodadas": true, "GET /noticias/concorrentes": true, "GET /noticias/panorama": true,
+	"GET /status-ia/execucoes": true,
+	// quem não passa na regra das duas tabelas recebe 200 [] (TestSaudeDosRobosPelaMontagemReal).
+	"GET /status-ia/saude-dos-robos": true,
+}
+
+// Plano 5.1: as rotas do admin, de equipes, de avisos e de saúde. Portão = catálogo, provado pela matriz de
+// cada rota em internal/acesso; escrita de impersonado recusada por TestEscritasRecusamImpersonado. Todas
+// ficam no grupo de DOMÍNIO (prazo e escopo do grupo: TestPrazosPorRotaPelaMontagemReal).
+var rotas51 = []string{
+	"GET /acesso/usuarios", "PATCH /acesso/usuarios/{id}", "GET /acesso/perfis", "POST /acesso/perfis", "PATCH /acesso/perfis/{id}",
+	"GET /acesso/pedidos", "PATCH /acesso/pedidos/{id}",
+	"GET /equipes/times", "POST /equipes/times", "PATCH /equipes/times/{id}",
+	"GET /equipes/membros", "POST /equipes/membros", "PATCH /equipes/membros/{id}", "DELETE /equipes/membros/{id}",
+	"GET /equipes/permissoes", "POST /equipes/permissoes", "DELETE /equipes/permissoes/{id}",
+	"GET /equipes/grupos", "POST /equipes/grupos", "PATCH /equipes/grupos/{id}", "DELETE /equipes/grupos/{id}",
+	"GET /equipes/grupos-membros", "POST /equipes/grupos-membros", "DELETE /equipes/grupos-membros/{id}",
+	"GET /avisos/preferencias", "POST /avisos/preferencias", "POST /eu/push/inscrever", "POST /eu/push/desinscrever",
+	"GET /saude/conferencias",
+}
+
+// Plano 5.7: as 16 rotas de tabela de trafego.Montar, no grupo de DOMÍNIO. Portão = catálogo, provado pela
+// matriz de cada rota em `internal/trafego`; vazamento e impersonado por `TestNadaVazaEntreContas` e
+// `TestEscritasRecusamImpersonado`. Os 3 proxies NÃO entram aqui: têm ExigirModulo (TestNenhumaRotaNovaFicaAberta).
+var rotas57 = []string{
+	"GET /gestao-trafego/analises-de-orcamento", "GET /gestao-trafego/analises-de-anuncio",
+	"GET /gestao-trafego/decisoes", "POST /gestao-trafego/decisoes",
+	"GET /gestao-trafego/rascunhos", "POST /gestao-trafego/rascunhos",
+	"PATCH /gestao-trafego/rascunhos/{id}", "DELETE /gestao-trafego/rascunhos/{id}",
+	"GET /gestao-trafego/config-metricas", "PUT /gestao-trafego/config-metricas/{balde}",
+	"GET /gestao-trafego/objetivos", "PUT /gestao-trafego/objetivos/{alvo_id}", "DELETE /gestao-trafego/objetivos/{alvo_id}",
+	"GET /gestao-trafego/regua", "PUT /gestao-trafego/regua", "GET /gestao-trafego/interesses-sugeridos",
+}
+
+func init() {
+	for _, c := range append(slices.Clone(rotas51), rotas57...) {
+		soSessao[c] = true
+	}
 }
 
 // Matriz completa 401/403/200 por rota pela montagem de produção: cada módulo abre SÓ as
@@ -258,6 +325,99 @@ func TestRotasProtegidasPelaMontagemReal(t *testing.T) {
 	}
 }
 
+// Ruling 34 pela montagem de produção: o autz.ComEscopo das 4 rotas ao vivo está ligado. Sem ele, o
+// so-meta (allowed_accounts nulo = todas) cairia em 400 por escopo ausente (falha fechada): o teste acusa.
+func TestEscopoDeContasPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{CoreURL: coreFalso(t), CoreToken: "t"})
+	toks := fixtureUsuarios(t, p, s)
+	ctx := context.Background()
+	const restrito = "44444444-4444-4444-4444-444444444444"
+	if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, 'meta-restrito@x.com')`, restrito); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `insert into profiles (id, email, role, features, escopo_por_equipe, allowed_accounts)
+		values ($1::uuid, 'meta-restrito@x.com', 'viewer', '{meta,social}', false, '{outra-conta}')`, restrito); err != nil {
+		t.Fatal(err)
+	}
+	toks["meta-restrito"], _ = s.Criar(ctx, restrito, "painel", nil)
+	pedir := func(caminho, corpo, tok string) (int, string) {
+		r := httptest.NewRequest("POST", caminho, strings.NewReader(corpo))
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	proxy := fmt.Sprintf(`{"accountId":%q,"path":"/act_1/insights"}`, conta)
+	if st, resp := pedir("/meta-proxy", proxy, toks["so-meta"]); st == 400 {
+		t.Errorf("so-meta (sem lista) no /meta-proxy: %d %s (o ComEscopo da montagem?)", st, resp)
+	}
+	if st, resp := pedir("/meta-proxy", proxy, toks["meta-restrito"]); st != 400 || strings.TrimSpace(resp) != `{"error":"conta nao encontrada"}` {
+		t.Errorf("meta-restrito no /meta-proxy: %d %s", st, resp)
+	}
+	ao := fmt.Sprintf(`{"account_id":%q}`, conta)
+	if st, resp := pedir("/insights-ao-vivo", ao, toks["so-social"]); st == 404 {
+		t.Errorf("so-social no /insights-ao-vivo: %d %s", st, resp)
+	}
+	if st, resp := pedir("/insights-ao-vivo", ao, toks["meta-restrito"]); st != 404 || !strings.Contains(resp, "conta não encontrada") {
+		t.Errorf("meta-restrito no /insights-ao-vivo: %d %s", st, resp)
+	}
+}
+
+// As rotas de /redes pela montagem de produção (esquema de produção): sem sessão 401; a pessoa com lista
+// só vê A1; a admin vê as duas; a escrita da limitada em A2 é 403 (o redes.Montar está no grupo com ComEscopo).
+func TestRedesPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{CoreURL: coreFalso(t), CoreToken: "t"})
+	ctx := context.Background()
+	const a1, a2 = "a5600000-0000-4000-a000-0000000000a1", "a5600000-0000-4000-a000-0000000000a2"
+	const limitada, admin = "a5620000-0000-4000-a000-000000000001", "a5620000-0000-4000-a000-000000000002"
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := p.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`insert into usuarios (id, email) values ($1::uuid, 'limitada@x.com'), ($2::uuid, 'admin@x.com')`, limitada, admin)
+	exec(`insert into profiles (id, email, role, features, escopo_por_equipe, allowed_accounts) values
+		($1::uuid, 'limitada@x.com', 'viewer', '{social}', false, array[$3::uuid]),
+		($2::uuid, 'admin@x.com', 'admin', '{social}', false, null)`, limitada, admin, a1)
+	exec(`insert into accounts (id, name) values ($1::uuid, 'Vessel'), ($2::uuid, 'Mantova')`, a1, a2)
+	exec(`insert into engagement_snapshots (account_id, captured_at, period_days, likes) values
+		($1::uuid, '2026-10-11', 7, 10), ($2::uuid, '2026-10-11', 7, 30)`, a1, a2)
+	tokL, _ := s.Criar(ctx, limitada, "painel", nil)
+	tokA, _ := s.Criar(ctx, admin, "painel", nil)
+	pedir := func(metodo, caminho, corpo, tok string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		if tok != "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	if st, b := pedir("GET", "/redes/engajamento", "", ""); st != 401 {
+		t.Errorf("sem sessão = %d %s", st, b)
+	}
+	if st, b := pedir("GET", "/redes/engajamento", "", tokL); st != 200 || !strings.Contains(b, a1) || strings.Contains(b, a2) {
+		t.Errorf("limitada = %d %s (esperava só A1)", st, b)
+	}
+	if st, b := pedir("GET", "/redes/engajamento", "", tokA); st != 200 || !strings.Contains(b, a1) || !strings.Contains(b, a2) {
+		t.Errorf("admin = %d %s (esperava as duas)", st, b)
+	}
+	meta := func(conta string) string {
+		return `{"metas":[{"account_id":"` + conta + `","periodo":"1","indicador":"seguidores","valor":1}]}`
+	}
+	if st, b := pedir("PUT", "/redes/metas", meta(a2), tokL); st != 403 {
+		t.Errorf("limitada gravando meta de A2 = %d %s, esperava 403", st, b)
+	}
+	if st, b := pedir("PUT", "/redes/metas", meta(a1), tokL); st/100 != 2 {
+		t.Errorf("limitada gravando meta de A1 = %d %s, esperava 2xx", st, b)
+	}
+}
+
 // Prazos pela montagem real: percorre as rotas e, nos middlewares embutidos de cada uma,
 // confere que o de prazo dá o deadline esperado (contar-collabs 120 s, as outras ao vivo 90 s)
 // e que nenhuma outra rota ganha prazo sem constar aqui.
@@ -266,7 +426,18 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
 	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second,
 		// Plano 5.0: o grupo de domínio inteiro (e o /rpc) tem prazo; rota de domínio nova herda
-		"POST /rpc/{nome}": PrazoDominio}
+		"POST /rpc/{nome}": PrazoDominio,
+		// Plano 5.12: leituras do grupo de domínio
+		"GET /noticias/rodadas": PrazoDominio, "GET /noticias/concorrentes": PrazoDominio,
+		"GET /noticias/panorama": PrazoDominio, "GET /status-ia/execucoes": PrazoDominio,
+		"GET /status-ia/saude-dos-robos": PrazoDominio,
+		// Plano 5.12: fatura real das contas de IA (grupo autenticado, FORA do de domínio)
+		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
+		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
+		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
+	for _, c := range append(slices.Clone(rotas51), rotas57...) { // Planos 5.1 e 5.7: no grupo de domínio, com o prazo dele
+		quer[c] = PrazoDominio
+	}
 	vistos := map[string]bool{}
 	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota
@@ -277,6 +448,12 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 					achado = time.Until(dl).Round(time.Second)
 				}
 			})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil))
+		}
+		if strings.HasPrefix(rota, "/redes/") { // Plano 5.6: o grupo de domínio inteiro herda o prazo
+			if achado != PrazoDominio {
+				t.Errorf("%s: prazo %v, esperava %v (PrazoDominio)", chave, achado, PrazoDominio)
+			}
+			return nil
 		}
 		if q, ok := quer[chave]; ok {
 			vistos[chave] = true
@@ -453,7 +630,6 @@ func TestContaPelaMontagemReal(t *testing.T) {
 	s := auth.NovoStore(p)
 	h := Rotas(p, s, auth.NovoLimitador(), config.Config{EnderecosDoApp: []string{"https://central.exemplo"}, EnderecoPadrao: "https://central.exemplo"})
 	viewer := fixtureUsuarios(t, p, s)["nenhum"]
-	testebanco.TabelasDoEscopo(t, p)
 	ctx := context.Background()
 	const cliente = "77777777-7777-4777-a777-777777777777"
 	p.Exec(ctx, `insert into usuarios (id, email) values ($1, 'cliente@x.com')`, cliente)
@@ -551,13 +727,14 @@ func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
 	const nome = "vessel_gerar_lote"
 	original, pendentes := FuncoesRPC, RPCPendentes
 	t.Cleanup(func() { FuncoesRPC, RPCPendentes = original, pendentes })
-	FuncoesRPC = []rpc.Funcao{{Nome: nome, Params: []rpc.Param{{Nome: "p_n", Tipo: "integer"}}, Retorno: rpc.Valor, Portao: autz.SuperFicha}}
+	// ACRESCENTA: com as funções dos sub-planos já registradas (e fora de RPCPendentes), trocar a lista inteira
+	// derrubaria a soma de TotalRPCDoPainel.
+	FuncoesRPC = append(slices.Clone(original), rpc.Funcao{Nome: nome, Params: []rpc.Param{{Nome: "p_n", Tipo: "integer"}}, Retorno: rpc.Valor, Portao: autz.SuperFicha})
 	RPCPendentes = slices.DeleteFunc(slices.Clone(pendentes), func(x string) bool { return x == nome })
 	p := testebanco.Novo(t)
 	s := auth.NovoStore(p)
 	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
 	toks := fixtureUsuarios(t, p, s)
-	testebanco.TabelasDoEscopo(t, p)
 	ctx := context.Background()
 	if _, err := p.Exec(ctx, `create table marca (n int);
 		create function `+nome+`(p_n integer) returns integer language plpgsql as $$ begin insert into marca values (p_n); return p_n + 1; end $$`); err != nil {
@@ -597,5 +774,131 @@ func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
 	p.QueryRow(ctx, `select count(*) from marca`).Scan(&n)
 	if n != 1 {
 		t.Errorf("a função rodou %d vez(es), esperava 1 (só a do super-admin)", n)
+	}
+}
+
+// Plano 5.1 pela montagem real: sem sessão é 401, o portão é o do catálogo (viewer não muda a conta do
+// admin; só o admin lê pedidos de acesso), o pedido de acesso é público e o health check não depende de
+// sessão. A matriz de cada rota está em internal/acesso; aqui vale a MONTAGEM (grupo, cadeia, posição).
+func TestAcessoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const admin, viewer = "5e000000-0000-4000-a000-0000000000a1", "5e000000-0000-4000-a000-0000000000a2"
+	for _, u := range [][3]string{{admin, "admin-51@x.com", "admin"}, {viewer, "viewer-51@x.com", "viewer"}} {
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, u[0], u[1]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, escopo_por_equipe) values ($1::uuid, $2::text, $2::text, $3::text, false)`, u[0], u[1], u[2]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tok := map[string]string{}
+	for nome, id := range map[string]string{"admin": admin, "viewer": viewer} {
+		var err error
+		if tok[nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pedir := func(quem, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+tok[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		trecho                             string
+	}{
+		{"usuários sem sessão", "", "GET", "/acesso/usuarios", "", 401, "nao_autenticado"},
+		{"conferências exigem sessão", "", "GET", "/saude/conferencias", "", 401, "nao_autenticado"},
+		{"o health check segue público", "", "GET", "/saude", "", 200, "ok"},
+		{"viewer não muda a conta do admin", "viewer", "PATCH", "/acesso/usuarios/" + admin, `{"disabled":true}`, 403, "sem_permissao"},
+		{"viewer lê pedidos: a regra devolve lista vazia", "viewer", "GET", "/acesso/pedidos", "", 200, "[]"},
+		{"admin lê os times", "admin", "GET", "/equipes/times", "", 200, "["},
+		{"pedir acesso é público", "", "POST", "/pedir-acesso", `{"name":"Fulana","email":"fulana@x.com","message":"oi"}`, 201, `"id"`},
+	} {
+		if st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo); st != c.status || !strings.Contains(corpo, c.trecho) {
+			t.Errorf("%s: %s %s = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, st, corpo, c.status, c.trecho)
+		}
+	}
+	var off bool
+	if err := p.QueryRow(ctx, `select disabled from profiles where id = $1::uuid`, admin).Scan(&off); err != nil || off {
+		t.Errorf("o PATCH negado mexeu em profiles.disabled (%v, %v)", off, err)
+	}
+	var n int
+	if err := p.QueryRow(ctx, `select count(*) from access_requests where email = 'fulana@x.com' and status = 'pending'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("pedidos gravados = %d (%v), esperava 1", n, err)
+	}
+}
+
+// Plano 5.7 pela montagem real: a cadeia do grupo de domínio (sessão, escopo, prazo) nas leituras e na RPC,
+// e o portão e o escopo dos três proxies no grupo de sessão. A matriz de cada rota está em internal/trafego,
+// internal/ia e internal/mapa; aqui vale a MONTAGEM. Sem chave de IA e sem ligar a nada de fora: o 503 e o 400
+// provam que o pedido passou do portão e do escopo e parou antes do externo.
+func TestTrafegoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const a1, a2 = "a5700000-0000-4000-a000-0000000000a1", "a5700000-0000-4000-a000-0000000000a2"
+	quem := map[string]string{}
+	for i, u := range []struct{ nome, papel, features, contas string }{
+		{"gestor-a1", "viewer", "{meta,meta.gestor}", "{" + a1 + "}"}, {"admin", "admin", "{}", ""},
+		{"so-meta", "viewer", "{meta}", ""}, {"nenhum", "viewer", "{}", ""},
+	} {
+		id := fmt.Sprintf("a5710000-0000-4000-a000-00000000010%d", i)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, u.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe, allowed_accounts)
+			values ($1::uuid, $2::text, $2::text, $3::text, $4::text[], false, nullif($5::text, '')::uuid[])`,
+			id, u.nome+"@x.com", u.papel, u.features, u.contas); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if quem[u.nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.Exec(ctx, `insert into gt_budget_analises (campaign_id, account_id, veredito) values ('9001', $1::text, 'escalar'), ('9002', $2::text, 'reduzir')`, a1, a2); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(nome, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if nome != "" {
+			r.Header.Set("Authorization", "Bearer "+quem[nome])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem, naoTem                        string
+	}{
+		{"leitura sem sessão", "", "GET", "/gestao-trafego/analises-de-orcamento", "", 401, "nao_autenticado", ""},
+		{"gestor com lista só vê a própria conta", "gestor-a1", "GET", "/gestao-trafego/analises-de-orcamento", "", 200, a1, a2},
+		{"admin vê as duas", "admin", "GET", "/gestao-trafego/analises-de-orcamento", "", 200, a2, ""},
+		{"RPC com conta que não se vê", "gestor-a1", "POST", "/rpc/gt_registrar_problemas", `{"p_conta":"` + a2 + `","p_itens":[]}`, 403, "sem_permissao", ""},
+		{"RPC com a conta da lista", "gestor-a1", "POST", "/rpc/gt_registrar_problemas", `{"p_conta":"` + a1 + `","p_itens":[]}`, 200, "0", ""},
+		{"IA sem o módulo do gestor", "so-meta", "POST", "/sugerir-publico-ia", `{"evidencia":{},"contaId":"` + a1 + `"}`, 403, "sem_permissao", ""},
+		{"IA passa o portão e o escopo e para sem chave", "gestor-a1", "POST", "/sugerir-publico-ia", `{"evidencia":{},"contaId":"` + a1 + `"}`, 503, "chave_nao_configurada", ""},
+		{"documento sem o módulo do gestor", "so-meta", "POST", "/ler-documento", `{}`, 403, "sem_permissao", ""},
+		{"mapa sem o módulo meta", "nenhum", "POST", "/buscar-lugar", `{"acao":"buscar","termo":"praça"}`, 403, "sem_permissao", ""},
+		{"mapa passa o portão e para na ação, sem ligar ao Nominatim", "so-meta", "POST", "/buscar-lugar", `{"acao":"apagar"}`, 400, "acao desconhecida", ""},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
+		}
 	}
 }

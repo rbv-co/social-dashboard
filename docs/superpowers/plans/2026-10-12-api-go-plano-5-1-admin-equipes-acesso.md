@@ -76,7 +76,7 @@
 ```
 api/internal/testebanco/esquema.go                   # ComEsquemaDeProducao: banco novo com compat + migrações + esquema/*.sql
 api/internal/testebanco/esquema_test.go              # os gatilhos verbatim disparam com a identidade da transação
-api/internal/testebanco/esquema/01-tabelas-5-1.sql   # DDL da fatia 5.1 (fonte citada por tabela)
+api/internal/testebanco/esquema/01-tabelas-5-01.sql   # DDL da fatia 5.1 (fonte citada por tabela)
 api/internal/testebanco/esquema/gerar-gatilhos.mjs   # gera 02-gatilhos.sql do levantamento
 api/internal/testebanco/esquema/02-gatilhos.sql      # GERADO: funções e gatilhos de produção, verbatim
 api/internal/dados/escrita.go                        # Tabela (Criar/Editar/Apagar), Campos, RotaCriar/Editar/Apagar, Responder
@@ -89,7 +89,7 @@ api/internal/acesso/grupos.go        (+ _test)       # /equipes/grupos, /equipes
 api/internal/acesso/perfis.go        (+ _test)       # /acesso/perfis
 api/internal/acesso/pedidos.go       (+ _test)       # POST /pedir-acesso (público), /acesso/pedidos
 api/internal/acesso/avisos.go        (+ _test)       # /avisos/preferencias, /eu/push/inscrever, /eu/push/desinscrever
-api/internal/acesso/saude.go         (+ _test)       # /saude/conferencias, /saude/ia-execucoes
+api/internal/acesso/saude.go         (+ _test)       # /saude/conferencias (a /saude/ia-execucoes foi cortada: Ruling 5.1-16)
 api/internal/acesso/rotas.go         (+ _test)       # Montar; toda escrita recusa impersonado
 api/internal/web/rotas.go, rotas_test.go             # montagem + listas pública/só-sessão + montagem real
 api/cmd/api/conferir.go                              # colunas, tipos, únicos e funções que as rotas presumem
@@ -120,9 +120,9 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md             # seção do 5.1
 
 **(a) Contrato**
 - `testebanco.ComEsquemaDeProducao(t *testing.T) *pgxpool.Pool`: banco **novo** `esq_<hex>` (as funções de produção citam `public.<tabela>`: por isso banco, e não schema, por teste) com, nesta ordem: `banco.Compat` (`auth.uid()` lê `app.usuario_id`), `banco.Migrar` (`usuarios`, `sessoes`...; as FKs do dump limpo apontam para `public.usuarios`, `ops/migracao/limpar-dump.mjs:64`) e os arquivos `esquema/*.sql` em ordem de nome. Pula sem `TEST_DATABASE_URL`, como `Novo`. Apaga o banco no `Cleanup` (`with (force)`).
-- `esquema/01-tabelas-5-1.sql`: DDL das 14 tabelas que as rotas, o `Escopo` e os gatilhos do 5.1 leem (fonte por tabela, abaixo). Os sub-planos seguintes acrescentam `01-tabelas-5-N.sql` (a ordem de nome mantém `5-1` antes).
-- `esquema/gerar-gatilhos.mjs <dir do levantamento>` → `esquema/02-gatilhos.sql`: os gatilhos de produção das tabelas declaradas em `01-tabelas-*.sql` e o fechamento das funções que eles chamam, **verbatim** de `02-funções.csv`/`03-triggers.csv`. Resultado esperado para a fatia 5.1: 7 funções (`conta_ativa`, `equipes_toca_atualizado`, `espelhar_grupo_do_canal`, `espelhar_rename_do_grupo`, `guard_profiles`, `impedir_autopromocao`, `is_superadmin`) e 5 gatilhos (`levantamento/03-triggers.csv:2-6,30-31`).
-- Premissas (Ruling 5.1-1): `03-triggers.csv` não traz `FOR EACH`/`WHEN`; os 5 gatilhos da fatia são por linha e sem `WHEN` (`2026-08-04-equipes-e-escopo.sql:246-247`, `2026-08-21-canal-pai-e-supervisora-de-grupo.sql:87-90`, `supabase/migrations/20260727_impedir_autopromocao_de_admin.sql:50-53`; `guard_profiles` usa `new`/`old`, logo é por linha).
+- `esquema/01-tabelas-5-01.sql`: DDL das 15 tabelas que as rotas, o `Escopo` e os gatilhos do 5.1 leem (fonte por tabela, abaixo). Os sub-planos seguintes acrescentam `01-tabelas-5-NN.sql` com DOIS dígitos (`5-02` ... `5-12`; a ordem é a do nome e `5-10` viria antes de `5-2`).
+- `esquema/gerar-gatilhos.mjs <dir do levantamento>` → `esquema/02-gatilhos.sql`: os gatilhos de produção das tabelas declaradas em `01-tabelas-*.sql` e o fechamento das funções que eles chamam, **verbatim** de `02-funções.csv`/`03-triggers.csv`. Resultado esperado para a fatia 5.1: 7 funções (`conta_ativa`, `equipes_toca_atualizado`, `espelhar_grupo_do_canal`, `espelhar_rename_do_grupo`, `guard_profiles`, `impedir_autopromocao`, `is_superadmin`) e 5 gatilhos (`levantamento/03-triggers.csv:2-4,6,30-31`).
+- Premissas (Ruling 5.1-1): `03-triggers.csv` não traz `FOR EACH`, `WHEN` nem a lista do `UPDATE OF`; os 5 gatilhos da fatia são por linha e sem `WHEN` (`2026-08-04-equipes-e-escopo.sql:246-247`; o de rename do grupo é `2026-08-21-canal-pai-e-supervisora-de-grupo.sql:87-90`; o de `bling_lojas` é `BEFORE INSERT OR UPDATE OF grupo_id, grupo` em `2026-08-27-espelho-do-grupo-nos-dois-sentidos.sql:116-119` e sai gerado sem o `OF`, mesmo efeito porque o corpo só age com `is distinct from` nessas colunas; `supabase/migrations/20260727_impedir_autopromocao_de_admin.sql:50-53`; `guard_profiles` usa `new`/`old`, logo é por linha).
 
 **(b) Testes de aceitação** (`TestEsquemaDeProducaoComOsGatilhosVerbatim`)
 - Os gatilhos existentes são exatamente `equipes_atualizado, trg_espelhar_grupo_do_canal, trg_espelhar_rename_do_grupo, trg_guard_profiles, trg_impedir_autopromocao`.
@@ -131,11 +131,11 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md             # seção do 5.1
 - Sem identidade (`p.Exec` fora de `ComUsuario`) o `guard_profiles` deixa mudar o cargo — prova de por que toda escrita roda em `ComUsuario`.
 - Renomear `canais_grupos` leva o nome a `bling_lojas.grupo`; `update` em `equipes` move `atualizado_em`; `equipes_membros.criado_por` recebe `auth.uid()` de quem grava.
 
-**(c) Arquivos:** Create `api/internal/testebanco/esquema.go`, `api/internal/testebanco/esquema_test.go`, `api/internal/testebanco/esquema/01-tabelas-5-1.sql`, `api/internal/testebanco/esquema/gerar-gatilhos.mjs`, `api/internal/testebanco/esquema/02-gatilhos.sql` (gerado).
+**(c) Arquivos:** Create `api/internal/testebanco/esquema.go`, `api/internal/testebanco/esquema_test.go`, `api/internal/testebanco/esquema/01-tabelas-5-01.sql`, `api/internal/testebanco/esquema/gerar-gatilhos.mjs`, `api/internal/testebanco/esquema/02-gatilhos.sql` (gerado).
 
 **(d) Dependências:** `banco.Compat`, `banco.Migrar`, `banco.Configurar`, `banco.ComUsuario`; levantamento local.
 
-- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-1.sql`:
+- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-01.sql`:
 
 ```sql
 -- FATIA 5.1 do esquema de produção para os testes (D0 reconstruído: Ruling 5.1-1). Carregada por
@@ -264,7 +264,7 @@ create table public.acessos_pessoas (
   email_corporativo text
 );
 
--- presumido: as colunas que login (tela-de-login.vue:227) e admin (tela-de-admin.vue:4271) usam
+-- presumido: as colunas que login (tela-de-login.vue:267) e admin (tela-de-admin.vue:4300) usam
 create table public.access_requests (
   id         uuid primary key default gen_random_uuid(),
   name       text,
@@ -597,7 +597,7 @@ func ComEsquemaDeProducao(t *testing.T) *pgxpool.Pool {
 	if err := banco.Migrar(p); err != nil {
 		t.Fatalf("migrações: %v", err)
 	}
-	arquivos, err := fs.Glob(esquema, "esquema/*.sql") // ordem do nome: 01-tabelas-5-1, 01-tabelas-5-2..., 02-gatilhos
+	arquivos, err := fs.Glob(esquema, "esquema/*.sql") // ordem do nome: 01-tabelas-5-01, 01-tabelas-5-02..., 02-gatilhos
 	if err != nil || len(arquivos) == 0 {
 		t.Fatalf("esquema/*.sql: %v", err)
 	}
@@ -1577,7 +1577,7 @@ var consultaTimes = dados.Consulta{Tabela: "equipes", Alias: "t", SQL: `select `
 	Ordens: map[string]string{"nome": "t.nome", "ordem": "t.ordem"}, OrdemPadrao: "t.ordem, t.nome", Desempate: "t.id"}
 
 // POST /equipes/times (equipes_criar: super pela ficha OU gestor direto em alguma equipe) e
-// PATCH /equipes/times/{id} (equipes_editar: sou_gestor_da_equipe(id)). O que a tela grava (tela-de-admin.vue:1726).
+// PATCH /equipes/times/{id} (equipes_editar: sou_gestor_da_equipe(id)). O que a tela grava (tela-de-admin.vue:1735).
 type corpoTime struct {
 	Nome        json.RawMessage `json:"nome,omitempty"`
 	Tipo        json.RawMessage `json:"tipo,omitempty"`
@@ -1690,7 +1690,7 @@ var tabelaSupervisoras = dados.Tabela{Nome: "canais_grupos_membros", Resposta: c
 func montarGrupos(r chi.Router, p *pgxpool.Pool) // as 7 rotas; deve(…Validar); soSessaoPropria nas escritas
 ```
 
-Os `PATCH bling_lojas` da mesma seção da tela (`tela-de-admin.vue:1072`, `:1194`: `fechado_em`, `grupo_id`) são do 5.5 (dono de `bling_lojas`).
+Os `PATCH bling_lojas` da mesma seção da tela (`tela-de-admin.vue:1081`, `:1203`: `fechado_em`, `grupo_id`) são do 5.5 (dono de `bling_lojas`).
 
 **(b) Testes de aceitação** (`TestGruposESupervisoras`)
 - Grupos: `vendT1` GET → G1 e G2. `super` POST `{"nome":"Online"}` → 201; `superFicha` POST `{"nome":"Feira"}` → 201 (a ficha basta); `admin` POST → 403, contagem igual; `super` POST `{"nome":" varejo "}` → 409 (rode ANTES de renomear o G1). `super` PATCH G1 `{"nome":"Varejo Físico"}` → 200 e `bling_lojas.grupo` da loja 3 = `Varejo Físico`; `admin` PATCH G1 → 403, intacto; `super` DELETE G2 → 204; `admin` DELETE G1 → 403, fica.
@@ -2173,12 +2173,12 @@ Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 
 ### Rotas novas
 - Pública: `POST /api/pedir-acesso` (10 por IP por hora; só `name`, `email`, `message`; `status` sempre `pending`).
-- Com sessão (regra = catálogo de produção; escrita de sessão "entrar como" = 403): `/acesso/usuarios`, `/acesso/perfis`, `/acesso/pedidos`, `/equipes/times`, `/equipes/membros`, `/equipes/permissoes`, `/equipes/grupos`, `/equipes/grupos-membros`, `/avisos/preferencias`, `/eu/push/inscrever`, `/eu/push/desinscrever`, `/saude/conferencias`, `/saude/ia-execucoes`.
+- Com sessão (regra = catálogo de produção; escrita de sessão "entrar como" = 403): `/acesso/usuarios`, `/acesso/perfis`, `/acesso/pedidos`, `/equipes/times`, `/equipes/membros`, `/equipes/permissoes`, `/equipes/grupos`, `/equipes/grupos-membros`, `/avisos/preferencias`, `/eu/push/inscrever`, `/eu/push/desinscrever`, `/saude/conferencias` (a `/saude/ia-execucoes` NÃO é montada: Ruling 5.1-16).
 
 ### Mudanças de contrato que o Plano 7 absorve
 - Escrita negada responde 403/404 (o PostgREST respondia 2xx com zero linhas); a linha devolvida é a da leitura, ou `{"id"}` quando quem gravou não a lê.
 - `criado_por`, `alterado_por` e `concedido_por` saem do corpo (a sessão preenche; mandar = 400).
-- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1230` passa a ler o `id`.
+- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1239` passa a ler o `id`.
 - Preferências de aviso vão em lote (`POST /avisos/preferencias`, array); push por `inscrever`/`desinscrever`.
 - `permissions`/`permissions_excecao` têm de ser objeto JSON.
 
@@ -2218,36 +2218,36 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ## Inventário: sítios do front a trocar (Plano 7)
 
-`grep` em `src/` (fora de `*.test.*` e `src/demonstracao/`) em 2026-10-12: **70 literais** nas tabelas do 5.1 (`profiles` 24, `equipes_membros` 12, `equipes` 7, `equipes_permissoes` 5, `canais_grupos_membros` 5, `data_integrity_checks` 4, `acessos_perfis` 4, `access_requests` 3, `push_subs` 2, `push_preferencias` 2, `ia_execucoes` 1, `canais_grupos` 1) **+ 4 por variável** (`gravar('canais_grupos…')` ×3, `adFetch(alvo)` ×1) **− 1 do 5.0** (`controle-de-login-e-usuario.js:92` → `GET /eu/perfil`) = **73 sítios**. `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status` e `gestor_log`: **zero** sítios (Ruling 5.1-5).
+`grep` em `src/` (fora de `*.test.*` e `src/demonstracao/`) em 2026-10-12. **Números de linha refeitos no HEAD do branch (`ec847fd9`), depois de `1deef27b` (front, área `conta`), que deslocou `tela-de-admin.vue`, `tela-de-frota.vue`, `tela-de-login.vue` e outras; a contagem abaixo é a original:** **70 literais** nas tabelas do 5.1 (`profiles` 24, `equipes_membros` 12, `equipes` 7, `equipes_permissoes` 5, `canais_grupos_membros` 5, `data_integrity_checks` 4, `acessos_perfis` 4, `access_requests` 3, `push_subs` 2, `push_preferencias` 2, `ia_execucoes` 1, `canais_grupos` 1) **+ 4 por variável** (`gravar('canais_grupos…')` ×3, `adFetch(alvo)` ×1) **− 1 do 5.0** (`controle-de-login-e-usuario.js:94` → `GET /eu/perfil`) = **73 sítios**. `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status` e `gestor_log`: **zero** sítios (Ruling 5.1-5).
 
 Abreviações: `admin` = `src/ferramentas/admin/tela-de-admin.vue`; `frota` = `src/ferramentas/frota/tela-de-frota.vue`; `tv` = `src/ferramentas/gestao-comercial/time-de-vendas.vue`; `gav` = `src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue`; `av` = `src/ferramentas/analise-vendas/tela-de-analise-vendas.vue`; `redes` = `src/ferramentas/redes-sociais/tela-de-redes-sociais.vue`.
 
 | Rota | Sítios | Qtde |
 |---|---|---|
-| `GET /acesso/usuarios` | admin:743, 1234, 2419, 3665, 3860, 3929; frota:788, 1079; tv:147; `src/ferramentas/conteudo/dados-conteudo.js:248`; redes:3735 | 11 |
-| `PATCH /acesso/usuarios/{id}` | admin:449, 748, 767, 2346, 2542, 2794, 3431, 3512, 3942; frota:802, 819; redes:3751 | 12 |
-| `GET /acesso/perfis` | admin:2401, 3698 | 2 |
-| `POST /acesso/perfis` | admin:2277 | 1 |
-| `PATCH /acesso/perfis/{id}` | admin:2492 | 1 |
-| `POST /pedir-acesso` | `src/ferramentas/login/tela-de-login.vue:227` | 1 |
-| `GET /acesso/pedidos` / `PATCH /acesso/pedidos/{id}` | admin:4271 / admin:4309 | 2 |
-| `GET /equipes/times` | admin:882, 1227; gav:690; av:403; tv:145 | 5 |
-| `POST` / `PATCH /equipes/times` | admin:1729 / admin:1728 | 2 |
-| `GET /equipes/membros` | admin:1228; gav:692; av:405; tv:146; `src/ferramentas/gestao-comercial/tela-de-gestao-comercial.vue:62` | 5 |
-| `POST /equipes/membros` | admin:753, 1539; tv:178 | 3 |
-| `PATCH` / `DELETE /equipes/membros/{id}` | admin:1452, tv:164 / admin:1506, tv:170 | 4 |
-| `GET /equipes/permissoes` | admin:1230; tv:148 | 2 |
-| `POST` / `DELETE /equipes/permissoes` | admin:1487, tv:187 / admin:1488 (alvo em :1485-1486), tv:191 | 4 |
-| `GET /equipes/grupos` | admin:883 | 1 |
-| `POST` / `PATCH` / `DELETE /equipes/grupos` | admin:1100 / admin:1143 / admin:1171 (via `gravar`, :1034) | 3 |
-| `GET /equipes/grupos-membros` | admin:1233; gav:697; av:409 | 3 |
-| `POST` / `DELETE /equipes/grupos-membros` | admin:1648 / admin:1679 | 2 |
-| `GET` / `POST /avisos/preferencias` | admin:1908 / admin:2819 | 2 |
+| `GET /acesso/usuarios` | admin:752, 1243, 2428, 3690, 3885, 3958; frota:792, 1083; tv:147; `src/ferramentas/conteudo/dados-conteudo.js:248`; redes:3738 | 11 |
+| `PATCH /acesso/usuarios/{id}` | admin:452, 757, 776, 2355, 2551, 2803, 3452, 3533, 3971; frota:806, 823; redes:3754 | 12 |
+| `GET /acesso/perfis` | admin:2410, 3723 | 2 |
+| `POST /acesso/perfis` | admin:2286 | 1 |
+| `PATCH /acesso/perfis/{id}` | admin:2501 | 1 |
+| `POST /pedir-acesso` | `src/ferramentas/login/tela-de-login.vue:267` | 1 |
+| `GET /acesso/pedidos` / `PATCH /acesso/pedidos/{id}` | admin:4300 / admin:4338 | 2 |
+| `GET /equipes/times` | admin:891, 1236; gav:690; av:403; tv:145 | 5 |
+| `POST` / `PATCH /equipes/times` | admin:1738 / admin:1737 | 2 |
+| `GET /equipes/membros` | admin:1237; gav:692; av:405; tv:146; `src/ferramentas/gestao-comercial/tela-de-gestao-comercial.vue:64` | 5 |
+| `POST /equipes/membros` | admin:762, 1548; tv:178 | 3 |
+| `PATCH` / `DELETE /equipes/membros/{id}` | admin:1461, tv:164 / admin:1515, tv:170 | 4 |
+| `GET /equipes/permissoes` | admin:1239; tv:148 | 2 |
+| `POST` / `DELETE /equipes/permissoes` | admin:1496, tv:187 / admin:1497 (alvo em :1494-1495), tv:191 | 4 |
+| `GET /equipes/grupos` | admin:892 | 1 |
+| `POST` / `PATCH` / `DELETE /equipes/grupos` | admin:1109 / admin:1152 / admin:1180 (via `gravar`, :1043) | 3 |
+| `GET /equipes/grupos-membros` | admin:1242; gav:697; av:409 | 3 |
+| `POST` / `DELETE /equipes/grupos-membros` | admin:1657 / admin:1688 | 2 |
+| `GET` / `POST /avisos/preferencias` | admin:1917 / admin:2828 | 2 |
 | `POST /eu/push/inscrever` / `desinscrever` | `src/compartilhado/notificacoes-push.js:129` / `:166` | 2 |
-| `GET /saude/conferencias` | admin:494, 498, 1772, 1775 | 4 |
-| `GET /saude/ia-execucoes` | `src/ferramentas/claude-status/tela-de-status-claude.vue:703` | 1 |
+| `GET /saude/conferencias` | admin:497, 501, 1781, 1784 | 4 |
+| `GET /saude/ia-execucoes` (NÃO montada: Ruling 5.1-16; é a `/status-ia/execucoes` do 5.12) | `src/ferramentas/claude-status/tela-de-status-claude.vue:708` | 1 |
 
-Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user` (admin:724, 3110, 3527, 3869), `entrar-como-usuario` (admin:3412), `controle-de-login-e-usuario.js:92`; 5.2 — admin:3720; 5.4 — admin:3166, 3190, 3212, 3672, 3721, 3722; 5.5 — admin:559, 560, 881, 1072, 1194, 1229, 4107–4111, 4229–4241; 5.6 — admin:1776–1778, 1915, 3968, 4004, 4019–4033; Plano 6 — admin:446, 448 (Storage `avatars`); Ruling 30 do mestre — admin:1761.
+Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user` (admin:732, 3123, 3551, 3897), `entrar-como-usuario` (admin:3433), `controle-de-login-e-usuario.js:94`; 5.2 — admin:3745; 5.4 — admin:3180, 3204, 3226, 3697, 3746, 3747; 5.5 — admin:562, 563, 890, 1081, 1203, 1238, 4136–4140, 4258–4270; 5.6 — admin:1785–1787, 1924, 3997, 4033, 4048–4062; Plano 6 — admin:449, 451 (Storage `avatars`); Ruling 30 do mestre — admin:1770.
 
 ## Paralelização
 
@@ -2266,13 +2266,16 @@ Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user`
 5. Ruling: tabelas sem leitor no front não ganham rota (`user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status`, `gestor_log`) — zero sítios em `src/` em 2026-10-12 (o `audit_log` "só é escrito" desde 13/08, `supabase/migrations/20260813_rastro_de_mudanca_de_acesso.sql:27-28`); quem as escreve é gatilho, edge portada, worker ou robô (Planos 3, 4 e 7); `robos_*` chegam à tela pela visão `robos_saude` (5.12); `autz` nega o que não tem rota — custo se errada: uma tela nova que queira a trilha ganha uma `Consulta` de ~10 linhas.
 6. Ruling: um recurso por tabela com a UNIÃO das colunas e dos filtros que as telas usam (ex.: `GET /acesso/usuarios` atende 11 leituras de 6 telas), não uma rota por tela — a regra é a mesma para todas (catálogo) e cada rota a mais é superfície a mais — custo se errada: a tela recebe colunas que não usa (as mesmas que o PostgREST já entregava a ela).
 7. Ruling: o filtro `email` de usuários é igualdade sem caixa (`lower(email) = lower(@email)`) — os dois jeitos de hoje (`eq.` e `ilike` com curinga escapado) procuram "este e-mail", e e-mail não tem caixa — custo se errada: duas contas que diferem só na caixa casam juntas (a tela de convite já trata mais de uma com `contar=1`).
-8. Ruling: `POST /pedir-acesso` é público (Ruling 36 do mestre) com 10 por IP por hora, só `name`/`email`/`message` com limites de tamanho e e-mail válido, `status = 'pending'` fixo — o insert anônimo de hoje aceitava qualquer coluna (inclusive `status`), e rota pública sem limite vira lixo na tela do admin (spec §5: limite e validação em toda rota pública) — custo se errada: um escritório atrás de um IP só pede 10 por hora; spam vindo de muitos IPs não é contido (`ponytail`: teto global quando aparecer).
+8. Ruling: `POST /pedir-acesso` é público (Ruling 36 do mestre) com 10 por IP por hora, só `name`/`email`/`message` com limites de tamanho e e-mail válido, `status = 'pending'` fixo — o insert anônimo de hoje aceitava qualquer coluna (inclusive `status`), e rota pública sem limite vira lixo na tela do admin (spec §5: limite e validação em toda rota pública) — custo se errada: um escritório atrás de um IP só pede 10 por hora; spam vindo de muitos IPs não é contido (`ponytail`: teto global quando aparecer). **Superado em parte pelo Ruling 5.1-17: o teto global foi feito (100/h por instância); o 415 de JSON obrigatório passou a ser um middleware antes dos limitadores.**
 9. Ruling: autoria vem da sessão — `criado_por` (perfis de acesso), `concedido_por` (supervisoras, antes nulo) e `alterado_por` (preferências) são preenchidos pelo servidor e recusados no corpo; `criado_por`/`concedido_por` com `default auth.uid()` chegam pela identidade da transação — pela API, autoria vinda do corpo seria falsificável por qualquer um — custo se errada: o Plano 7 tira esses campos dos corpos (mandar = 400).
 10. Ruling: o lote de preferências de aviso confere cada linha com `PodeCriar` (WITH CHECK) antes de gravar qualquer uma; uma negada = 403 e nada gravado — a policy lê só `user_id`, que está na chave do conflito: a linha antiga tem o mesmo `user_id` da nova, então USING (antiga) e CHECK (nova) são o mesmo predicado — custo se errada: se a policy passar a ler outra coluna, a equivalência quebra (o oráculo do 5.0 acusa a forma nova; reveja este Ruling).
 11. Ruling: inscrição de push no endpoint de OUTRA pessoa = 403 sem mexer na linha (paridade: hoje o `upsert` caía na RLS de update); desinscrever é idempotente (204 mesmo sem linha própria) com a regra do catálogo no `WHERE` — o front ignora o resultado do delete e a paridade que importa é "não apaga a dos outros" — custo se errada: aparelho compartilhado segue inscrito no nome de quem inscreveu primeiro, como hoje.
 12. Ruling: a matriz de cada rota roda no pacote `acesso` com a MESMA cadeia do grupo de domínio de produção (`auth.Exigir` → `autz.ComEscopo`), e a montagem real é provada em `web` (401 sem sessão, rota pública montada, um IDOR pela montagem) e pela varredura do impersonado sobre `Montar` — os sete arquivos de rota rodam em paralelo sem tocar `web/rotas.go`, e o teste interno do pacote não pode importar `web` (ciclo) — custo se errada: a cadeia do teste pode divergir da montagem; os testes da Task 11 são a rede.
 13. Ruling: `permissions` e `permissions_excecao` têm de ser objeto JSON nas escritas de usuário e de perfil de acesso (400 senão); o resto do tipo é o do banco — array ou escalar em `permissions` muda o que o `Escopo` lê (Review Focus 5 do mestre) e nenhuma tela grava outra forma — custo se errada: nenhum.
-14. Ruling: liberação de estoque (`equipes_permissoes`) é apagada por id, não pela chave natural `(equipe_id, profile_id, chave)` — mantém o contrato uniforme (`DELETE /…/{id}` → 204, com 404/403 do `PodeApagar`) e a leitura já devolve o `id` — custo se errada: `tela-de-admin.vue:1230` passa a ler o `id` e `:1488` a usá-lo (Plano 7).
+14. Ruling: liberação de estoque (`equipes_permissoes`) é apagada por id, não pela chave natural `(equipe_id, profile_id, chave)` — mantém o contrato uniforme (`DELETE /…/{id}` → 204, com 404/403 do `PodeApagar`) e a leitura já devolve o `id` — custo se errada: `tela-de-admin.vue:1239` passa a ler o `id` e `:1497` a usá-lo (Plano 7).
+15. Ruling (decidido na onda final, no ledger como "5.1-13"): nome de grupo em branco ou só espaços/caracteres invisíveis é `400` em `corpoGrupo` (POST e PATCH) — renomear o grupo para "" dispara os dois gatilhos de produção (`espelhar_rename_do_grupo`, `espelhar_grupo_do_canal`) e solta TODAS as lojas e a supervisora em silêncio (reproduzido; hoje só o front barra) — custo se errada: tela que dependa de gravar nome vazio recebe 400 (não existe: `nomeDeGrupoAceito` já barra no front).
+16. Ruling (Task 11, no ledger como "5.1-14"): `/saude/ia-execucoes` NÃO é montada no 5.1 — duplica `/status-ia/execucoes` do 5.12 (mesma tabela, mesma regra `true`, só colunas diferentes) e nenhuma tela do admin lê `ia_execucoes` (o consumidor é `tela-de-status-claude.vue`, servido pelo 5.12); a Task 10 acima planejava a rota e a Task 11 a removeu de `saude.go` — custo se errada: uma tela do admin que precise dela recebe 404 e se monta em 1 linha.
+17. Ruling (Task 11, no ledger como "5.1-15"; supera em parte o Ruling 8): `/pedir-acesso` ganha teto GLOBAL na API (100/h por instância, chave constante) além dos 10/h por IP e do JSON obrigatório — spam de muitos IPs (e formulário `text/plain` de outro site, cada visitante com o próprio IP) não é contido por limite por IP (nem pelo `limit_req` do nginx, também por IP) — o 415 de JSON roda ANTES dos limitadores (revisão final), para que o `text/plain` alheio não gaste cota — custo se errada: num ataque, pedidos legítimos também tomam 429 durante a hora.
 
 ## Cobertura da spec e o que o 5.2+ assume
 
@@ -2293,8 +2296,8 @@ Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user`
 Spec §5 (autorização por catálogo, escopo de equipe/grupo/conta, IDOR, testes ator × operação × recurso) e §11 (rota pública curta com limite e validação; segredo e dado pessoal fora de log). Gatilhos da linha 5.1: `guard_profiles`, `impedir_autopromocao`, `equipes_toca_atualizado`, `espelhar_rename_do_grupo` (Task 1); `guard_user_permissions` fica no banco sem rota que o alcance. Os botões "coletar/auditar agora" da aba Saúde não são portados (Ruling 30 do mestre).
 
 **O que o 5.2+ assume:**
-- `testebanco.ComEsquemaDeProducao(t)`: cada sub-plano acrescenta `esquema/01-tabelas-5-N.sql` (fonte citada por tabela, FKs de `auth.users` → `public.usuarios`) e roda `gerar-gatilhos.mjs` de novo (ele lê as tabelas de todos os `01-tabelas-*.sql`), conferindo nas migrations a orientação e o `WHEN` dos gatilhos novos.
+- `testebanco.ComEsquemaDeProducao(t)`: cada sub-plano acrescenta `esquema/01-tabelas-5-NN.sql` (dois dígitos) (fonte citada por tabela, FKs de `auth.users` → `public.usuarios`) e roda `gerar-gatilhos.mjs` de novo (ele lê as tabelas de todos os `01-tabelas-*.sql`), conferindo nas migrations a orientação e o `WHEN` dos gatilhos novos.
 - `dados.Tabela` + `RotaCriar/RotaEditar/RotaApagar` + `Campos` + `Responder` para toda escrita de tabela; handler próprio só quando o SQL foge do CRUD (upsert, lote), sempre com `PodeX` antes e em `ComUsuario`. Coluna com `default` que uma policy lê (ex.: `criado_por default auth.uid()` lido por `criado_por = auth.uid()`) vai no mapa via `Autor`: `autz.Conferir` não aplica default.
 - `soSessaoPropria` é decisão do 5.1 (escrita de acesso de gente); cada sub-plano decide a sua.
-- Rotas que os outros domínios reusam em vez de recriar: `GET /acesso/usuarios` (lista de pessoas para escolha: frota, conteúdo), `GET /equipes/times`, `/equipes/membros` e `/equipes/grupos-membros` (telas de vendas do 5.5), `GET /saude/ia-execucoes` (5.12). Os `PATCH bling_lojas` da seção de canais do admin são do 5.5.
+- Rotas que os outros domínios reusam em vez de recriar: `GET /acesso/usuarios` (lista de pessoas para escolha: frota, conteúdo), `GET /equipes/times`, `/equipes/membros` e `/equipes/grupos-membros` (telas de vendas do 5.5), `GET /status-ia/execucoes` (5.12; `/saude/ia-execucoes` NÃO existe no 5.1: Ruling 5.1-16). Os `PATCH bling_lojas` da seção de canais do admin são do 5.5.
 - O mundo de teste (`mundo_test.go`) é interno ao pacote `acesso`; o segundo pacote que precisar dele o extrai para `testebanco` (não antes).

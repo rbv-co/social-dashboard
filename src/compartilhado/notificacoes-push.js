@@ -1,4 +1,6 @@
 import { sbClient, emModoEntrarComo } from './conectar-no-banco-de-dados.js';
+// Chave `admin` (Plano 7): inscrição de push pela API (5.1: /eu/push/inscrever e desinscrever).
+import { deOnde } from './banco-pela-api.js';
 
 // VAPID pública (pode ficar no front; a privada vive só nos secrets do Supabase).
 // TROCAR pelo valor real gerado na Task 6 antes do deploy.
@@ -126,7 +128,7 @@ export async function inscrever(userId) {
 
   try {
     const j = sub.toJSON();
-    const { error } = await comLimite(sbClient.from('push_subs').upsert({
+    const { error } = await comLimite(deOnde(sbClient).from('push_subs').upsert({
       endpoint: j.endpoint,
       p256dh: j.keys.p256dh,
       auth: j.keys.auth,
@@ -163,6 +165,6 @@ export async function desinscrever() {
   const sub = await reg.pushManager.getSubscription();
   if (!sub) return;
   const j = sub.toJSON();
-  await sbClient.from('push_subs').delete().eq('endpoint', j.endpoint);
+  await deOnde(sbClient).from('push_subs').delete().eq('endpoint', j.endpoint);
   await sub.unsubscribe();
 }

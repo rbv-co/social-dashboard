@@ -130,7 +130,7 @@ http {
 - SEGREDO DO CHATWOOT NO LOG DO NGINX (`?token=`), em DOIS lugares:
   1. Log de acesso: `log_format` só pode ser declarado em `http {}` (em `location` o `nginx -t` falha); defina lá, por exemplo, `log_format semquery '$remote_addr [$time_local] "$request_method $uri" $status';` e, nas duas `location` (`/api/receber-webhook-chatwoot` e `/api/receber-opt-out-chatwoot`), `access_log /var/log/nginx/chatwoot.log semquery;` (ou `access_log off;`). Esse formato NÃO pode conter `$args`, `$query_string`, `$arg_token`, `$request_uri` nem `$request` (este traz a query).
   2. Log de erro: o nginx acrescenta `request: "POST /…?token=…"` e `upstream: "http://…?token=…"` a TODA linha de `error_log` de nível error (API fora do ar, timeout do upstream, 413 etc.), e nenhum `log_format` controla isso. Prescrição: dentro dessas duas `location`, `error_log /var/log/nginx/chatwoot-erro.log crit;` (só falhas gravíssimas) ou tratar o `error.log` como dado sensível (acesso restrito, rotação curta). Sem uma das duas, o segredo vai parar em `error.log` (verificado: com o upstream fora do ar a linha `[error] … request: "POST /api/receber-webhook-chatwoot?token=…", upstream: "http://…?token=…"` aparece; com `error_log … crit;` na `location` ela não aparece).
-- Prazos: o servidor Go usa `ReadHeaderTimeout 10s`, `ReadTimeout 30s`, `WriteTimeout 150s`, `IdleTimeout 120s`. Prazos por requisição: `meta-proxy` 25 s (45 s imagem, 75 s vídeo), `insights-ao-vivo` e `serie-novos-dia` 90 s, `contar-collabs` 120 s (N perfis x até 5 páginas em série); cada chamada à Meta dessas três rotas ainda tem teto de 60 s, que nunca estende o prazo da rota. `bling-proxy` 90 s (usuário limitado a lojas faz uma chamada ao core por loja, até 25 s cada). `proxy_read_timeout` do nginx deve ficar ACIMA do prazo: `130s` em `/api/contar-collabs`, `100s` em `/api/bling-proxy`, `/api/insights-ao-vivo`, `/api/serie-novos-dia` e `/api/meta-proxy` (80 s no mínimo para o vídeo); o padrão do nginx (60 s) derrubaria essas rotas antes do prazo da API. `proxy_send_timeout` padrão.
+- Prazos: o servidor Go usa `ReadHeaderTimeout 10s`, `ReadTimeout 30s`, `WriteTimeout 150s`, `IdleTimeout 120s`. Prazos por requisição: `meta-proxy` 25 s (45 s imagem, 75 s vídeo), `insights-ao-vivo` e `serie-novos-dia` 90 s, `contar-collabs` 120 s (N perfis x até 5 páginas em série); cada chamada à Meta dessas três rotas ainda tem teto de 60 s, que nunca estende o prazo da rota. `bling-proxy` 90 s (usuário limitado a lojas faz uma chamada ao core por loja, até 25 s cada). `custo-anthropic` e `custo-openai` 90 s (Plano 5.12). `proxy_read_timeout` do nginx deve ficar ACIMA do prazo: `130s` em `/api/contar-collabs`, `100s` em `/api/bling-proxy`, `/api/insights-ao-vivo`, `/api/serie-novos-dia`, `/api/meta-proxy` (80 s no mínimo para o vídeo), `/api/custo-anthropic` e `/api/custo-openai`; o padrão do nginx (60 s) derrubaria essas rotas antes do prazo da API. `proxy_send_timeout` padrão.
 
 ### Chatwoot
 - O Chatwoot registra a URL com `?token=` no PRÓPRIO log em qualquer resposta não-2xx (inclusive o 500 por falha de banco): o segredo está nos logs dele. Tratar esses logs como sensíveis.
@@ -402,7 +402,181 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 - **`invite-user` (Ruling 21):** qualquer admin exclui qualquer conta (inclusive a de um super-admin) e cria outro admin. Mantido por "mesmas permissões de hoje" (`TestInviteUserAdminExcluiSuperAdminComoNaEdge` documenta). Restringir é decisão do dono.
 - **Auditoria do "entrar como" fraca:** `entradas_como_outro_usuario` não guarda IP, user-agent, hash da sessão nem `expira_em` (o IP só vai ao log da API); gravar exige migração (decisão de schema). E as FKs dela para `profiles` não têm `ON DELETE`: quem já entrou como outra pessoa, ou já foi alvo, NÃO pode ser excluído (edge: "Database error deleting user" e conta sem perfil; Go: `400 "ainda há registros ligados"` atômico, nada é apagado: testado). Decidir: manter o histórico (SET NULL ou sem FK) ou bloquear de propósito.
 - **RLS da auditoria:** só a policy de SELECT do super-admin. A API grava como dono/BYPASSRLS (conferido por `conferir`); se um dia a API passar a conectar com um papel sem esses poderes, todo "entrar como" falha fechado.
-- **`robos_saude` perdeu `security_invoker`** (achado do plano 5.12): a migração de 2026-09-22 recriou a view com `create or replace` SEM reaplicar `security_invoker` (verificado num Postgres 17: a opção some); em produção provavelmente QUALQUER sessão (e a chave anon) lê a saúde dos robôs. Conferir com a consulta acima.
 - **FKs de produção para `auth.users`/`profiles` que barram a exclusão de uma conta** (21 FKs em 16 tabelas para `auth.users`): CASCADE: `profiles.id`, `push_subs.user_id`. SET NULL: `frota_requisicoes.{criada_por,decidida_por,encerrada_por}`, `frota_requisicoes_historico.quem`, `frota_revisoes.criada_por`, `frota_checklist.{criada_por,assinada_por}`, `frota_manutencoes.criada_por`, `frota_uso.aceite_por`. NO ACTION (barram a exclusão): `fabrica_campanhas.criado_por`, `fabrica_jobs.criado_por`, `conteudo_pecas.{criado_por,aprovado_por}`, `conteudo_jobs.criado_por`, `bling_pedido_ajuste_valor.criado_por`, `bling_pedido_ajuste_vendedor.criado_por`, `gt_campanhas_rascunho.criado_por`, `acessos_perfis.criado_por`, `frota_requisicoes.arquivada_por`. Para `profiles`: CASCADE `user_permissions.user_id`, `push_preferencias.user_id`, `equipes_membros.profile_id`, `equipes_permissoes.profile_id`, `canais_grupos_membros.profile_id`; SET NULL `conteudo_pecas.responsavel`; NO ACTION `entradas_como_outro_usuario.{admin_id,alvo_id}`, `user_permissions.granted_by`, `equipes_membros.criado_por`, `equipes_permissoes.concedido_por`, `canais_grupos_membros.concedido_por`; desconhecidas (precisam do dump): `audit_log.actor_id`, `acessos_pessoas.profile_id`. Consequência: quem criou conteúdo, fábrica, ajuste de venda etc. não pode ser excluído (a tela mostra "ainda há registros ligados"); desativar é o caminho.
 - **Conta e senha (paridade com o Supabase, mantida):** `trocar-senha` não exige a senha atual (era o `updateUser`); `definir-senha` não limpa `precisa_trocar_senha`; os limites de taxa são em memória, de uma instância só; um super-admin que troca a PRÓPRIA senha perde a sessão em uso (a edge não derrubava); sessão de tipo `servico` de conta admin passaria no portão do `invite-user` (nada cria sessão de serviço hoje); `conferir-senha` não tem limite por IP (igual à edge).
 - **Antes do corte:** o catálogo de policies e as funções do oráculo (`api/internal/autz/autzteste/ajudantes.sql`) são de 2026-10-09. Se alguém criar/alterar policy ou uma das 25 funções em produção antes do corte, refazer o levantamento, copiar o JSON novo para `api/internal/autz/`, regerar `ajudantes.sql` e rodar o teste de contrato: forma nova de policy faz a API NÃO subir. O Auth do Supabase deixa de mandar e-mail de convite/troca: conferir no ZeptoMail o domínio remetente e a cota.
+
+## Plano 5.1 — admin, equipes e acesso
+
+### Rotas novas
+- Pública: `POST /api/pedir-acesso` (só `name`, `email`, `message`; `status` sempre `pending`). Três defesas, todas na API (Ruling 5.1-17): (1) exige `Content-Type: application/json`, senão 415 `tipo_de_conteudo` (o front, Plano 7, tem de mandar o cabeçalho; a checagem é um middleware ANTES dos dois limitadores, então um pedido `text/plain`, como o de um `<form>` de outro site, não grava nada e não gasta nem a cota por IP nem o teto global; `TestPedirAcessoTipoErradoNaoGastaCota`); (2) 10 por IP por hora; (3) teto GLOBAL de 100 por hora por instância, chave constante, somando todos os IPs. Nos limites 2 e 3 contam os pedidos aceitos e os recusados por validação; o estouro dos dois é o mesmo 429 `muitas_requisicoes` com `Retry-After: 3600`. O por IP vem antes: quem estoura o seu IP não gasta o teto dos outros. Os dois limites são em memória, de uma instância só.
+- Com sessão (regra = catálogo de produção; escrita de sessão "entrar como" = 403): `/acesso/usuarios`, `/acesso/perfis`, `/acesso/pedidos`, `/equipes/times`, `/equipes/membros`, `/equipes/permissoes`, `/equipes/grupos`, `/equipes/grupos-membros`, `/avisos/preferencias`, `/eu/push/inscrever`, `/eu/push/desinscrever`, `/saude/conferencias`.
+- `/saude/ia-execucoes` NÃO existe no 5.1 (Ruling 5.1-16): a tela de status do Claude lê `ia_execucoes` por `/status-ia/execucoes`, do 5.12.
+- Tabelas sem rota (Ruling 5.1-5): `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status`, `gestor_log` (nenhum sítio no front; quem escreve é gatilho, worker ou robô).
+
+### nginx
+- `location /api/` genérico cobre as rotas com sessão. `POST /api/pedir-acesso` é pública e anônima; a contenção do spam é da API (as três defesas acima, inclusive o teto global, que é o que segura muitos IPs: um /48 de IPv6 tem ~650 mil endereços). O `limit_req` do nginx, se ficar, é só EXTRA (a zona abaixo é por IP, não contém spam de muitos IPs nem o `text/plain` de outro site, cada visitante tem o seu IP). `client_max_body_size 16k` é o que importa: a API aceita até 32 KiB de corpo e a mensagem tem até 2000 caracteres (acento/emoji passa de 4 KiB em UTF-8, e o campo da tela de login não tem `maxlength`: com 4k, mensagem longa viraria 413 e "Erro ao enviar"). Location própria no molde da de `esqueci-senha` (`proxy_pass http://127.0.0.1:8080/pedir-acesso;` e o `X-Real-IP`):
+  ```nginx
+  limit_req_zone $binary_remote_addr zone=pedido:10m rate=6r/m;   # em http {}; opcional (extra)
+  location = /api/pedir-acesso { limit_req zone=pedido burst=3 nodelay; client_max_body_size 16k; proxy_pass http://127.0.0.1:8080/pedir-acesso; }
+  ```
+- Runbook: um escritório atrás de 1 IP tem 10 tentativas por hora, e as recusadas por validação contam. Num ataque, o teto global de 100 por hora faz pedidos legítimos também receberem 429 até a janela passar (custo aceito do Ruling 5.1-17; a hora é deslizante por instância e zera ao reiniciar a API).
+
+### Mudanças de contrato que o Plano 7 absorve
+- Escrita negada responde 403/404 (o PostgREST respondia 2xx com zero linhas); a linha devolvida é a da leitura, ou `{"id"}` quando quem gravou não a lê.
+- `criado_por`, `alterado_por` e `concedido_por` saem do corpo (a sessão preenche; mandar = 400).
+- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1239` passa a ler o `id` e `:1497` a usá-lo.
+- Preferências de aviso vão em lote (`POST /avisos/preferencias`, array); push por `inscrever`/`desinscrever`.
+- `permissions`/`permissions_excecao` têm de ser objeto JSON (400 senão).
+- Sessão "entrar como" só lê no 5.1: as 19 escritas respondem 403 (`TestEscritasRecusamImpersonado`).
+- Forma da resposta das escritas: `POST`/`PATCH` devolvem OBJETO (não array) e `DELETE` devolve 204 sem corpo; todo `Array.isArray(linhas)` de escrita muda. Estes sítios de `tela-de-admin.vue` dariam falso erro DEPOIS de gravar se só a URL fosse trocada (ex.: criar grupo grava e a tela diz "você não tem permissão"; o segundo clique dá 409): `:1049-1052` (`gravar`, usado nos grupos `:1109`/`:1152`/`:1180`), `:1667-1669` (POST de supervisora), `:1691-1693` (DELETE de supervisora com `return=representation`), `:2365-2366`, `:2557-2558` e `:2809-2810` (PATCH de `profiles`).
+- `tela-de-admin.vue`: `:2293` manda `criado_por` (agora 400); `:2310` e `:2509` esperam array e recebem objeto; `:2507-2511` não-super recebe 403 (antes 200 `[]`): mapear o 403 para o aviso "seu login não está na lista de super-admins"; `:2823-2826` manda `alterado_em`/`alterado_por` (agora 400) e `:2828` não confere o status do `adFetch` (um 400 viraria toast "Permissões atualizadas").
+- `src/compartilhado/notificacoes-push.js`: `:133` manda `user_id` no corpo do `upsert` de `push_subs`; `POST /api/eu/push/inscrever` aceita só `{endpoint, p256dh, auth}` e responde `400 corpo_invalido` a campo desconhecido (o dono é sempre quem está logado). Tirar o `user_id` ao trocar o sítio (`:129`); sem isso a inscrição de push falha com `nao-salvou`.
+
+### O que o dono precisa saber/decidir (paridade com produção mantida; nada disto foi corrigido)
+- **D1 (reproduzido):** admin comum marca `is_superadmin` numa segunda conta (200; pode ser conta dele criada por `invite-user`). Essa ficha é o portão do "entrar como", que aceita qualquer alvo: a conta entra como `breno@` (super por e-mail) e lê tudo como ele. Correção: exigir super por e-mail quando `is_superadmin` muda e/ou "entrar como" recusar alvo super por e-mail.
+- **D2 (reproduzido):** admin comum desativa `breno@` e `gabriel.gertrudes@` (`guard_profiles` só protege `erick@`); `disabled` não vai ao `audit_log`.
+- **D3 (presumido em produção; a API fecha com 400):** `impedir_autopromocao` não lista `email`; gravar um e-mail da lista de `is_superadmin()` torna a conta super. Conferir em produção quem já trocou e-mail.
+- **D4 (reproduzido):** a trava de loja e as contas do admin não limitam o que ele concede (`adminRestrito` dá contas que não vê e tira a trava de outra pessoa).
+- **T1:** gestor de um time liga o time a qualquer canal livre do Bling e o time passa a ver o faturamento dele (`tela-de-admin.vue:1363,1401`; policy `equipes_editar`). Decidir: fica com o gestor ou só super-admin.
+- **T2:** gestor de qualquer time cria time novo ligado a canal livre e fica sem dono (só super-admin administra).
+- **T3:** supervisora/gestor libera estoque para quem não é do time (201); sem efeito hoje, passa a valer se a pessoa entrar no time depois.
+- **G2:** apagar grupo com lojas solta as lojas e apaga as supervisoras dele (só o front barra). Decidir 409 ou paridade.
+- **G3 e Ruling 5.1-9:** `concedido_por` (supervisoras de grupo, antes nulo; liberações de estoque) agora é preenchido pela sessão, e a FK é NO ACTION: o super que concedeu não pode ter o perfil excluído enquanto a concessão existir (23503, "ainda há registros ligados"); desativar é o caminho. Mesmo efeito de `equipes_permissoes.concedido_por` e `acessos_perfis.criado_por`.
+- **P1:** duas definições de super-admin: a tela mostra "Salvar como perfil" pela ficha (`:2267`), mas só grava quem está na lista de e-mails.
+- **P2:** apagar perfil de acesso: produção permite ao super; a API não tem rota (nenhuma tela usa; `on delete set null` preserva o acesso).
+- **P3:** nome de perfil vazio, só espaços ou de até 1 MiB é aceito como em produção (3 pessoas escrevem). Sugestão: `check (btrim(nome) <> '' and length(nome) <= 120)`.
+- **A3:** o esquema de `access_requests` é PRESUMIDO (`01-tabelas-5-01.sql`), fora do levantamento: conferir colunas e CHECK antes do corte (`conferir` cobra as colunas).
+- **A4:** nada registra quem aprovou ou negou um pedido (igual produção). **A5:** a lista do admin mostra no máximo 1000 pedidos, sem paginação.
+- **W1:** endpoint de push aceita porta livre e não há teto de inscrições por pessoa; o worker envia em série com até 30 s por envio, então N endpoints num host lento atrasam os avisos de todos. Sugestão: só hosts dos serviços de push (FCM, Mozilla, WNS, Apple) na 443 e/ou ~10 inscrições por pessoa.
+- **W2:** inscrições com `user_id` nulo (opt-in de 24/07) não recebem nada e ninguém as reivindica: conferir quantas existem em produção.
+- **Admin sem ser super:** a tela de Admin só abre para super-admin, mas editar perfis e ler pedidos de acesso exigem `role = 'admin'`: super-admin com papel viewer vê a tela e não grava.
+- **Sem perfil:** `/auth/entrar` dá sessão a qualquer usuário com senha, tenha perfil ou não, e quem não tem perfil lê a lista da equipe (igual a produção: `auth_read_profiles` = conta ativa). Se clientes da Vessel vierem a ter senha, leem a lista da equipe.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado confere colunas, tipos, únicos, as 4 funções de gatilho que o 5.1 presume (`guard_profiles`, `impedir_autopromocao`, `espelhar_rename_do_grupo`, `equipes_toca_atualizado`) e os 5 gatilhos por nome e tabela em `pg_trigger`, ligados (`tgenabled <> 'D'`): `equipes_atualizado` (`equipes`), `trg_espelhar_grupo_do_canal` (`bling_lojas`), `trg_espelhar_rename_do_grupo` (`canais_grupos`), `trg_guard_profiles` e `trg_impedir_autopromocao` (`profiles`). `ia_execucoes` é cobrada pelo 5.12.
+- A fatia `api/internal/testebanco/esquema/` é RECONSTRUÍDA (D0 sem dump): quando o ensaio rodar, troque `01-tabelas-*.sql` pelo `pg_dump --schema-only` limpo e rode os testes; divergência de default ou constraint só aparece aí.
+- `access_requests` é presumido (A3): se o `conferir` acusar coluna, ajuste a tabela da fatia e a rota antes de ligar a tela de login.
+
+## Plano 5.12 — painéis pequenos (notícias, status da IA, fatura das contas de IA)
+
+### Variáveis de ambiente (serviço `api`)
+| Variável | Observação |
+|---|---|
+| `ANTHROPIC_ADMIN_KEY` | chave ADMIN da organização Anthropic (Cost/Usage Report). Segredo (`Segredos()`). Vazia = `POST /custo-anthropic` responde 500 `chave_admin_nao_configurada` |
+| `OPENAI_ADMIN_KEY` | chave ADMIN da organização OpenAI (Costs API, projetos, chaves). Idem para `POST /custo-openai` |
+
+Hoje as duas estão em `segredos_de_cron` (`anthropic_admin_key`, `openai_admin_key`). Spec §6: o conteúdo é ROTACIONADO, não copiado — gerar chaves admin novas nos consoles, pôr nas variáveis e, depois da virada, revogar as antigas.
+
+### Rotas novas (com sessão)
+- `GET /api/noticias/rodadas`, `GET /api/noticias/concorrentes?rodada=…`, `GET /api/noticias/panorama`, `GET /api/status-ia/execucoes`, `GET /api/status-ia/saude-dos-robos` (grupo de domínio; regra do catálogo).
+- `POST /api/custo-anthropic`, `POST /api/custo-openai` (papel admin; prazo de 90 s). **NGINX: criar `location = /api/custo-anthropic` e `location = /api/custo-openai` com `proxy_read_timeout 100s;` (e `client_max_body_size 1k;`)**: o `proxy_read_timeout` do nginx tem de ficar acima dos 90 s da API (100 s, como nas demais rotas lentas da seção acima), e o do `/api/` genérico é 60 s; sem isso essas rotas caem no `/api/` genérico (60 s) e uma fatura lenta vira 504 do nginx. A VPS precisa de saída HTTPS para `api.anthropic.com` e `api.openai.com`. Bloco pronto (cada `location` própria nomeia o caminho de destino: o `proxy_pass …:8080/;` do catch-all mandaria `POST /` e a fatura inteira daria 404; mesmo molde de `bling-proxy`, e o cabeçalho próprio exige repetir o `X-Real-IP` e o `Host`):
+
+```nginx
+location = /api/custo-anthropic {
+  client_max_body_size 1k;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_read_timeout 100s;
+  proxy_pass http://127.0.0.1:8080/custo-anthropic;
+}
+location = /api/custo-openai {
+  client_max_body_size 1k;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_read_timeout 100s;
+  proxy_pass http://127.0.0.1:8080/custo-openai;
+}
+```
+
+### Antes do corte
+- `api worker conferir` cobra também `noticias_concorrentes` (`id,rodada,destaque,created_at`; `rodada` como `date`), `noticias_panorama` (`rodada,conteudo_md,modelo,created_at`; `rodada` como `date`), `ia_execucoes` (`id,run_at`) e a visão `robos_saude` (`robo,critico`).
+
+### O que o dono precisa saber/decidir (produção; o plano não mexe)
+- **`robos_saude` provavelmente está SEM `security_invoker`** desde `db/migrations/2026-09-22-vigia-dos-robos-cada-um-no-seu-teto.sql`: `create or replace view` zera a opção (conferido em Postgres 17) e a migração não a reaplicou. Sem ela a visão roda como o dono e ignora a RLS de `robos_esperados`/`robos_execucoes`: qualquer sessão — e a chave anon — lê a saúde dos robôs. Conferir no banco restaurado do ensaio com a consulta de `reloptions` do bloco SQL acima (vazio = sem a opção). A API já aplica a regra das duas tabelas; corrigir produção (`alter view public.robos_saude set (security_invoker = true)`) é decisão de quem cuida dela.
+- **Efeito para quem tem `claude.status` só em `permissions`:** abre a tela (a guarda de rota do front lê `profile.permissions`: `hasPermission` em `src/compartilhado/controle-de-login-e-usuario.js:170`, chamada em `src/mapa-de-enderecos.js:93`), mas `GET /api/status-ia/saude-dos-robos` devolve `[]` (a regra é a das duas tabelas de baixo: conta ativa e papel admin, super-admin pela ficha ou `claude.status` em `features`). Se produção perdeu o `security_invoker`, essa pessoa vê a saúde por acidente hoje; com a API passa a não ver. Mudança intencional (Ruling 1 do plano 5.12); o dono confirma, ou ajusta `features` das pessoas que devem ver.
+- **Cache da Anthropic na fatura (decisão do dono; muda o número na tela):** a API real manda `cache_creation: {ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}`, não `cache_creation_input_tokens`; por isso a escrita de cache fica FORA do rateio por chave (a edge e o Go fazem igual). E a leitura de cache pesa 1 token no rateio embora custe ~0,1× a entrada. O total da fatura (Cost Report) não muda; muda a divisão entre chaves. Corrigir mudaria o rateio mostrado na tela em relação a hoje, então a API reproduz a edge e a correção fica para decisão do dono.
+
+### Mudanças de contrato que o Plano 7 absorve
+- 6 sítios (plano 5.12, seção I.1): 3 leituras de notícias, 2 do status da IA e a chamada das duas edges de custo. A saúde vem `[]` para quem não tem admin, super-admin pela ficha ou `claude.status` em `features`. Não-2xx de `custo-*` agora traz corpo: `403 {"error":"sem_permissao"}`, `500 {"error":"falha","detalhe":…}`. Corpo com `dias` que não é número (`{"dias":"30"}`) dá `400 {"error":"pedido_invalido"}` (a edge coagia o texto em número; Ruling 14 do 5.12 recusa). A rota é só `POST`: `GET` (a edge aceitava `?dias=`) e os demais verbos dão `405` com `Allow: POST`. Todo 500 da rota agora deixa um `slog.Warn` (`custo: devolvendo 500`, com o detalhe sem a chave), como a edge custo-openai registrava.
+- Os logos de concorrentes (`tela-de-noticias.vue:99`, Storage `ig-cache`) são do Plano 6.
+
+## Plano 5.6 — Meta e redes (métricas)
+
+### Rotas novas (com sessão; regra = catálogo de produção; escrita de sessão "entrar como" = 403)
+- Leituras: `/redes/contas`, `/redes/seguidores`, `/redes/leituras-de-seguidores`, `/redes/engajamento`, `/redes/conteudo`, `/redes/campanhas`, `/redes/conjuntos`, `/redes/anuncios`, `/redes/insights-de-campanha`, `/redes/insights-da-conta`, `/redes/campanhas-por-hora`, `/redes/anuncios-por-hora`, `/redes/visitas-por-hora`, `/redes/metas`, `/redes/filtros-de-campanha`.
+- Escritas: `PATCH /redes/contas/{id}` (papel admin), `PUT /redes/metas`, `PUT /redes/filtros-de-campanha/{account_id}`.
+- `meta-proxy`, `insights-ao-vivo`, `serie-novos-dia`, `contar-collabs` (Plano 3) passam por `autz.ComEscopo` e recusam conta fora de `allowed_accounts` (Ruling 34).
+
+### Mudanças de contrato que o Plano 7 absorve
+- `limite` vai até 1000: `limit=5000` (tela-de-redes-sociais.vue:2121, 2122, 2280, 2456-2459) vira `limite=1000&contar=1`, e a tela avisa quando `X-Total-Count` passa do que veio (substitui `length >= _tetoAds`, que nunca disparava). Contagens do Admin (`select=id` + `.length`, tela-de-admin.vue:4029-4031) viram `contar=1&limite=1` + `X-Total-Count`.
+- Filtros com nome: `account_id`, `period_days`, `period_days_ate`, `captured_at`, `captured_at_de`, `captured_at_ate`, `campaign_id` (lista por vírgula), `lido_em_de` (instante RFC 3339: o Gestor, tela-de-gestao-trafego.vue:746, manda `<data>T00:00:00Z` em vez da data pura), `dia_de`; ordens `captured_at`, `lido_em`, `period_days`, `name`.
+- Metas: `PUT /redes/metas {"metas":[…]}` (o lote é atômico; recusa = 403 e a tela mostra, em vez do `console.warn`). Filtros: `PUT /redes/filtros-de-campanha/{account_id} {"selected_ids": …}` (sem `updated_at`).
+- Conta: `PATCH /redes/contas/{id}` (Admin 4004, Gestor 1331, Conteúdo 499); quem não tem papel admin recebe 403 (o Portal de Notícias da Central de Conteúdo hoje "salvava" sem gravar).
+- `ads_snapshots`: sem rota; o cartão "Ads" da aba Dados do Admin (tela-de-admin.vue:4032) sai.
+- `meta-proxy`: conta fora da lista = `400 conta nao encontrada`; caminho fora da conta (para quem tem lista) = `403 caminho fora da conta`; `POST`/`DELETE`/mídia de sessão "entrar como" = `403 sem_permissao`. Rotas ao vivo: conta fora da lista = 404.
+- `meta-proxy`, detalhes decididos na execução: qualquer chave de `params` que, normalizada para `method` (espaços à esquerda removidos, corte no primeiro caractere fora de `[A-Za-z0-9_]`, sem diferenciar maiúsculas), seja `method` conta como escrita (sessão impersonada = `403 sem_permissao`); quem não vê todas as contas não pode mandar os params `ids`/`batch` (`403 caminho fora da conta`); `?campaign_id=` vazio devolve `200 []` (não `400`).
+- `meta-proxy`, expansão aninhada: para quem tem lista, valores de `params` que nomeiem arestas que alcançam outras contas (`business`, `owner`, `owner_business`, `agencies`, `adaccounts`, `*_accounts`...) = `403 caminho fora da conta` (a Graph expandia `fields=business{owned_ad_accounts{...}}` com o token único do core). `access_token` em `params` = `400 parametro nao permitido` (todos).
+
+### Achados para o dono
+1. `accounts` e `visitas_perfil_dia` não têm a restritiva por conta em produção (o plano-mestre dizia que todas as 17 tinham): qualquer sessão lista todas as marcas e, pelo PostgREST de hoje, lê as visitas por dia de qualquer conta. A API mantém a lista de contas (paridade, colunas fechadas) e não abre rota para `visitas_perfil_dia`; correção = duas policies `so_contas_permitidas` em produção.
+2. O Ruling 34 literal não fechava nada: o token do core é único, então quem tem lista lia qualquer conta pondo outro `path` no `meta-proxy`. A API ancora o caminho na conta do pedido; custo: pessoa com lista perde `/me/*` e edição por id de objeto no Gestor e na Análise de campanhas (31/07: 0 de 15 perfis tinham lista; conferir antes do corte).
+3. "Entrar como" criava campanha e subia mídia na Meta pela edge (o JWT do alvo valia). A API recusa `POST`/`DELETE`/mídia de sessão impersonada.
+4. O push de saldo (Plano 4) avisa todo inscrito sobre o saldo de TODAS as contas de anúncio, tenha ou não lista (como o push de vendas, Ruling 24): decisão de produto.
+5. Corte silencioso de linhas (se o `max_rows` é 1000): o intervalo personalizado de Redes pede 5000 e só avisa ao chegar a 5000; a fila do Gestor soma 3 dias de todas as contas numa leitura; os contadores do Admin param em 1000. A API devolve `X-Total-Count` e o Plano 7 passa a avisar.
+6. Métricas sem módulo: qualquer sessão lê as métricas das contas que vê, com ou sem `social`/`meta` (as policies não olham módulo). Mantido; fechar = policy por módulo.
+7. Tabelas sem dono: ninguém grava `ads_snapshots` (o cartão "Ads" do Admin conta uma tabela morta); `account_insights` só é gravada pelo coletor Python do Mac (o Plano 4 não o portou): com o Mac parado, o alcance deduplicado de Redes some sem aviso.
+8. Edição de marca: o Portal de Notícias (Central de Conteúdo) "salva" sem gravar para quem não tem papel admin (update de 0 linhas sem erro); super-admin com papel viewer também não edita marca. A API responde 403 (a tela passa a dizer).
+9. `contar-collabs` lê `/media` dos outros perfis pelo token único do core e devolve só totais: decisão de produto se isso conta como ler outra conta.
+10. `access_token` em `params`: o Core passou a recusar `access_token[]` e `ACCESS_TOKEN` (vessel PR #293, core-go 2e9d7b852), mas `access_token[0]` (e outras grafias) ainda passaria pelo Core. A API Go recusa qualquer grafia de `access_token` em `params` (chave normalizada) antes de chamar o core: `400 {"error":"parametro nao permitido"}`, para todos.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas, tipos, únicos e `pode_ver_conta(text)` do 5.6 (em especial os presumidos: `social_metas`, `campaign_filters`, `account_insights`, `engagement_snapshots.created_at`).
+- Grant por coluna de `accounts`: `select has_column_privilege('authenticated','public.accounts','access_token','SELECT')` = `false` e o mesmo para `publicacao_automatica` (a lista fechada das rotas replica isso; coluna nova que a tela precise ler entra na lista com Ruling).
+- Nenhum gatilho nas 17 tabelas: `select count(*) from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname in ('accounts','account_insights','daily_snapshots','engagement_snapshots','content_snapshots','campaigns','campaign_insights','campaign_insights_hora','campaign_adsets','campaign_filters','ads','ads_snapshots','ad_insights_hora','perfil_visitas_hora','followers_leituras','social_metas','visitas_perfil_dia')` = 0.
+- Quem tem lista de contas: `select count(*) filter (where allowed_accounts is not null) as com_lista, count(*) filter (where allowed_accounts is not null and features && '{meta}') as com_lista_e_meta from profiles` — se `com_lista_e_meta` > 0, avisar que o Gestor/Análise de campanhas perdem `/me/*` e objetos soltos para essas pessoas (Ruling 5.6-5).
+- Conta de serviço que chamar o `meta-proxy` (robôs do `coletor/`, Plano 7) precisa de perfil ativo com `allowed_accounts` nulo (ou papel admin): sem perfil, toda conta é recusada.
+
+## Plano 5.7 — Gestão de tráfego
+
+### Variáveis de ambiente (serviço `api`)
+| Variável | Observação |
+|---|---|
+| `ANTHROPIC_API_KEY_TRAFEGO` | a chave da Anthropic dos proxies `sugerir-publico-ia` e `ler-documento`. Hoje ela mora na tabela `segredos_de_cron` (nome `anthropic_api_key_trafego`), lida pela edge com a chave de serviço: quem tem acesso **copia o valor para a variável ANTES do corte**. Vazia = `503 chave_nao_configurada` (nada é chamado). É segredo (`Segredos()`). Depois do corte, a linha da tabela pode sair (decisão do dono) |
+
+### Rotas novas
+- Com sessão, regra = catálogo de produção, escrita de sessão "entrar como" = 403: `GET /gestao-trafego/analises-de-orcamento`, `/analises-de-anuncio`, `/decisoes`, `/rascunhos`, `/config-metricas`, `/objetivos`, `/regua`, `/interesses-sugeridos`; `POST /gestao-trafego/decisoes`, `POST /gestao-trafego/rascunhos`, `PATCH`/`DELETE /gestao-trafego/rascunhos/{id}`, `PUT /gestao-trafego/config-metricas/{balde}`, `PUT`/`DELETE /gestao-trafego/objetivos/{alvo_id}`, `PUT /gestao-trafego/regua`; `POST /rpc/gt_registrar_problemas`.
+- Proxies (grupo de sessão, cada um com o prazo próprio; o de 30 s do grupo de domínio cortaria a IA): `POST /sugerir-publico-ia` e `POST /ler-documento` (módulo `meta.gestor`, prazo 120 s, 30 e 10 por hora por pessoa), `POST /buscar-lugar` (módulo `meta`, prazo 20 s, 60 por minuto por pessoa, uma ligação por segundo ao Nominatim).
+- Leituras sem a restritiva por conta em produção, por decisão (Ruling 5.7-3, achado 3): `/config-metricas`, `/objetivos` e `/regua` mostram as metas e os objetivos de TODAS as contas a toda sessão, como hoje. As outras cinco (análises, decisões, rascunhos, interesses) são varridas contra vazamento em `TestNadaVazaEntreContas`.
+
+### Hook `Conferir` das RPCs e a regra "mover problema de conta = 403"
+- `rpc.Funcao` ganhou o campo `Conferir` (função chamada na MESMA transação, depois do portão e de `ParamConta`, antes de a função SQL rodar; erro `autz.ErrNegado` vira 403). Quem registrar RPC nova com regra que o portão e a conta do parâmetro não cobrem usa este gancho, não um middleware.
+- `gt_registrar_problemas` o usa: o upsert da função é por `(ad_id, codigo)` e REESCREVE o `account_id` da linha existente. Item que já pertence a OUTRA conta (ou a nenhuma) moveria o problema de dono: a API responde **403** sem rodar a função. O robô da VPS grava por `pg` (ver abaixo), não por esta rota, e não é afetado.
+
+### `silenciar_ate` da fila (Ruling 5.7-17)
+- `POST /gestao-trafego/decisoes`: o servidor calcula `silenciar_ate` (agora + 7 dias ao recusar; nulo ao aprovar) e RECUSA o campo no corpo (400). A tela sempre mandava `agora + 7 dias`, então o prazo vindo do navegador só servia para calar uma campanha por anos. Mudar o prazo vira deploy da API (`diasDeSilencio` em `internal/trafego/fila.go`); a tela deixa de mandar o campo no Plano 7.
+
+### Decisão adiada: robô `vigia-problemas-meta`
+- O robô da VPS `vigia-problemas-meta` (`coletor/vigia-problemas-meta.mjs`) continua falando com o banco por `pg` com a claim de `service_role`, como hoje, e chama `gt_registrar_problemas` direto (sem a API, sem o `ParamConta` e sem a regra de mover conta). Migrá-lo para sessão de serviço com perfil `meta.gestor` (ou admin) e `allowed_accounts` nulo é decisão do Plano 7; até lá, a regra "problema não muda de conta" só vale para a tela.
+
+### nginx
+- `location = /api/ler-documento { client_max_body_size 5m; proxy_read_timeout 130s; proxy_pass http://127.0.0.1:8080/ler-documento; }` e `location = /api/sugerir-publico-ia { proxy_read_timeout 130s; proxy_pass http://127.0.0.1:8080/sugerir-publico-ia; }` (o padrão de 60 s cortaria a IA; o `64k` do `server {}` recusaria o PDF). `/api/buscar-lugar` fica no padrão (prazo 20 s). Formato de log sem corpo (o PDF e a persona viajam no corpo).
+
+### Mudanças de contrato que o Plano 7 absorve
+- Leituras por `GET /gestao-trafego/<recurso>` com filtros nomeados (`account_id`, `veredito`, `escopo`, `campaign_id`, `status`, `alvo_id`, `conta_id`, `nivel`, `marca_id`, `objetivo`) e `ordem=decidido_em|updated_at[.desc]`; a régua é `GET /gestao-trafego/regua` (lista de uma linha). Interesses: `?account_id=` (substitui o `fabrica_marcas!inner(account_id)`); a conta vem em `account_id`, não em `fabrica_marcas.account_id`.
+- Decisão: `POST /gestao-trafego/decisoes` SEM `decidido_por` (vem da sessão; mandar = 400) e SEM `silenciar_ate` (o servidor calcula); conta que não se vê = 403.
+- Rascunhos: `POST` sem `criado_por`; `PATCH`/`DELETE` de rascunho de outra pessoa = 403 (antes: 0 linhas calado).
+- Config de métricas: `PUT /gestao-trafego/config-metricas/{balde} {"metricas":[…]}` (sem `updated_at`). Objetivos: `PUT /gestao-trafego/objetivos/{alvo_id} {"nivel","interacao","conta_id"}`; `DELETE` é 204 também sem linha (a releitura de gt:802 sai).
+- Régua: UM `PUT /gestao-trafego/regua {"pesos","limiares","limiares_resultado","conta_id","metas"}` (só as metas DA conta; o servidor funde em `metas_por_conta` e grava o histórico junto) substitui o `update` de gt:1615 + o `insert` no log de gt:1624; `conta_id` que a pessoa não vê = 403.
+- RPC: `POST /rpc/gt_registrar_problemas` com o mesmo corpo; conta que não se vê = 403 e item que mudaria de conta = 403 (a tela já engole a falha: o `console.warn` de gt:941).
+- `sugerir-publico-ia` passa a exigir `contaId` (a conta aberta, `_gtCurAcc.id`); conta fora da lista = 404 `conta_nao_encontrada`; erros novos `sem_conta` (400) e `muitas_leituras` (429). `ler-documento`: `nao_e_pdf` (400) e `muitos_documentos` (429). `buscar-lugar`: `termo longo demais` (400) e 429 `muitas buscas seguidas; espere um minuto`. As três trocam `functions.invoke`/`fetch(SUPABASE_URL+…)` pelo `POST /api/<nome>` do cliente `api`.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas, tipos (`account_id` das `gt_*` e de `fabrica_marcas` como `text`), únicos e `gt_registrar_problemas(text,jsonb)` do 5.7 — em especial os presumidos: `gt_budget_analises.impactos` e `gt_ponderada_config.limiares_resultado` (ambos `jsonb`).
+- Gatilho: `select tgname from pg_trigger where tgrelid = 'public.gt_campanhas_rascunho'::regclass and not tgisinternal` = `gt_rascunho_updated_at` e nenhum outro nas 10 tabelas.
+- A chave: `ANTHROPIC_API_KEY_TRAFEGO` preenchida (um `POST /sugerir-publico-ia` de teste no ensaio, com uma conta da lista, volta 200).
+- Robôs do `coletor/` que usam estas tabelas com a chave de serviço (Plano 7): `budget-ia.mjs` (grava `gt_budget_analises`/`gt_ad_analises`, lê a régua e os objetivos), `vigia-problemas-meta.mjs` (chama `gt_registrar_problemas`; fica em `pg` com a claim de `service_role`, ver acima — se migrar para a API, a conta de serviço precisa de perfil com `meta.gestor` ou papel admin E `allowed_accounts` nulo, senão 403), `sugerir-interesses.mjs` (grava `interesses_sugeridos`), `conferir-a-madrugada.mjs` (lê `gt_problemas_meta`, que não tem rota).
+- `select account_id, count(*) from gt_budget_analises group by 1` (achado 4: linhas antigas com o id do token no lugar da conta).
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.7)

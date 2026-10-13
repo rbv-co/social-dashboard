@@ -17,3 +17,15 @@ export function detectarFluxoDeSenha(hash, query) {
   if (tipo === 'invite') return 'invite'
   return null
 }
+
+// API EM GO (Plano 7, chave `conta`). Os links da API trazem o segredo no
+// FRAGMENTO, nunca na query (não chega ao servidor, ao log do nginx nem ao
+// Referer):
+//   - link de senha:      #type=recovery|invite&token=<token de uso único>
+//   - aba "entrar como":  ?modo=entrar-como#sessao=<token de sessão>
+// Quem lê PRECISA limpar o hash na hora (history.replaceState) — ver
+// ponto-de-partida.js.
+export function lerSegredoDoLink(hash) {
+  const h = new URLSearchParams((hash || '').replace(/^#/, ''))
+  return { tokenDeSenha: h.get('token') || null, sessao: h.get('sessao') || null }
+}

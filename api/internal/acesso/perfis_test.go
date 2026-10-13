@@ -1,27 +1,15 @@
 package acesso
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/rbv-co/social-dashboard/api/internal/auth"
 )
 
 const impersonaMsg = "Quem entrou como outra pessoa"
 
 func TestPerfisDeAcesso(t *testing.T) {
 	m := novoMundo(t, montarPerfis)
-	// sessão de "entrar como" cujo ALVO é super-admin por e-mail: só a recusa do impersonado a barra
-	// (a do `impersonado` do mundo, alvo admin, já cairia na regra de super)
-	alvoSuper := idSuper
-	tok, err := auth.NovoStore(m.p).Criar(context.Background(), idSuper, "painel", &alvoSuper)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.tok["superImpersonado"] = tok
-
 	n := `select count(*)::text from acessos_perfis`
 	perm := func(id string) string {
 		return `select permissions::text from acessos_perfis where id = '` + id + `'`
@@ -44,6 +32,7 @@ func TestPerfisDeAcesso(t *testing.T) {
 		// igualdade EXATA (sem caixa, sem prefixo): a tela procura o nome único antes de regravar
 		{"nome é igualdade exata (caixa)", "vendT1", "GET", "/acesso/perfis?nome=vendedora", "", 200, "", "Vendedora", "", ""},
 		{"nome é igualdade exata (prefixo)", "vendT1", "GET", "/acesso/perfis?nome=Vend", "", 200, "", "Vendedora", "", ""},
+		{"nome é igualdade exata (% não é curinga de like)", "vendT1", "GET", "/acesso/perfis?nome=Vend%25", "", 200, "[]", "Vendedora", "", ""},
 		{"parâmetro desconhecido não vira filtro silencioso", "vendT1", "GET", "/acesso/perfis?permissions=x", "", 400, "", "", "", ""},
 
 		// criar: is_superadmin() = a LISTA DE E-MAILS, não a ficha
@@ -84,6 +73,13 @@ func TestPerfisDeAcesso(t *testing.T) {
 		{"id que não existe", "super", "PATCH", u(livre), `{"permissions":{}}`, 404, "nao_encontrado", "", n, "3"},
 		{"id malformado", "super", "PATCH", u("nao-e-uuid"), `{"permissions":{}}`, 404, "nao_encontrado", "", n, "3"},
 	})
+
+	// ordem padrão: pelo nome (a tela escolhe o perfil num select ordenado)
+	var perfis []struct{ Nome string }
+	_, lista := m.pedir(t, "vendT1", "GET", "/acesso/perfis", "")
+	if json.Unmarshal([]byte(lista), &perfis) != nil || len(perfis) != 3 || perfis[0].Nome != "Estoquista" || perfis[1].Nome != "PorEmail" || perfis[2].Nome != "Vendedora" {
+		t.Errorf("a ordem padrão não é pelo nome: %s", lista)
+	}
 
 	// Perfis de acesso são legíveis por TODA sessão (regra `true`): o 404 do id inexistente para quem não
 	// escreve (o 403 vem depois de achar a linha) não revela nada que o GET não mostre. Fixa o contrato.

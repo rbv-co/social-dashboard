@@ -501,6 +501,11 @@ import { useRouter } from 'vue-router'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { estado, hasPermission, contasPermitidas } from '../../compartilhado/controle-de-login-e-usuario.js'
+// Chave `conta` (Plano 7): o convite (invite-user, 5.0) pela API em Go.
+// Chave `edges-core` (Plano 7): insights-ao-vivo, contar-collabs e serie-novos-dia (Plano 3).
+import { areaNaApi, corpoDaEdge, invocarNaArea } from '../../compartilhado/api.js'
+// Chave `admin` (Plano 7): a lista de usuários (`profiles`) pela API (5.1).
+import { tabelaNaApi, fetchPostgrest } from '../../compartilhado/banco-pela-api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
@@ -1270,7 +1275,7 @@ async function buscarKpisAoVivo(accountId, period, customStart, customEnd, campa
   if (_kpiCache[chave] && (agora - _kpiCache[chave].t) < 180000) return _kpiCache[chave].v
   try {
     const jan = janelasDoPeriodo(period, new Date(), customStart, customEnd)
-    const { data, error } = await sbClient.functions.invoke('insights-ao-vivo', { body: { account_id: accountId, ...jan, campanhas: ids } })
+    const { data, error } = await invocarNaArea('edges-core', sbClient, 'insights-ao-vivo', { body: { account_id: accountId, ...jan, campanhas: ids } })
     if (error || !data || data.meta_erro || data.followers_count == null) return null
     _kpiCache[chave] = { t: agora, v: data }
     return data
@@ -1285,7 +1290,7 @@ async function buscarCollabs(accountId, period, customStart, customEnd) {
   try {
     const jan = janelasDoPeriodo(period, new Date(), customStart, customEnd)
     const d = ts => new Date(Number(ts) * 1000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
-    const { data, error } = await sbClient.functions.invoke('contar-collabs', { body: { account_id: accountId, since: d(jan.engSince), until: d(Number(jan.engUntil) - 86400) } })
+    const { data, error } = await invocarNaArea('edges-core', sbClient, 'contar-collabs', { body: { account_id: accountId, since: d(jan.engSince), until: d(Number(jan.engUntil) - 86400) } })
     if (error || !data || data.erro) return null
     _collabCache[chave] = { t: agora, v: data }
     return data // { posts, reels }
@@ -1331,7 +1336,7 @@ async function buscarSerieNovos(accountId, period, customStart, customEnd, shift
       dias.push({ label: iso, since: ds, until: ds + DIA })
     }
     if (!dias.length || dias.length > 93) return null // janela vazia ou muito longa → mantém coletado
-    const { data, error } = await sbClient.functions.invoke('serie-novos-dia', { body: { account_id: accountId, dias } })
+    const { data, error } = await invocarNaArea('edges-core', sbClient, 'serie-novos-dia', { body: { account_id: accountId, dias } })
     if (error || !data || !Array.isArray(data.serie) || !data.serie.length) return null
     _serieCache[chave] = { t: agora, v: data.serie }
     return data.serie
@@ -3732,7 +3737,7 @@ async function loadUsers() {
   listEl.textContent = ''
   const { data: { session } } = await sbClient.auth.getSession()
   const token = session?.access_token || SUPABASE_ANON_KEY
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?order=created_at.asc&select=id,email,name,role`, {
+  const r = tabelaNaApi('profiles') ? await fetchPostgrest('profiles?order=created_at.asc&select=id,email,name,role') : await fetch(`${SUPABASE_URL}/rest/v1/profiles?order=created_at.asc&select=id,email,name,role`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
   })
   const users = await r.json()
@@ -3748,7 +3753,7 @@ async function loadUsers() {
     sel.addEventListener('change', async () => {
       const { data: { session } } = await sbClient.auth.getSession()
       const tok = session?.access_token || SUPABASE_ANON_KEY
-      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${u.id}`, {
+      await (tabelaNaApi('profiles') ? fetchPostgrest : (c, o) => fetch(`${SUPABASE_URL}/rest/v1/${c}`, o))(`profiles?id=eq.${u.id}`, {
         method: 'PATCH',
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ role: sel.value })
@@ -3763,15 +3768,21 @@ async function doInvite() {
   const btn = document.getElementById('invite-btn')
   if (!email) { msgEl.textContent = 'Informe o e-mail.'; msgEl.className = 'admin-msg err'; msgEl.style.display = 'block'; return }
   msgEl.style.display = 'none'; btn.disabled = true; btn.textContent = 'Enviando...'
-  const { data: { session } } = await sbClient.auth.getSession()
-  const token = session?.access_token || SUPABASE_ANON_KEY
-  const redirectTo = location.origin + location.pathname
-  const r = await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, redirectTo })
-  })
-  const res = await r.json()
+  let res
+  // Pela API não vai `redirectTo`: o link do e-mail volta para o endereço da
+  // Central que a API conhece, nunca para um endereço vindo do pedido.
+  if (areaNaApi('conta')) res = await corpoDaEdge('invite-user', { email })
+  else {
+    const { data: { session } } = await sbClient.auth.getSession()
+    const token = session?.access_token || SUPABASE_ANON_KEY
+    const redirectTo = location.origin + location.pathname
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirectTo })
+    })
+    res = await r.json()
+  }
   btn.disabled = false; btn.textContent = 'Enviar convite'
   if (res.error) { msgEl.textContent = 'Erro: ' + res.error; msgEl.className = 'admin-msg err'; msgEl.style.display = 'block' }
   else { msgEl.textContent = ''; const t = document.createTextNode('✓ Convite enviado para '); const eb = document.createElement('strong'); eb.textContent = email; msgEl.appendChild(t); msgEl.appendChild(eb); msgEl.className = 'admin-msg ok'; msgEl.style.display = 'block'; document.getElementById('invite-email').value = ''; loadUsers() }

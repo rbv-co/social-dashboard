@@ -2,7 +2,6 @@ package acesso
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -44,15 +43,13 @@ type corpoUsuario struct {
 	Disabled           json.RawMessage `json:"disabled,omitempty"`
 }
 
-// Validar: os dois mapas de permissão têm de ser objeto (Ruling 5.1-13); o resto é o tipo da coluna.
+// Validar: os dois mapas de permissão têm de ser objeto (Ruling 5.1-13), nesta ordem fixa; o resto é o
+// tipo da coluna.
 func (c corpoUsuario) Validar() error {
-	for nome, v := range map[string]json.RawMessage{"permissions": c.Permissions, "permissions_excecao": c.PermissionsExcecao} {
-		var m map[string]json.RawMessage
-		if v != nil && (json.Unmarshal(v, &m) != nil || m == nil) {
-			return fmt.Errorf("%s tem de ser um objeto", nome)
-		}
+	if err := mapaDePermissoes("permissions", c.Permissions); err != nil {
+		return err
 	}
-	return nil
+	return mapaDePermissoes("permissions_excecao", c.PermissionsExcecao)
 }
 
 // PATCH /acesso/usuarios/{id}. Regra: admin_update_profiles + os gatilhos guard_profiles e

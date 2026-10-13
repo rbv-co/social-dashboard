@@ -2,8 +2,11 @@
 // fechamento das funções que eles chamam, VERBATIM do levantamento (02-funções.csv, 03-triggers.csv).
 // Uso (na raiz do repositório):
 //   node api/internal/testebanco/esquema/gerar-gatilhos.mjs <dir do levantamento> > api/internal/testebanco/esquema/02-gatilhos.sql
-// O 03-triggers.csv não traz FOR EACH nem WHEN: todos saem "for each row", sem WHEN. Ao acrescentar
-// tabela, confira nas migrations a orientação e o WHEN de cada gatilho novo.
+// O 03-triggers.csv (information_schema.triggers) não traz FOR EACH, WHEN nem a lista de colunas do
+// UPDATE OF: todos saem "for each row", sem WHEN e sem OF. Ex.: trg_espelhar_grupo_do_canal é em produção
+// "BEFORE INSERT OR UPDATE OF grupo_id, grupo" e sai "BEFORE UPDATE or INSERT" (mesmo efeito hoje, porque
+// o corpo só age com `is distinct from` nessas colunas). Ao acrescentar tabela, confira nas migrations a
+// orientação, o WHEN e o OF de cada gatilho novo.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,8 +36,19 @@ function lerCSV(texto) {
 }
 
 const aqui = fileURLToPath(new URL('.', import.meta.url));
-const tabelas = new Set(readdirSync(aqui).filter((a) => /^01-tabelas-.*\.sql$/.test(a))
-  .flatMap((a) => [...readFileSync(join(aqui, a), 'utf8').matchAll(/create table public\.([a-z_][a-z0-9_]*)/g)].map((m) => m[1])));
+// aceita `create table [if not exists] public.x` em qualquer caixa e FALHA se um `create table` do arquivo
+// não casar (tabela escrita de outro jeito perderia os gatilhos em silêncio)
+const tabelas = new Set();
+for (const a of readdirSync(aqui).filter((a) => /^01-tabelas-.*\.sql$/.test(a))) {
+  const sql = readFileSync(join(aqui, a), 'utf8');
+  const achadas = [...sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_][a-z0-9_]*)/gi)].map((m) => m[1].toLowerCase());
+  const declaradas = [...sql.matchAll(/create\s+table\b/gi)].length;
+  if (achadas.length !== declaradas) {
+    console.error(`${a}: ${declaradas} "create table", mas só ${achadas.length} no formato "create table [if not exists] public.<nome>"`);
+    process.exit(1);
+  }
+  achadas.forEach((n) => tabelas.add(n));
+}
 
 const [cabF, ...linF] = lerCSV(readFileSync(join(dir, '02-funções.csv'), 'utf8'));
 const iNome = cabF.indexOf('proname'), iDef = cabF.indexOf('definicao');
