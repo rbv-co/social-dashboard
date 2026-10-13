@@ -106,7 +106,19 @@ O que faltar de rota vira pedido à trilha dona e linha na tabela "Pendências d
 1. **Postgres direto** (`DATABASE_URL` do Postgres próprio) para os robôs que já usam `pg`/SQL e escrevem em tabela de serviço — é o equivalente exato da chave de serviço;
 2. **API com token de serviço** (`sessoes.tipo = 'servico'`, que o `auth.Exigir` já aceita) para os que chamam edges ou RPCs com regra de negócio.
 
-O inventário (robô × tabelas/edges × caminho) é a primeira task deste item, feita depois que o 5.11 estiver mesclado (antes disso a lista de rotas não está fechada). Os crons já portados (Plano 4) saem da lista.
+**Inventário feito em 12/10/2026: `docs/migracao-go/INVENTARIO-DO-COLETOR.md`** (robô × quem roda × tabelas × RPC/edge/Storage × caminho na virada). Em resumo:
+- 24 robôs vivos rodam na VPS (`coletor/vps/robos.cron`) + o serviço `cartoes-ean`: 18 vão por `pg` direto, 6 são híbridos (tabelas por `pg`, Bling/Meta por `/bling-proxy` e `/meta-proxy`, que já existem);
+- no GitHub Actions sobram Fábrica, Conteúdo e `status-projetos`: o runner não alcança o `api-db` (sem porta publicada), então ou vão pela API (pedem os itens abaixo) ou mudam para a VPS;
+- mais de 100 scripts avulsos (`aplicar-*`, `provar-*`, `insere-*`, cargas já usadas) aposentam;
+- nenhum robô saiu pelo Plano 4 (ele só adaptou a cópia do banco).
+
+**O que falta na API para os robôs (pedido às trilhas em `COORDENACAO.md`):** (1) **emissor de sessão `tipo='servico'`** — hoje só `/auth/entrar` e o link de senha criam sessão, sempre `painel`, e a regra "conta de serviço nunca é limitada a loja" só vale para `servico` (dono: A, 5.0/5.1); (2) rotas `fabrica_*` + `fabrica-trigger` (5.8); (3) rotas `conteudo_*` + `conteudo-trigger` (5.9); (4) RPC `gt_registrar_problemas` (5.7; a função aceita só o claim `service_role`, que a compat não define); (5) Storage dos buckets `fabrica-criativos` e `ig-cache` (Plano 6); (6) `HOSTS_DE_MIDIA` com o host do Storage novo (Plano 3/6); (7) `allowed_accounts` no `meta-proxy` (5.6, em andamento); (8) escrita de `projetos_status` ou aposentar o robô (5.1); (9) RPC `vessel_cartao_*`/`vessel_carocos` só por `pg` (5.10, se algum dia sair da VPS); (10) despacho dos workflows (`internal/github` + `disparos_pendentes`, 5.8–5.10). Achados: os robôs importam código de `supabase/functions/_shared/` e de `src/ferramentas/` — apagar essas pastas na aposentadoria do Supabase quebra robô (lista na seção 3 do inventário); e `rodar-robo.sh`/`cartoes-ean-vigia.sh` ainda falam com o Supabase por REST.
+
+**Decisões da orquestradora (12/10, `COORDENACAO.md`, "DECISÃO FINAL"):**
+- **Conta de serviço:** cada robô é um `usuarios` + `profiles` PRÓPRIO (papel viewer, `features` só dos módulos dele, sem senha) e autentica por `tokens_de_servico` (sessão/Ator `tipo='servico'`), **sem escopos por token** — o menor privilégio vem do perfil. Entrega da trilha A no sub-plano **5.13**, PR logo depois do 5.1 (CLI `api servico criar|revogar|listar`). O `loginServico` do `coletor/` troca para `Authorization: Bearer <token de serviço>` quando o 5.13 estiver no `API-PRONTA.md`.
+- **`status-projetos` aposentado** (a trilha C remove): o quadro que lia `projetos_status` saiu do Painel de Status em 19/08/2026 e ninguém mais lia o que ele gravava. Removidos o workflow `.github/workflows/status-projetos.yml`, o script e o teste; o cartão dele no Painel de Status da IA some (o nome fica só para o histórico antigo); a tabela `projetos_status` e os dados ficam (apagar dado é outra decisão). Item (8) da lista acima: resolvido por aposentadoria.
+
+A troca de cada robô é feita quando o caminho dele estiver pronto: os de `pg` direto na virada (Plano 8, trocando `SUPABASE_*` por `DATABASE_URL`), os de API quando o item correspondente existir.
 
 ---
 ## Pronto quando

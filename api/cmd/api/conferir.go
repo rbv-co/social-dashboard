@@ -148,6 +148,7 @@ var unicosDoWorker = []string{
 	"chatwoot_eventos(conversation_id,tipo)", "contatos_sem_mensagem(telefone)", "shopify_pedidos(id)",
 	"social_metas(account_id,periodo,indicador)", "campaign_filters(account_id)", // Plano 5.6
 	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
+	"acessos_perfis(nome)", // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
@@ -163,7 +164,7 @@ var funcoesDoWorker = []string{
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
 	"pode_ver_conta(text)", // Plano 5.6
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
-	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "equipes_toca_atualizado()",
+	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
 }
 
 // gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados

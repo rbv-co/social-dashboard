@@ -143,6 +143,31 @@ func TestPedirAcessoExigeJSON(t *testing.T) {
 	}
 }
 
+// O 415 vem ANTES dos limitadores: um <form> de outro site (text/plain) não gasta a cota por IP de quem é
+// legítimo nem o teto global.
+func TestPedirAcessoTipoErradoNaoGastaCota(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const bom = `{"name":"Cota","email":"cota@x.com"}`
+	const ip = "203.0.113.70:1"
+	for i := 0; i < LimitePedirAcesso; i++ {
+		if w := pedidoPublico(h, ip, bom, "Content-Type", "text/plain"); w.Code != 415 {
+			t.Fatalf("text/plain %d = %d, esperava 415", i, w.Code)
+		}
+	}
+	if w := pedidoPublico(h, ip, bom); w.Code != 201 {
+		t.Errorf("JSON depois de %d text/plain do mesmo IP = %d %s; esperava 201 (o 415 gastou a cota por IP)", LimitePedirAcesso, w.Code, w.Body)
+	}
+	for i := 0; i < TetoGlobalPedirAcesso; i++ {
+		if w := pedidoPublico(h, fmt.Sprintf("198.51.100.%d:1", i+1), bom, "Content-Type", "text/plain"); w.Code != 415 {
+			t.Fatalf("text/plain de IP novo %d = %d, esperava 415", i, w.Code)
+		}
+	}
+	if w := pedidoPublico(h, "192.0.2.70:1", bom); w.Code != 201 {
+		t.Errorf("JSON depois de %d text/plain de IPs distintos = %d %s; esperava 201 (o 415 gastou o teto global)", TetoGlobalPedirAcesso, w.Code, w.Body)
+	}
+}
+
 // Espaço invisível não é nome; espaços em volta do e-mail são aparados (e o que vai para o banco já
 // vem aparado); `ana@[1.2.3.4]` (domínio literal) passa: é endereço válido do net/mail, o que
 // importa é a rota não gravar lixo, e e-mail de pedido só é lido por um admin.
@@ -253,7 +278,7 @@ func TestPedirAcessoNaoPedeSessaoEOutrosMetodosNaoExistem(t *testing.T) {
 	}
 }
 
-// Ruling 5.1-15: teto global de 100 por hora somando todos os IPs (aceitos e recusados), com o mesmo 429
+// Ruling 5.1-17: teto global de 100 por hora somando todos os IPs (aceitos e recusados), com o mesmo 429
 // do limite por IP. Quem estoura o PRÓPRIO IP não gasta o teto dos outros (o por IP vem antes).
 func TestPedirAcessoTetoGlobal(t *testing.T) {
 	m := novoMundo(t)
