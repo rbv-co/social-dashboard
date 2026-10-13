@@ -1854,6 +1854,309 @@ func TestArquivos(t *testing.T) {
 **(d) Dependências:** Tasks 2, 3 e 4 (as constantes de colunas).
 
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 ./internal/conteudo/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): escritas de peça, arquivo e evento (a guarda da aprovação pela rota, filhas presas à peça visível)` (+ `Co-Authored-By`).
+---
+
+### Task 6: Escritas de ideias, blocos e concorrentes
+
+**Revisor:** sonnet. **Depende de:** 2, 3, 4 (as constantes `colunasIdeia`, `colunasBloco`, `colunasConcorrente`: em worktree paralela, copie e apague no merge), 5 (o ajudante de teste `intacto`, em `pecas_test.go`: em worktree paralela, copie-o para `pauta_test.go` e apague a cópia no merge).
+
+**(a) Contrato** (catálogo + o gancho da Task 2; `soSessaoPropria` em todas)
+- `POST /conteudo/ideias` (`criarIdeia`, `dados-conteudo.js:300`) com `corpoIdeiaNova` (título obrigatório; sem `situacao`, `peca_id`, `origem`, `modelo`, `job_id`: a ideia nasce `nova` e `manual`); `PATCH /conteudo/ideias/{id}` (`atualizarIdeia :330`, `mudarSituacaoDaIdeia :339`, `planoViraPecas :409`) com `corpoIdeia` (+ `situacao`, `peca_id`). `conferirIdeia`: criar só o legível (conta nula = de todas as marcas: legível a todo conteudista) e ligar só a peça legível (403 igual para invisível e inexistente). Mover a ideia para conta invisível = 403 (o `EditarNova` do catálogo).
+- `POST /conteudo/blocos` (`salvarBloco :447`; a tela só CRIA blocos, `voz-da-marca.vue:197`) com `corpoBloco` (o apelido é obrigatório: `nome` é NOT NULL no banco — achado 7); `PATCH /conteudo/blocos/{id}` (`apagarBloco :455`) só com `ativo`. Criar só o legível.
+- `POST /conteudo/concorrentes` (`salvarConcorrente :478`) com `corpoConcorrente`; `PATCH /conteudo/concorrentes/{id}` (`apagarConcorrente :491`) só com `ativo`. SÓ o catálogo: a tabela não tem a restritiva em produção — paridade (Ruling 5.9-5, achado 5). `@` repetido na marca = `409 conflito` (a tela tratava o 23505).
+- **Ensaiado** (worktree sobre o 5.7 + Tasks 1–5): os dois testes abaixo passam.
+
+```go
+package conteudo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+// corpoIdeia: limparParaGravar (roteiro.js:120-145) + account_id (painel-ideia.vue:298), a situação
+// (mudarSituacaoDaIdeia, dados-conteudo.js:339) e a peça (planoViraPecas :409). origem, modelo, job_id,
+// referencia e porque_formato ficam FORA: são do robô (que grava por pg na VPS).
+type corpoIdeia struct {
+	AccountID         json.RawMessage `json:"account_id,omitempty"`
+	Titulo            json.RawMessage `json:"titulo,omitempty"`
+	Formato           json.RawMessage `json:"formato,omitempty"`
+	Pilar             json.RawMessage `json:"pilar,omitempty"`
+	Gancho            json.RawMessage `json:"gancho,omitempty"`
+	Producao          json.RawMessage `json:"producao,omitempty"`
+	LegendaSugerida   json.RawMessage `json:"legenda_sugerida,omitempty"`
+	Cta               json.RawMessage `json:"cta,omitempty"`
+	HashtagsSugeridas json.RawMessage `json:"hashtags_sugeridas,omitempty"`
+	PorQueAgora       json.RawMessage `json:"por_que_agora,omitempty"`
+	Roteiro           json.RawMessage `json:"roteiro,omitempty"`
+	Situacao          json.RawMessage `json:"situacao,omitempty"`
+	PecaID            json.RawMessage `json:"peca_id,omitempty"`
+}
+
+// listaDeObjetos: [] ou uma lista de até max objetos (o roteiro: um take/card por item).
+func listaDeObjetos(v json.RawMessage, max int) bool {
+	var l []map[string]json.RawMessage
+	return len(v) > 0 && v[0] == '[' && json.Unmarshal(v, &l) == nil && len(l) <= max
+}
+
+func (c corpoIdeia) Validar() error {
+	var e []error
+	ok := func(v json.RawMessage, valido bool, frase string) {
+		if v != nil && !valido {
+			e = append(e, errors.New(frase))
+		}
+	}
+	ok(c.AccountID, uuidOuNulo(c.AccountID), "account_id é o id da conta ou null (de todas as marcas).")
+	ok(c.Titulo, textoAte(c.Titulo, 300, false), "titulo tem de 1 a 300 caracteres.")
+	ok(c.Formato, nulo(c.Formato) || textoEm(c.Formato, formatosDaPeca...), "formato é feed, reels, stories, carrossel ou null.")
+	ok(c.Pilar, textoOuNulo(c.Pilar, 60), "pilar tem até 60 caracteres.")
+	for _, v := range []json.RawMessage{c.Gancho, c.Producao, c.LegendaSugerida, c.Cta, c.HashtagsSugeridas, c.PorQueAgora} {
+		ok(v, textoOuNulo(v, 5000), "os textos da ideia têm até 5000 caracteres.")
+	}
+	ok(c.Roteiro, listaDeObjetos(c.Roteiro, 60), "roteiro é uma lista de até 60 passos.")
+	ok(c.Situacao, textoEm(c.Situacao, "nova", "favorita", "usada", "descartada"), "situacao é nova, favorita, usada ou descartada.")
+	ok(c.PecaID, uuidOuNulo(c.PecaID), "peca_id é o id da peça ou null.")
+	return errors.Join(e...)
+}
+
+// corpoIdeiaNova: criarIdeia (:300). Sem situacao nem peca_id (nasce 'nova'; ligar a uma peça é edição) e com
+// título obrigatório. origem fica no default 'manual' (a tela mandava 'manual'; o corpo não escolhe 'ia').
+type corpoIdeiaNova struct {
+	AccountID         json.RawMessage `json:"account_id,omitempty"`
+	Titulo            json.RawMessage `json:"titulo,omitempty"`
+	Formato           json.RawMessage `json:"formato,omitempty"`
+	Pilar             json.RawMessage `json:"pilar,omitempty"`
+	Gancho            json.RawMessage `json:"gancho,omitempty"`
+	Producao          json.RawMessage `json:"producao,omitempty"`
+	LegendaSugerida   json.RawMessage `json:"legenda_sugerida,omitempty"`
+	Cta               json.RawMessage `json:"cta,omitempty"`
+	HashtagsSugeridas json.RawMessage `json:"hashtags_sugeridas,omitempty"`
+	PorQueAgora       json.RawMessage `json:"por_que_agora,omitempty"`
+	Roteiro           json.RawMessage `json:"roteiro,omitempty"`
+}
+
+func (c corpoIdeiaNova) Validar() error {
+	var falta error
+	if c.Titulo == nil {
+		falta = errors.New("Informe o titulo.")
+	}
+	return errors.Join(falta, corpoIdeia{AccountID: c.AccountID, Titulo: c.Titulo, Formato: c.Formato, Pilar: c.Pilar,
+		Gancho: c.Gancho, Producao: c.Producao, LegendaSugerida: c.LegendaSugerida, Cta: c.Cta,
+		HashtagsSugeridas: c.HashtagsSugeridas, PorQueAgora: c.PorQueAgora, Roteiro: c.Roteiro}.Validar())
+}
+
+// conferirIdeia: criar só o legível (a conta; nula = de todas as marcas, legível a todo conteudista) e, na
+// edição, ligar só a uma peça que quem pede lê (invisível ou inexistente = 403). Rulings 5.9-4.
+func conferirIdeia(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+	if id == "" {
+		return soLegivelAoCriar("conteudo_ideias")(ctx, tx, e, id, campos)
+	}
+	if v := bruto(campos, "peca_id"); v != nil && !nulo(v) {
+		peca, _ := comoTexto(v)
+		_, err := pecaVisivel(ctx, tx, e, peca)
+		return negado(err)
+	}
+	return nil
+}
+
+var tabelaIdeias = dados.Tabela{Nome: "conteudo_ideias", Resposta: colunasIdeia, Autor: "criado_por", Conferir: conferirIdeia}
+
+// corpoBloco: adicionarBloco (voz-da-marca.vue:197-202 → salvarBloco, dados-conteudo.js:447). O nome é NOT NULL
+// no banco: o "Apelido (opcional)" vazio, que a tela manda como null, já falhava em produção (achado 7).
+type corpoBloco struct {
+	AccountID json.RawMessage `json:"account_id,omitempty"`
+	Tipo      json.RawMessage `json:"tipo,omitempty"`
+	Nome      json.RawMessage `json:"nome,omitempty"`
+	Texto     json.RawMessage `json:"texto,omitempty"`
+}
+
+func (c corpoBloco) Validar() error {
+	var e []error
+	if c.AccountID != nil && !uuidOuNulo(c.AccountID) {
+		e = append(e, errors.New("account_id é o id da conta ou null (de todas as marcas)."))
+	}
+	if !textoEm(c.Tipo, "legenda", "hashtags", "cta", "assinatura") {
+		e = append(e, errors.New("tipo é legenda, hashtags, cta ou assinatura."))
+	}
+	if !textoAte(c.Nome, 100, false) {
+		e = append(e, errors.New("nome (o apelido) tem de 1 a 100 caracteres."))
+	}
+	if !textoAte(c.Texto, 5000, false) {
+		e = append(e, errors.New("texto tem de 1 a 5000 caracteres."))
+	}
+	return errors.Join(e...)
+}
+
+// corpoAtivo: apagarBloco (:455) e apagarConcorrente (:491) desativam (nunca apagam).
+type corpoAtivo struct {
+	Ativo json.RawMessage `json:"ativo,omitempty"`
+}
+
+func (c corpoAtivo) Validar() error {
+	if !booleano(c.Ativo) {
+		return errors.New("ativo é true ou false.")
+	}
+	return nil
+}
+
+var tabelaBlocos = dados.Tabela{Nome: "conteudo_blocos", Resposta: colunasBloco, Autor: "criado_por",
+	Conferir: soLegivelAoCriar("conteudo_blocos")}
+
+// corpoConcorrente: adicionarConcorrente (voz-da-marca.vue:213-219 → salvarConcorrente, :478). O @ já vem tirado.
+type corpoConcorrente struct {
+	AccountID  json.RawMessage `json:"account_id,omitempty"`
+	Handle     json.RawMessage `json:"handle,omitempty"`
+	Nome       json.RawMessage `json:"nome,omitempty"`
+	Observacao json.RawMessage `json:"observacao,omitempty"`
+}
+
+func (c corpoConcorrente) Validar() error {
+	var e []error
+	if !casa(c.AccountID, reUUID) {
+		e = append(e, errors.New("account_id é o id da conta."))
+	}
+	if !textoAte(c.Handle, 100, false) {
+		e = append(e, errors.New("handle tem de 1 a 100 caracteres."))
+	}
+	if c.Nome != nil && !textoOuNulo(c.Nome, 200) {
+		e = append(e, errors.New("nome tem até 200 caracteres."))
+	}
+	if c.Observacao != nil && !textoOuNulo(c.Observacao, 2000) {
+		e = append(e, errors.New("observacao tem até 2000 caracteres."))
+	}
+	return errors.Join(e...)
+}
+
+// tabelaConcorrentes: SÓ o catálogo — conteudo_concorrentes não tem a restritiva em produção: todo conteudista
+// grava o concorrente de qualquer marca, como hoje (Ruling 5.9-5, achado 5). Sem coluna de autoria.
+var tabelaConcorrentes = dados.Tabela{Nome: "conteudo_concorrentes", Resposta: colunasConcorrente}
+
+func montarPauta(r chi.Router, p *pgxpool.Pool) {
+	r.With(soSessaoPropria).Post("/conteudo/ideias", dados.RotaCriar[corpoIdeiaNova](p, autz.Producao, tabelaIdeias))
+	r.With(soSessaoPropria).Patch("/conteudo/ideias/{id}", dados.RotaEditar[corpoIdeia](p, autz.Producao, tabelaIdeias))
+	r.With(soSessaoPropria).Post("/conteudo/blocos", dados.RotaCriar[corpoBloco](p, autz.Producao, tabelaBlocos))
+	r.With(soSessaoPropria).Patch("/conteudo/blocos/{id}", dados.RotaEditar[corpoAtivo](p, autz.Producao, tabelaBlocos))
+	r.With(soSessaoPropria).Post("/conteudo/concorrentes", dados.RotaCriar[corpoConcorrente](p, autz.Producao, tabelaConcorrentes))
+	r.With(soSessaoPropria).Patch("/conteudo/concorrentes/{id}", dados.RotaEditar[corpoAtivo](p, autz.Producao, tabelaConcorrentes))
+}
+```
+
+**(b) Testes de aceitação** (`pauta_test.go`, código abaixo; `intacto` da Task 5)
+- `TestIdeias`: negados e intactos — criar em A2 por quem só vê A1 e na própria pela lista vazia (403), com `origem`/`criado_por` (400), sem título (400 com a frase), roteiro que não é lista (400), editar ideia de A2 sem vê-la (404), mover para A2 (403), ligar a peça de A2 e a peça inexistente (403 igual), situação fora da lista (400), trocar a origem (400), `soAprovar` (403). Permitidos com efeito — criar na própria (origem `manual`, `criado_por` da sessão, `nova`), criar de todas as marcas (conta nula), favoritar, o plano virando peça (`usada` + `peca_id`), editar a geral, descartar a de A2 por quem vê todas.
+- `TestBlocosEConcorrentes`: bloco em A2 por quem só vê A1 (403), sem apelido (400 com "apelido"), tipo fora da lista (400), com `criado_por` (400), desativar bloco de A2 sem vê-lo (404), editar o texto (400: só `ativo`); concorrente repetido (409), sem conta (400), PATCH de `handle` (400), sem módulo (403), `soAprovar` desativando (404: não lê a tabela). Permitidos: bloco na própria (autoria da sessão), desativar; e a PARIDADE dos concorrentes: quem só vê A1 cria e desativa os de A2.
+- Mutações que têm de reprovar: tirar o `Conferir` de `tabelaIdeias` (A1 cria em A2 e liga a P3) ou de `tabelaBlocos`; `corpoIdeiaNova` com `Situacao`; `corpoAtivo` aceitando texto; um `Conferir` de conta em `tabelaConcorrentes` sem Ruling (os casos de paridade reprovam — mudar isso é decisão do dono, achado 5).
+
+```go
+package conteudo
+
+import (
+	"testing"
+
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+func TestIdeias(t *testing.T) {
+	m := novoMundo(t, montarPauta)
+	const situacao = `select situacao || '|' || coalesce(peca_id::text, 'nulo') from conteudo_ideias where id = '`
+	intacto(t, m, []mundoteste.Caso{
+		{Nome: "criar em conta que não vê", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"account_id":"` + A2 + `","titulo":"x"}`, Status: 403},
+		{Nome: "lista vazia não cria nem na própria", Quem: "conteudistaNenhuma", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x"}`, Status: 403},
+		{Nome: "criar dizendo que é da IA", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","origem":"ia"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "criar com criado_por", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"titulo":"x","criado_por":"` + idAprovador + `"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "criar sem título", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"account_id":"` + A1 + `","gancho":"x"}`, Status: 400, Tem: "Informe o titulo."},
+		{Nome: "roteiro que não é lista", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"titulo":"x","roteiro":{"cena":1}}`, Status: 400, Tem: "roteiro"},
+		{Nome: "editar ideia de A2 sem vê-la", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I3,
+			Corpo: `{"situacao":"descartada"}`, Status: 404},
+		{Nome: "mover a ideia para A2", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I1,
+			Corpo: `{"account_id":"` + A2 + `"}`, Status: 403},
+		{Nome: "ligar a ideia a peça de A2", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I1,
+			Corpo: `{"situacao":"usada","peca_id":"` + P3 + `"}`, Status: 403},
+		{Nome: "ligar a peça inexistente (igual)", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I1,
+			Corpo: `{"situacao":"usada","peca_id":"a5930000-0000-4000-a000-0000000000ff"}`, Status: 403},
+		{Nome: "situação fora da lista", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I1,
+			Corpo: `{"situacao":"arquivada"}`, Status: 400},
+		{Nome: "trocar a origem", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I1,
+			Corpo: `{"origem":"manual"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "só conteudo.aprovar não cria", Quem: "soAprovar", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"titulo":"x"}`, Status: 403},
+	})
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "criar na própria conta", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo:  `{"account_id":"` + A1 + `","titulo":"Nova pauta","formato":"reels","roteiro":[{"cena":1,"narracao":"oi"}]}`,
+			Status: 201, Tem: `"origem":"manual"`,
+			Efeito: `select criado_por::text || '|' || situacao from conteudo_ideias where titulo = 'Nova pauta'`, Quer: idConteudistaA1 + "|nova"},
+		{Nome: "criar de todas as marcas", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/ideias",
+			Corpo: `{"account_id":null,"titulo":"Geral"}`, Status: 201},
+		{Nome: "favoritar", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I1,
+			Corpo: `{"situacao":"favorita"}`, Status: 200, Efeito: situacao + I1 + `'`, Quer: "favorita|nulo"},
+		{Nome: "o plano vira peça (planoViraPecas)", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I1,
+			Corpo: `{"situacao":"usada","peca_id":"` + P1 + `"}`, Status: 200, Efeito: situacao + I1 + `'`, Quer: "usada|" + P1},
+		{Nome: "editar a geral", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I2,
+			Corpo: `{"gancho":"Comece pelo couro","cta":null}`, Status: 200},
+		{Nome: "descartar a de A2 quem vê todas", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/ideias/" + I3,
+			Corpo: `{"situacao":"descartada"}`, Status: 200, Efeito: situacao + I3 + `'`, Quer: "descartada|nulo"},
+	})
+}
+
+func TestBlocosEConcorrentes(t *testing.T) {
+	m := novoMundo(t, montarPauta)
+	intacto(t, m, []mundoteste.Caso{
+		{Nome: "bloco em conta que não vê", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/blocos",
+			Corpo: `{"account_id":"` + A2 + `","tipo":"legenda","nome":"x","texto":"y"}`, Status: 403},
+		{Nome: "bloco sem apelido (a tela manda null: o banco recusava)", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/blocos",
+			Corpo: `{"account_id":"` + A1 + `","tipo":"legenda","nome":null,"texto":"y"}`, Status: 400, Tem: "apelido"},
+		{Nome: "bloco de tipo fora da lista", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/blocos",
+			Corpo: `{"account_id":"` + A1 + `","tipo":"emoji","nome":"x","texto":"y"}`, Status: 400},
+		{Nome: "bloco com criado_por (salvarBloco o mandava)", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/blocos",
+			Corpo: `{"account_id":"` + A1 + `","tipo":"legenda","nome":"x","texto":"y","criado_por":"` + idConteudista + `"}`, Status: 400},
+		{Nome: "desativar bloco de A2 sem vê-lo", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/blocos/" + B3,
+			Corpo: `{"ativo":false}`, Status: 404},
+		{Nome: "editar o texto do bloco (só ativo)", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/blocos/" + B1,
+			Corpo: `{"texto":"x"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "concorrente repetido na marca", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/concorrentes",
+			Corpo: `{"account_id":"` + A1 + `","handle":"lojaum"}`, Status: 409},
+		{Nome: "concorrente sem conta", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/concorrentes",
+			Corpo: `{"handle":"x"}`, Status: 400},
+		{Nome: "concorrente: só ativo no PATCH", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/concorrentes/" + K1,
+			Corpo: `{"handle":"y"}`, Status: 400},
+		{Nome: "concorrente sem o módulo", Quem: "semModulo", Metodo: "POST", Caminho: "/conteudo/concorrentes",
+			Corpo: `{"account_id":"` + A1 + `","handle":"z"}`, Status: 403},
+		{Nome: "concorrente com só conteudo.aprovar", Quem: "soAprovar", Metodo: "PATCH", Caminho: "/conteudo/concorrentes/" + K1,
+			Corpo: `{"ativo":false}`, Status: 404},
+	})
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "bloco na própria conta", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/blocos",
+			Corpo: `{"account_id":"` + A1 + `","tipo":"cta","nome":"Chame","texto":"Chame no direct"}`, Status: 201,
+			Tem: `"criado_por":"` + idConteudistaA1 + `"`},
+		{Nome: "desativar bloco", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/blocos/" + B1, Corpo: `{"ativo":false}`, Status: 200,
+			Efeito: `select ativo::text from conteudo_blocos where id = '` + B1 + `'`, Quer: "false"},
+		// paridade (Ruling 5.9-5): concorrentes não têm a restritiva — quem só vê A1 grava e desativa os de A2, como hoje
+		{Nome: "concorrente em A2 por quem só vê A1", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/concorrentes",
+			Corpo: `{"account_id":"` + A2 + `","handle":"lojatres","nome":null,"observacao":"vende bolsa"}`, Status: 201},
+		{Nome: "desativar concorrente de A2 por quem só vê A1", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/concorrentes/" + K2,
+			Corpo: `{"ativo":false}`, Status: 200, Efeito: `select ativo::text from conteudo_concorrentes where id = '` + K2 + `'`, Quer: "false"},
+	})
+}
+```
+
+**(c) Arquivos:** Create `api/internal/conteudo/pauta.go`, `api/internal/conteudo/pauta_test.go`.
+
+**(d) Dependências:** Tasks 2, 3, 4 e 5 (ver acima o que copiar em worktree paralela).
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 ./internal/conteudo/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): escritas de ideias, blocos e concorrentes (criar só o legível; concorrentes como em produção)` (+ `Co-Authored-By`).
 
 ---
 
