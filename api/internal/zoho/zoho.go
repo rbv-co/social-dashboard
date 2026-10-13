@@ -47,6 +47,12 @@ type Conexao struct{ clientID, clientSecret, refreshToken, sufixo string }
 
 func (c Conexao) String() string { return "zoho.Conexao(" + c.sufixo + ")" }
 
+// GoString: o %#v ignora o String() e imprimiria os campos (segredos) um a um.
+func (c Conexao) GoString() string { return c.String() }
+
+// chave: de qual conexão é o token em cache; reconectar outra conta do Zoho não reaproveita o token da anterior.
+type chave struct{ clientID, refreshToken, sufixo string }
+
 // Item: um arquivo ou pasta de uma listagem.
 type Item struct {
 	ID, Nome string
@@ -59,9 +65,23 @@ type Cliente struct {
 	pool        *pgxpool.Pool
 	http        *http.Client
 	contas, api func(sufixo string) string // bases; só ParaTeste troca
-	mu          sync.Mutex
-	token       string
+	mu          sync.Mutex                 // ponytail: o cadeado fica preso durante o pedido do token (um pedido só por vez); accounts.zoho
+	token       string                     // pendurado bloqueia quem chama até o timeout do cliente (50s). Vários processos/tráfego alto: single-flight com contexto.
 	ate         time.Time
+	de          chave
+}
+
+// String e GoString: o %v/%+v/%#v de um *Cliente imprimiria o token de acesso em cache.
+func (c *Cliente) String() string   { return "zoho.Cliente" }
+func (c *Cliente) GoString() string { return c.String() }
+
+// semResposta: a chamada não chegou a ter resposta. Contexto cancelado ou vencido vai embrulhado (errors.Is) para quem
+// chama distinguir "desistimos" de "o Zoho está fora"; a URL (do *url.Error) nunca sai daqui.
+func semResposta(ctx context.Context, msg string) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s: %w", msg, ctx.Err())
+	}
+	return errors.New(msg)
 }
 
 func Novo(p *pgxpool.Pool) *Cliente {
@@ -118,7 +138,7 @@ func (c *Cliente) Conexao(ctx context.Context) (Conexao, error) {
 func (c *Cliente) tokenDe(ctx context.Context, con Conexao) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.token != "" && time.Now().Before(c.ate) {
+	if c.token != "" && c.de == (chave{con.clientID, con.refreshToken, con.sufixo}) && time.Now().Before(c.ate) {
 		return c.token, nil
 	}
 	form := url.Values{"grant_type": {"refresh_token"}, "client_id": {con.clientID}, "client_secret": {con.clientSecret},
@@ -130,7 +150,7 @@ func (c *Cliente) tokenDe(ctx context.Context, con Conexao) (string, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", errors.New("zoho: sem token (sem resposta)")
+		return "", semResposta(ctx, "zoho: sem token (sem resposta)")
 	}
 	defer resp.Body.Close()
 	var j struct {
@@ -139,7 +159,7 @@ func (c *Cliente) tokenDe(ctx context.Context, con Conexao) (string, error) {
 	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&j) != nil || j.AccessToken == "" {
 		return "", fmt.Errorf("zoho: sem token (status %d)", resp.StatusCode)
 	}
-	c.token, c.ate = j.AccessToken, time.Now().Add(50*time.Minute)
+	c.token, c.ate, c.de = j.AccessToken, time.Now().Add(50*time.Minute), chave{con.clientID, con.refreshToken, con.sufixo}
 	return c.token, nil
 }
 
@@ -167,7 +187,7 @@ func (c *Cliente) get(ctx context.Context, con Conexao, caminho string) (*http.R
 		req.Header.Set("Accept", "application/vnd.api+json")
 		resp, err := c.http.Do(req)
 		if err != nil { // o *url.Error traz a URL: não sai daqui
-			return nil, errors.New("zoho: sem resposta")
+			return nil, semResposta(ctx, "zoho: sem resposta")
 		}
 		if resp.StatusCode/100 == 2 {
 			return resp, nil
