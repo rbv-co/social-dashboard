@@ -705,6 +705,498 @@ func TestTabelaConferir(t *testing.T) {
 **(d) Dependências:** 5.1 (`dados.Tabela`). Independente da Task 1 (onda 1).
 
 - [ ] **Step 1:** O teste; ver falhar (`Conferir` não existe: não compila). - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/dados/ && go test -count=1 ./internal/dados/` PASS (todos os testes do pacote, não só o novo); mutações reprovam. - [ ] **Step 4:** Commit `feat(api): dados.Tabela.Conferir — a regra que o catálogo não enxerga, na mesma transação, depois do PodeX` (+ `Co-Authored-By`).
+---
+
+### Task 3: `conteudo` — fundação (regras, conferências de peça e de conta, mundo, foto)
+
+**Revisor:** opus. **Depende de:** 1, 2; `mundoteste` e `dados.SoSessaoPropria` (5.2, vindos com o 5.7).
+
+**(a) Contrato**
+- `api/internal/conteudo/conteudo.go` (abaixo): a doc do pacote passa a ser esta (a linha `// Package conteudo: os robôs da Central de Conteúdo (hora H e espelho com o Instagram).` sai de `casar.go`, que fica igual no resto), as três regras, `soSessaoPropria`, `deve`, as conferências que as Tasks 5–8 usam (`pecaVisivel`, `negado`, `soLegivelAoCriar`) e os validadores de `json.RawMessage` (moram aqui para as Tasks 4–8 andarem em paralelo).
+- **Nomes que o pacote já usa** (robôs do Plano 4) e que NÃO podem ser declarados de novo: `formatos` (`hora_h.go`), `chave`, `casar`, `normalizar`, `ouNulo`, `numeroOuNulo`, `nota`, `Peca`, `Midia`, `Achado`, `Espelho`, `HoraH`, `pictografico`, `prazoPorPeca`; e o IMPORT `texto` (`casar.go` importa `internal/texto`: um `func texto` no pacote não compila — por isso `comoTexto`). Nos testes: `peca`, `eventos`, `hora`, `umPar`, `contaVessel`, `bancoConteudo`, `tabelasConteudo`, `uConteudo`, `uOutro`, `uSemAcess`, `roundTripFunc`, `graphFalsa`, `coreConteudo`.
+- `Conteudista` e `Aprovador` são as checagens das FUNÇÕES (sem conta ativa: SECURITY DEFINER); as TABELAS usam o catálogo (a mesma trinca COM conta ativa). `PedeIA` é o portão da edge `conteudo-trigger` (Ruling 5.9-11). A Task 7 prova `Conteudista`/`Aprovador` iguais às funções pessoa a pessoa.
+- `pecaVisivel` é a regra de Ler de `conteudo_pecas` (do catálogo, pelo `Filtro`) aplicada a UMA peça, dentro da transação: é o que prende as filhas (arquivo, evento) e os parâmetros das RPCs à restritiva da peça (Rulings 5.9-3, 5.9-4, 5.9-10).
+- Teste (interno): `novoMundo(t, montar...) *mundoteste.Mundo` com a fatia, as pessoas, as linhas e a foto abaixo; sessão `impersonado` = a de `conteudistaA1` aberta por `super`.
+- **Ensaiado** (worktree sobre o 5.7 + Tasks 1 e 2): os três testes abaixo passam.
+
+```go
+// Package conteudo: a Central de Conteúdo. Os robôs do Plano 4 (hora H: o aviso da peça agendada; espelho:
+// casar a peça com o post do Instagram e medir) e as rotas do sub-plano 5.9: leituras do painel
+// (dados.Consulta, regra do catálogo; a restritiva pode_ver_conta em peças, ideias, blocos e jobs; as filhas
+// da peça presas a ela), escritas pelo catálogo com Tabela.Conferir (a regra que o catálogo não enxerga), as
+// 6 RPCs (portão = a checagem de dentro de cada função) e POST /conteudo-trigger (a fila do robô da VPS).
+// Toda escrita em banco.ComUsuario: o gatilho conteudo_guarda_aprovacao lê auth.uid(). "Entrar como" só lê.
+package conteudo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+// Conteudista: a checagem de dentro de conteudo_casar_na_mao, _decidir_casamento, _ideia_virar_peca e
+// _reavisar (02-funções.csv:224-289, 322-366, 408-474): perfil com papel admin, is_superadmin (a FICHA) ou o
+// módulo 'conteudo' em features. Sem conta_ativa, como as funções: são SECURITY DEFINER, a subconsulta em
+// profiles não passa pela RLS (a sessão de conta desativada nem existe: auth.Exigir a recusa). As TABELAS
+// usam a regra do catálogo (a mesma trinca, com conta ativa), não esta. Ruling 5.9-9.
+var Conteudista = autz.Regra(func(e *autz.Escopo) bool {
+	return e != nil && e.TemPerfil && (e.Papel == "admin" || e.SuperFicha || e.Modulo("conteudo"))
+})
+
+// Aprovador: a de conteudo_decidir, conteudo_aprovar_e_agendar e do gatilho conteudo_guarda_aprovacao
+// (02-funções.csv:178-223, 290-321, 367-407): a mesma trinca com 'conteudo.aprovar' em features.
+var Aprovador = autz.Regra(func(e *autz.Escopo) bool {
+	return e != nil && e.TemPerfil && (e.Papel == "admin" || e.SuperFicha || e.Modulo("conteudo.aprovar"))
+})
+
+// PedeIA: o portão da edge conteudo-trigger (index.ts:36-42): papel admin, is_superadmin (ficha), a chave
+// 'conteudo' em permissions ou o módulo 'conteudo' em features. Difere da edge em dois cantos (Ruling 5.9-11):
+// a chave casa também como texto de um array no topo de permissions (o `?` do jsonb, que Escopo.Chaves segue;
+// o hasOwnProperty da edge não casava) e a conta desativada não passa.
+var PedeIA = autz.Regra(func(e *autz.Escopo) bool {
+	return e != nil && e.TemPerfil && e.Ativo &&
+		(e.Papel == "admin" || e.SuperFicha || e.Chaves["conteudo"] || e.Modulo("conteudo"))
+})
+
+var soSessaoPropria = dados.SoSessaoPropria(dados.FraseEntrarComo)
+
+// deve: declaração de rota errada (Consulta ou Tabela fora do catálogo) faz a API não subir.
+func deve(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+var (
+	reUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	// os checks das migrations (e src/ferramentas/conteudo/estados.js e formatos.js). "formatos" já é nome do
+	// hora_h.go (os rótulos do aviso).
+	estadosDaPeca  = []string{"rascunho", "em_aprovacao", "aprovada", "reprovada", "agendada", "publicada", "arquivada"}
+	formatosDaPeca = []string{"feed", "reels", "stories", "carrossel"}
+)
+
+// bruto: o valor JSON de uma coluna no mapa de escrita (dados.Campos guarda json.RawMessage); ausente = nil.
+func bruto(campos map[string]any, col string) json.RawMessage {
+	v, _ := campos[col].(json.RawMessage)
+	return v
+}
+
+// comoTexto: o valor JSON é texto? (null, número, objeto: não). Não se chama "texto": casar.go importa o
+// pacote internal/texto, e o nome do pacote e o da função não podem conviver no mesmo pacote Go.
+func comoTexto(v json.RawMessage) (string, bool) {
+	var s string
+	if len(v) == 0 || v[0] != '"' || json.Unmarshal(v, &s) != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// textoAte: texto de até max caracteres; vazio (ou só espaço) só se vazioPode.
+func textoAte(v json.RawMessage, max int, vazioPode bool) bool {
+	s, ok := comoTexto(v)
+	return ok && utf8.RuneCountInString(s) <= max && (vazioPode || strings.TrimSpace(s) != "")
+}
+
+func casa(v json.RawMessage, re *regexp.Regexp) bool {
+	s, ok := comoTexto(v)
+	return ok && re.MatchString(s)
+}
+
+func nulo(v json.RawMessage) bool { return strings.TrimSpace(string(v)) == "null" }
+
+func textoEm(v json.RawMessage, opcoes ...string) bool {
+	s, ok := comoTexto(v)
+	return ok && slices.Contains(opcoes, s)
+}
+
+// textoOuNulo: null ou texto de até max caracteres (vazio pode).
+func textoOuNulo(v json.RawMessage, max int) bool { return nulo(v) || textoAte(v, max, true) }
+
+func uuidOuNulo(v json.RawMessage) bool { return nulo(v) || casa(v, reUUID) }
+
+// instanteOuNulo: null ou um instante RFC 3339 (o toISOString da tela: "2026-10-20T15:00:00.000Z").
+func instanteOuNulo(v json.RawMessage) bool {
+	if nulo(v) {
+		return true
+	}
+	s, ok := comoTexto(v)
+	if !ok {
+		return false
+	}
+	_, err := time.Parse(time.RFC3339, s)
+	return err == nil
+}
+
+func inteiroEntre(v json.RawMessage, min, max int64) bool {
+	var n int64
+	return json.Unmarshal(v, &n) == nil && n >= min && n <= max
+}
+
+func booleano(v json.RawMessage) bool { s := string(v); return s == "true" || s == "false" }
+
+// pecaVisivel: a peça existe e quem pede a LÊ (a regra de Ler de conteudo_pecas: conteudista do catálogo E
+// pode_ver_conta da conta dela); devolve a conta. Senão autz.ErrNaoEncontrado — igual para "não existe", "id
+// inválido" e "é de outra conta" (IDOR). Sem trava de linha: mudar a conta de uma peça no meio da transação de
+// outra pessoa é corrida que a tela não faz (ponytail: `for no key update` se um dia mover peça entre contas
+// virar operação comum). Ruling 5.9-3/5.9-4.
+func pecaVisivel(ctx context.Context, tx pgx.Tx, e *autz.Escopo, peca string) (string, error) {
+	if !reUUID.MatchString(peca) {
+		return "", autz.ErrNaoEncontrado
+	}
+	f, err := autz.Producao.Filtro(e, "conteudo_pecas", autz.Ler, "pc")
+	if err != nil {
+		return "", err
+	}
+	var conta string
+	err = tx.QueryRow(ctx, `select pc.account_id::text from conteudo_pecas pc where pc.id = @peca::uuid and (`+f.SQL+`)`,
+		f.Juntar(pgx.NamedArgs{"peca": peca})).Scan(&conta)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", autz.ErrNaoEncontrado
+	}
+	return conta, err
+}
+
+// negado: na criação de uma filha (e nos parâmetros de RPC), a mãe invisível e a inexistente respondem igual,
+// 403 (como o CriarSoLegivel do 5.2): o pedido não confirma que a mãe existe.
+func negado(err error) error {
+	if errors.Is(err, autz.ErrNaoEncontrado) {
+		return autz.ErrNegado
+	}
+	return err
+}
+
+// soLegivelAoCriar: Tabela.Conferir das tabelas com a restritiva. A linha criada tem de passar na regra de LER
+// de quem cria (o Criar do catálogo é só o WITH CHECK, sem a restritiva de select: criar peça/ideia/bloco numa
+// conta que não se vê passaria e devolveria só o id). Ruling 5.9-4. Na edição o PodeEditar já confere a
+// linha nova com a regra de Ler (EditarNova).
+func soLegivelAoCriar(tab string) func(context.Context, pgx.Tx, *autz.Escopo, string, map[string]any) error {
+	return func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+		if id != "" || campos == nil {
+			return nil
+		}
+		f, err := autz.Producao.Filtro(e, tab, autz.Ler, "autz_nova")
+		if err != nil {
+			return err
+		}
+		ok, err := autz.Conferir(ctx, tx, f, tab, campos)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return autz.ErrNegado
+		}
+		return nil
+	}
+}
+
+// responder: o corpo da edge portada ({"error": código}, {"job_id": …}), que a tela já lê.
+func responder(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+```
+
+`api/internal/conteudo/mundo_test.go`:
+
+```go
+package conteudo
+
+import (
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+const (
+	A1 = "a5900000-0000-4000-a000-0000000000a1" // 'Vessel'
+	A2 = "a5900000-0000-4000-a000-0000000000a2" // 'Mantova'
+	A9 = "a5900000-0000-4000-a000-0000000000a9" // conta que não existe
+
+	P1 = "a5930000-0000-4000-a000-0000000000c1" // A1, rascunho, com 2 arquivos e 1 evento
+	P2 = "a5930000-0000-4000-a000-0000000000c2" // A1, em_aprovacao, com data
+	P3 = "a5930000-0000-4000-a000-0000000000c3" // A2, em_aprovacao, com data, 1 arquivo, 1 evento, 1 sugestão
+	P4 = "a5930000-0000-4000-a000-0000000000c4" // A1, agendada e já avisada, 2 sugestões
+	P5 = "a5930000-0000-4000-a000-0000000000c5" // A2, publicada, 2 métricas
+	P6 = "a5930000-0000-4000-a000-0000000000c6" // A1, publicada, 2 métricas
+	P7 = "a5930000-0000-4000-a000-0000000000c7" // A1, em_aprovacao SEM data
+
+	AR1 = "a5940000-0000-4000-a000-0000000000d1" // P1, ordem 1, imagem (a capa)
+	AR2 = "a5940000-0000-4000-a000-0000000000d2" // P1, ordem 2, vídeo
+	AR3 = "a5940000-0000-4000-a000-0000000000d3" // P3, ordem 1, imagem
+
+	CS1 = "a5950000-0000-4000-a000-0000000000e1" // P4, sugerido, 0.7
+	CS2 = "a5950000-0000-4000-a000-0000000000e2" // P4, sugerido, 0.5
+	CS3 = "a5950000-0000-4000-a000-0000000000e3" // P3, sugerido, 0.9
+
+	I1 = "a5960000-0000-4000-a000-0000000000f1" // A1, nova, da IA
+	I2 = "a5960000-0000-4000-a000-0000000000f2" // de todas as marcas (conta nula), nova
+	I3 = "a5960000-0000-4000-a000-0000000000f3" // A2, favorita
+	I4 = "a5960000-0000-4000-a000-0000000000f4" // A1, descartada
+	I5 = "a5960000-0000-4000-a000-0000000000f5" // A1, usada
+
+	B1 = "a5970000-0000-4000-a000-000000000001" // A1, legenda
+	B2 = "a5970000-0000-4000-a000-000000000002" // de todas, hashtags
+	B3 = "a5970000-0000-4000-a000-000000000003" // A2, cta
+	B4 = "a5970000-0000-4000-a000-000000000004" // A1, assinatura, inativo
+
+	K1 = "a5980000-0000-4000-a000-000000000001" // A1, lojaum
+	K2 = "a5980000-0000-4000-a000-000000000002" // A2, lojadois
+
+	J1 = "a5990000-0000-4000-a000-000000000001" // A1, ideias, concluído
+	J2 = "a5990000-0000-4000-a000-000000000002" // A2, semana, erro
+
+	idConteudista        = "a5910000-0000-4000-a000-000000000001"
+	idConteudistaA1      = "a5910000-0000-4000-a000-000000000002"
+	idConteudistaNenhuma = "a5910000-0000-4000-a000-000000000003"
+	idAprovador          = "a5910000-0000-4000-a000-000000000004"
+	idAprovadorA1        = "a5910000-0000-4000-a000-000000000005"
+	idSoAprovar          = "a5910000-0000-4000-a000-000000000006"
+	idAdminA1            = "a5910000-0000-4000-a000-000000000007"
+	idSuper              = "a5910000-0000-4000-a000-000000000008"
+	idChaveConteudo      = "a5910000-0000-4000-a000-000000000009"
+	idSemModulo          = "a5910000-0000-4000-a000-000000000010"
+	idDesativado         = "a5910000-0000-4000-a000-000000000011"
+)
+
+// pessoas: o conteudista nos três estados de allowed_accounts (nulo, lista, vazia), o aprovador com e sem
+// lista, quem só tem 'conteudo.aprovar' (passa no portão das decisões, não lê as tabelas), quem passa por papel
+// (admin) e pela ficha (super), quem tem a chave 'conteudo' só em PERMISSIONS (a edge conteudo-trigger aceita;
+// as policies e as funções, não), quem não tem nada e o desativado. A chave vai em linhasDoConteudo.
+var pessoas = []mundoteste.Pessoa{
+	{Chave: "conteudista", ID: idConteudista, Email: "conteudista@x.com", Papel: "viewer", Modulos: []string{"conteudo"}},
+	{Chave: "conteudistaA1", ID: idConteudistaA1, Email: "conteudistaa1@x.com", Papel: "viewer", Modulos: []string{"conteudo"}, Contas: []string{A1}},
+	{Chave: "conteudistaNenhuma", ID: idConteudistaNenhuma, Email: "conteudistanenhuma@x.com", Papel: "viewer", Modulos: []string{"conteudo"}, Contas: []string{}},
+	{Chave: "aprovador", ID: idAprovador, Email: "aprovador@x.com", Papel: "viewer", Modulos: []string{"conteudo", "conteudo.aprovar"}},
+	{Chave: "aprovadorA1", ID: idAprovadorA1, Email: "aprovadora1@x.com", Papel: "viewer", Modulos: []string{"conteudo", "conteudo.aprovar"}, Contas: []string{A1}},
+	{Chave: "soAprovar", ID: idSoAprovar, Email: "soaprovar@x.com", Papel: "viewer", Modulos: []string{"conteudo.aprovar"}},
+	{Chave: "adminA1", ID: idAdminA1, Email: "admina1@x.com", Papel: "admin", Contas: []string{A1}},
+	{Chave: "super", ID: idSuper, Email: "super@x.com", Papel: "viewer", Super: true},
+	{Chave: "chaveConteudo", ID: idChaveConteudo, Email: "chaveconteudo@x.com", Papel: "viewer"},
+	{Chave: "semModulo", ID: idSemModulo, Email: "semmodulo@x.com", Papel: "viewer"},
+	{Chave: "desativado", ID: idDesativado, Email: "desativado@x.com", Papel: "admin", Modulos: []string{"conteudo", "conteudo.aprovar"}, Desativado: true},
+}
+
+// Sem identidade. Toda linha de A2 carrega o uuid de A2 (na conta da linha, da peça-mãe ou no caminho).
+const linhasDoConteudo = `
+update profiles set permissions = '{"conteudo": ["ver"]}' where id = '` + idChaveConteudo + `';
+insert into accounts (id, name, username) values ('` + A1 + `', 'Vessel', 'vessel'), ('` + A2 + `', 'Mantova', 'mantova');
+insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em, publicado_em, avisado_em, ig_media_id, criado_por, created_at) values
+  ('` + P1 + `', '` + A1 + `', 'Bastidor da loja', 'reels', 'rascunho', null, null, null, null, '` + idConteudista + `', '2026-10-01T10:00:00Z'),
+  ('` + P2 + `', '` + A1 + `', 'Lançamento', 'feed', 'em_aprovacao', '2026-10-20T15:00:00Z', null, null, null, '` + idConteudista + `', '2026-10-02T10:00:00Z'),
+  ('` + P3 + `', '` + A2 + `', 'Mantova verão', 'carrossel', 'em_aprovacao', '2026-10-21T15:00:00Z', null, null, null, '` + idConteudista + `', '2026-10-03T10:00:00Z'),
+  ('` + P4 + `', '` + A1 + `', 'Promoção', 'stories', 'agendada', '2026-10-10T15:00:00Z', null, '2026-10-10T15:00:00Z', null, '` + idConteudista + `', '2026-10-04T10:00:00Z'),
+  ('` + P5 + `', '` + A2 + `', 'Mantova publicada', 'feed', 'publicada', '2026-09-10T15:00:00Z', '2026-09-10T15:05:00Z', null, 'IG5', '` + idConteudista + `', '2026-09-01T10:00:00Z'),
+  ('` + P6 + `', '` + A1 + `', 'Vessel publicada', 'feed', 'publicada', '2026-09-11T15:00:00Z', '2026-09-11T15:05:00Z', null, 'IG6', '` + idConteudista + `', '2026-09-02T10:00:00Z'),
+  ('` + P7 + `', '` + A1 + `', 'Sem data', 'feed', 'em_aprovacao', null, null, null, null, '` + idConteudista + `', '2026-10-05T10:00:00Z');
+insert into conteudo_arquivos (id, peca_id, ordem, caminho, tipo, mime, bytes) values
+  ('` + AR1 + `', '` + P1 + `', 1, '` + A1 + `/` + P1 + `/1-capa.png', 'imagem', 'image/png', 1000),
+  ('` + AR2 + `', '` + P1 + `', 2, '` + A1 + `/` + P1 + `/2-video.mp4', 'video', 'video/mp4', 9000),
+  ('` + AR3 + `', '` + P3 + `', 1, '` + A2 + `/` + P3 + `/1-capa.png', 'imagem', 'image/png', 1000);
+insert into conteudo_eventos (peca_id, para, acao, quem, quando) values
+  ('` + P1 + `', 'rascunho', 'criou', '` + idConteudista + `', '2026-10-01T10:00:00Z'),
+  ('` + P3 + `', 'rascunho', 'criou', '` + idConteudista + `', '2026-10-03T10:00:00Z');
+insert into conteudo_metricas (peca_id, capturado_em, curtidas, alcance) values
+  ('` + P5 + `', '2026-09-11', 5, 50), ('` + P5 + `', '2026-09-12', 7, 70),
+  ('` + P6 + `', '2026-09-12', 10, 100), ('` + P6 + `', '2026-09-13', 20, 200);
+insert into conteudo_casamentos (id, peca_id, ig_media_id, pontuacao, motivo, situacao) values
+  ('` + CS1 + `', '` + P4 + `', 'IG41', 0.7, 'legenda parecida', 'sugerido'),
+  ('` + CS2 + `', '` + P4 + `', 'IG42', 0.5, 'horário perto', 'sugerido'),
+  ('` + CS3 + `', '` + P3 + `', 'IG31', 0.9, 'legenda igual', 'sugerido');
+insert into conteudo_ideias (id, account_id, titulo, formato, origem, situacao, created_at) values
+  ('` + I1 + `', '` + A1 + `', 'Provador ao vivo', 'reels', 'ia', 'nova', '2026-10-01T10:00:00Z'),
+  ('` + I2 + `', null, 'Dica de cuidado com couro', 'carrossel', 'manual', 'nova', '2026-10-02T10:00:00Z'),
+  ('` + I3 + `', '` + A2 + `', 'Mantova na praia', 'feed', 'manual', 'favorita', '2026-10-03T10:00:00Z'),
+  ('` + I4 + `', '` + A1 + `', 'Descartada', 'feed', 'manual', 'descartada', '2026-10-04T10:00:00Z'),
+  ('` + I5 + `', '` + A1 + `', 'Já usada', 'feed', 'manual', 'usada', '2026-10-05T10:00:00Z');
+insert into conteudo_blocos (id, account_id, tipo, nome, texto, ativo) values
+  ('` + B1 + `', '` + A1 + `', 'legenda', 'Abertura', 'Chegou!', true),
+  ('` + B2 + `', null, 'hashtags', 'Gerais', '#moda', true),
+  ('` + B3 + `', '` + A2 + `', 'cta', 'Chame', 'Chame no direct', true),
+  ('` + B4 + `', '` + A1 + `', 'assinatura', 'Velha', 'Vessel', false);
+insert into conteudo_concorrentes (id, account_id, handle, nome) values
+  ('` + K1 + `', '` + A1 + `', 'lojaum', 'Loja Um'), ('` + K2 + `', '` + A2 + `', 'lojadois', 'Loja Dois');
+insert into conteudo_jobs (id, tipo, account_id, params, status, resultado, criado_por, created_at) values
+  ('` + J1 + `', 'ideias', '` + A1 + `', '{"quantas": 12}', 'concluido', '{"gravadas": 12}', '` + idConteudista + `', '2026-10-01T10:00:00Z'),
+  ('` + J2 + `', 'semana', '` + A2 + `', '{"segunda": "2026-10-05"}', 'erro', null, '` + idConteudista + `', '2026-10-02T10:00:00Z');`
+
+// fotoDoConteudo: hash das 9 tabelas. Igual antes e depois = nada mudou.
+const fotoDoConteudo = `select md5(string_agg(l, '|' order by l)) from (
+  select 'pe:' || t::text as l from conteudo_pecas t union all
+  select 'ar:' || t::text from conteudo_arquivos t union all
+  select 'ev:' || t::text from conteudo_eventos t union all
+  select 'me:' || t::text from conteudo_metricas t union all
+  select 'ca:' || t::text from conteudo_casamentos t union all
+  select 'id:' || t::text from conteudo_ideias t union all
+  select 'bl:' || t::text from conteudo_blocos t union all
+  select 'co:' || t::text from conteudo_concorrentes t union all
+  select 'jo:' || t::text from conteudo_jobs t) z`
+
+// novoMundo: a fatia de produção, as pessoas, as linhas e a sessão "impersonado" (a de conteudistaA1 aberta
+// por super: o "entrar como" vê o que o ALVO vê, só A1), com as rotas de `montar` atrás da MESMA cadeia do
+// grupo de domínio de web.Rotas.
+func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundoteste.Mundo {
+	t.Helper()
+	return mundoteste.Novo(t, mundoteste.Opcoes{Pessoas: pessoas, Linhas: linhasDoConteudo,
+		Impersonadas: map[string][2]string{"impersonado": {idConteudistaA1, idSuper}}}, montar...)
+}
+```
+
+**(b) Testes de aceitação** (`regras_test.go`, código abaixo)
+- `TestMundoDoConteudo` (sonda `GET /eco` montada no teste, que escreve `Conteudista|Aprovador|PedeIA|tipo|PodeVerConta(A2)`): a tabela `quer` do código (destaques: `soAprovar` → `false|true|false`: decide mas não lê; `chaveConteudo` → `false|false|true`: pede IA, não lê nem decide; `impersonado` → o que `conteudistaA1` vê); sem sessão e `desativado` → 401; 7 peças no mundo.
+- `TestConferencias`: `pecaVisivel` devolve a conta para quem lê a peça e `ErrNaoEncontrado` IGUAL para peça de outra conta, inexistente, id inválido, lista vazia, quem só tem `conteudo.aprovar` e o desativado; `soLegivelAoCriar("conteudo_ideias")` recusa (`ErrNegado`) a ideia nova em A2 para quem só vê A1 e para a lista vazia, aceita a conta nula (de todas as marcas) e não age na edição.
+- `TestAjudantes` (puro): os validadores e `negado`.
+- Mutações que têm de reprovar: `Conteudista` com `e.Ativo` (a Task 7 acusa o desativado: a função o deixa passar); `PedeIA` sem `e.Chaves["conteudo"]` (`chaveConteudo` vira `false`); `pecaVisivel` sem o `f.SQL` (a peça de A2 aparece para `conteudistaA1`); `soLegivelAoCriar` com `autz.Criar` em vez de `autz.Ler` (A1 cria em A2).
+
+```go
+package conteudo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+)
+
+// As regras pela cadeia real (auth.Exigir → autz.ComEscopo), pessoa a pessoa.
+func TestMundoDoConteudo(t *testing.T) {
+	m := novoMundo(t, func(r chi.Router, _ *pgxpool.Pool) {
+		r.Get("/eco", func(w http.ResponseWriter, r *http.Request) {
+			e, a := autz.EscopoDo(r.Context()), auth.AtorDoContexto(r.Context())
+			fmt.Fprintf(w, "%t|%t|%t|%s|%t", Conteudista(e), Aprovador(e), PedeIA(e), a.Tipo, autz.PodeVerConta(e, A2))
+		})
+	})
+	quer := map[string]string{
+		"conteudista": "true|false|true|painel|true", "conteudistaA1": "true|false|true|painel|false",
+		"conteudistaNenhuma": "true|false|true|painel|false", "aprovador": "true|true|true|painel|true",
+		"aprovadorA1": "true|true|true|painel|false", "soAprovar": "false|true|false|painel|true",
+		"adminA1": "true|true|true|painel|true", "super": "true|true|true|painel|true",
+		"chaveConteudo": "false|false|true|painel|true", "semModulo": "false|false|false|painel|true",
+		"impersonado": "true|false|true|painel|false",
+	}
+	for quem, q := range quer {
+		if st, b := m.Pedir(t, quem, "GET", "/eco", ""); st != 200 || b != q {
+			t.Errorf("%s: %d %s, esperava %s", quem, st, b, q)
+		}
+	}
+	for _, quem := range []string{"", "desativado"} {
+		if st, _ := m.Pedir(t, quem, "GET", "/eco", ""); st != http.StatusUnauthorized {
+			t.Errorf("%q: %d, esperava 401", quem, st)
+		}
+	}
+	if v := m.Um(t, `select count(*)::text from conteudo_pecas`); v != "7" {
+		t.Errorf("peças = %s", v)
+	}
+}
+
+// pecaVisivel e soLegivelAoCriar contra o banco: a mãe de outra conta, a inexistente e o id inválido
+// respondem igual (sem oráculo); quem não lê a tabela não vê peça nenhuma.
+func TestConferencias(t *testing.T) {
+	m := novoMundo(t)
+	ctx := context.Background()
+	como := func(id string, f func(tx pgx.Tx, e *autz.Escopo) error) error {
+		e, err := autz.CarregarEscopo(ctx, m.P, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return banco.ComUsuario(ctx, m.P, id, func(tx pgx.Tx) error { return f(tx, e) })
+	}
+	for _, c := range []struct {
+		nome, quem, peca, conta string
+		err                     error
+	}{
+		{"a própria conta", idConteudistaA1, P1, A1, nil},
+		{"a peça de A2 para quem só vê A1", idConteudistaA1, P3, "", autz.ErrNaoEncontrado},
+		{"a peça de A2 para quem vê todas", idConteudista, P3, A2, nil},
+		{"admin vê qualquer conta", idAdminA1, P3, A2, nil},
+		{"lista vazia não vê nada", idConteudistaNenhuma, P1, "", autz.ErrNaoEncontrado},
+		{"só conteudo.aprovar não lê a tabela", idSoAprovar, P1, "", autz.ErrNaoEncontrado},
+		{"o desativado não lê", idDesativado, P1, "", autz.ErrNaoEncontrado},
+		{"inexistente", idConteudista, "a5930000-0000-4000-a000-0000000000ff", "", autz.ErrNaoEncontrado},
+		{"id inválido", idConteudista, "1 or 1=1", "", autz.ErrNaoEncontrado},
+	} {
+		var conta string
+		err := como(c.quem, func(tx pgx.Tx, e *autz.Escopo) (err error) {
+			conta, err = pecaVisivel(ctx, tx, e, c.peca)
+			return err
+		})
+		if !errors.Is(err, c.err) || conta != c.conta {
+			t.Errorf("pecaVisivel %s: %q %v, esperava %q %v", c.nome, conta, err, c.conta, c.err)
+		}
+	}
+	conferir := soLegivelAoCriar("conteudo_ideias")
+	j := func(s string) json.RawMessage { return json.RawMessage(s) }
+	for _, c := range []struct {
+		nome, quem, id string
+		campos         map[string]any
+		err            error
+	}{
+		{"A1 cria em A1", idConteudistaA1, "", map[string]any{"account_id": j(`"` + A1 + `"`), "titulo": j(`"x"`)}, nil},
+		{"A1 cria em A2", idConteudistaA1, "", map[string]any{"account_id": j(`"` + A2 + `"`), "titulo": j(`"x"`)}, autz.ErrNegado},
+		{"A1 cria de todas as marcas (conta nula)", idConteudistaA1, "", map[string]any{"account_id": j(`null`), "titulo": j(`"x"`)}, nil},
+		{"lista vazia cria em A1", idConteudistaNenhuma, "", map[string]any{"account_id": j(`"` + A1 + `"`)}, autz.ErrNegado},
+		{"na edição não confere (o PodeEditar já confere a linha nova)", idConteudistaA1, I3, map[string]any{"account_id": j(`"` + A2 + `"`)}, nil},
+	} {
+		err := como(c.quem, func(tx pgx.Tx, e *autz.Escopo) error { return conferir(ctx, tx, e, c.id, c.campos) })
+		if !errors.Is(err, c.err) {
+			t.Errorf("soLegivelAoCriar %s: %v, esperava %v", c.nome, err, c.err)
+		}
+	}
+}
+
+func TestAjudantes(t *testing.T) {
+	j := func(s string) json.RawMessage { return json.RawMessage(s) }
+	for _, c := range []struct {
+		nome string
+		ok   bool
+	}{
+		{"comoTexto recusa null", func() bool { _, ok := comoTexto(j(`null`)); return !ok }()},
+		{"comoTexto recusa número", func() bool { _, ok := comoTexto(j(`5`)); return !ok }()},
+		{"textoAte conta caracteres", textoAte(j(`"ção"`), 3, false)},
+		{"textoAte recusa só espaço sem vazioPode", !textoAte(j(`"  "`), 10, false)},
+		{"textoOuNulo aceita null", textoOuNulo(j(`null`), 1)},
+		{"uuidOuNulo recusa maiúscula (o banco aceitaria; a tela manda minúscula)", !uuidOuNulo(j(`"A5900000-0000-4000-A000-0000000000A1"`))},
+		{"instanteOuNulo aceita o toISOString", instanteOuNulo(j(`"2026-10-20T15:00:00.000Z"`))},
+		{"instanteOuNulo recusa data sem hora", !instanteOuNulo(j(`"2026-10-20"`))},
+		{"inteiroEntre recusa 1.5", !inteiroEntre(j(`1.5`), 0, 10)},
+		{"booleano só true/false", booleano(j(`false`)) && !booleano(j(`"true"`))},
+		{"textoEm", textoEm(j(`"feed"`), formatosDaPeca...) && !textoEm(j(`"tiktok"`), formatosDaPeca...)},
+		{"bruto de coluna ausente é nil", bruto(map[string]any{}, "x") == nil},
+		{"negado troca 404 por 403", errors.Is(negado(autz.ErrNaoEncontrado), autz.ErrNegado)},
+	} {
+		if !c.ok {
+			t.Error(c.nome)
+		}
+	}
+}
+```
+
+**(c) Arquivos:** Create `api/internal/conteudo/conteudo.go`, `api/internal/conteudo/mundo_test.go`, `api/internal/conteudo/regras_test.go`; Modify `api/internal/conteudo/casar.go` (só a linha do comentário do pacote).
+
+**(d) Dependências:** Task 1 (fatia); Task 2 (a assinatura do gancho que `soLegivelAoCriar` devolve); `mundoteste`; `autz.CarregarEscopo/Conferir/PodeVerConta`.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar. - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 ./internal/conteudo/` PASS (os testes da hora H e do espelho continuam verdes); mutações reprovam. - [ ] **Step 4:** Commit `feat(api): conteúdo — regras das funções e da edge, peça visível e criar só o legível, mundo de teste` (+ `Co-Authored-By`).
 
 ---
 
