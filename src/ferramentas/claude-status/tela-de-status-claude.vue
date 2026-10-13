@@ -311,7 +311,9 @@ import { criarCacheDeCusto } from './cache-de-custo.js'
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
-import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
+import { sb, lerDaApi } from '../../compartilhado/buscar-e-salvar-dados.js'
+// Chave `paineis` (Plano 7): execuções, saúde dos robôs e custos pelo 5.12.
+import { areaNaApi, edge } from '../../compartilhado/api.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 
@@ -446,8 +448,11 @@ async function _buscarCustoReal(funcao, dias) {
   const guardado = _cacheCusto.ler(funcao, dias, Date.now())
   if (guardado) return { dados: guardado }
   try {
-    const { data, error } = await sbClient.functions.invoke(funcao, { body: { dias } })
-    if (error) return { erro: error.message || 'não consegui falar com o servidor' }
+    const naApi = areaNaApi('paineis')
+    const { data, error } = naApi ? await edge(funcao, { dias }) : await sbClient.functions.invoke(funcao, { body: { dias } })
+    // Pela API, o não-2xx traz corpo: o `detalhe` (ex.: chave_admin_nao_configurada)
+    // diz mais que a frase genérica do status.
+    if (error) return { erro: (naApi && data?.detalhe) || error.message || 'não consegui falar com o servidor' }
     if (data && data.error) return { erro: data.detalhe || data.error }
     if (!data || typeof data.totalBrl !== 'number') return { erro: 'resposta sem valor' }
     // Só o que deu certo é guardado: cachear erro grudaria a frase "não consegui
@@ -700,11 +705,11 @@ async function carregar() {
   // quadro voltar um dia, o dado está lá. Buscar o que ninguém mostra só faz
   // a tela demorar mais para abrir.
   const [ex, sa] = await Promise.all([
-    sb('ia_execucoes?select=*&order=run_at.desc&limit=200'),
+    areaNaApi('paineis') ? lerDaApi('/status-ia/execucoes', { limite: 200 }) : sb('ia_execucoes?select=*&order=run_at.desc&limit=200'),
     // Saúde dos robôs agendados. NÃO entra no erroCarregar abaixo: se esta
     // consulta falhar, o painel inteiro não pode sumir por causa dela — o pior
     // que acontece é o aviso não aparecer.
-    sb('robos_saude?select=*'),
+    areaNaApi('paineis') ? lerDaApi('/status-ia/saude-dos-robos') : sb('robos_saude?select=*'),
   ])
   if (!sa.erro) saudeDosRobos.value = sa
   // Antes: falha virava [] e a tela dizia "0 execuções, R$ 0" como se fosse

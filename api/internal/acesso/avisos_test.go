@@ -1,6 +1,8 @@
 package acesso
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -11,6 +13,12 @@ const (
 	epViewer = "https://push.exemplo/viewer"
 	epAdmin  = "https://push.exemplo/admin"
 )
+
+// chaves de uma inscrição de verdade: p256dh = 65 bytes (ponto não comprimido) e auth = 16 bytes, base64url sem padding.
+func chaveP(n byte) string {
+	return base64.RawURLEncoding.EncodeToString(append([]byte{4}, bytes.Repeat([]byte{n}, 64)...))
+}
+func chaveA(n byte) string { return base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{n}, 16)) }
 
 // pref: a coluna `col` da preferência (usuário, tipo); "<nulo>" também vale para linha que não existe.
 func pref(col, user, tipo string) string {
@@ -67,8 +75,10 @@ func TestPreferenciasDeAviso(t *testing.T) {
 		m.rodar(t, []caso{
 			{nome: "a própria: grava e carimba quem", quem: "viewer", metodo: "POST", caminho: rota, corpo: lote(item(idViewer, "saldo", true)), status: 204,
 				efeito: pref("alterado_por", idViewer, "saldo"), quer: idViewer},
-			{nome: "atualiza a mesma (upsert)", quem: "viewer", metodo: "POST", caminho: rota, corpo: lote(item(idViewer, "saldo", false)), status: 204,
-				efeito: pref("ativo", idViewer, "saldo"), quer: "false"},
+			{nome: "a data antiga vira de 2020 (preparo do teste de renovação)", quem: "viewer", metodo: "POST", caminho: rota, corpo: lote(item(idViewer, "saldo", true)), status: 204,
+				efeito: `with u as (update push_preferencias set alterado_em = '2020-01-01T00:00:00Z' where user_id = '` + idViewer + `' and tipo = 'saldo' returning 1) select count(*)::text from u`, quer: "1"},
+			{nome: "atualiza a mesma (upsert) e renova alterado_em", quem: "viewer", metodo: "POST", caminho: rota, corpo: lote(item(idViewer, "saldo", false)), status: 204,
+				efeito: pref("(alterado_em > now() - interval '1 minute')::text || '/' || ativo", idViewer, "saldo"), quer: "true/false"},
 			{nome: "admin grava a de outra e fica no rastro", quem: "admin", metodo: "POST", caminho: rota, corpo: lote(item(idViewer, "vendas", false)), status: 204,
 				efeito: pref("alterado_por", idViewer, "vendas"), quer: idAdmin},
 			{nome: "super pela ficha grava a de outra", quem: "superFicha", metodo: "POST", caminho: rota, corpo: lote(item(idAdmin, "conteudo", true)), status: 204,
@@ -111,6 +121,12 @@ func TestPreferenciasDeAviso(t *testing.T) {
 			{nome: "par repetido", quem: "viewer", metodo: "POST", caminho: rota, corpo: lote(item(idViewer, "saldo", true), item(idViewer, "saldo", false)), status: 400},
 			{nome: "par repetido com o uuid em outra caixa", quem: "viewer", metodo: "POST", caminho: rota,
 				corpo: lote(item(idViewer, "saldo", true), item(strings.ToUpper(idViewer), "saldo", false)), status: 400},
+			{nome: "par repetido com o uuid sem hífens (era 500: 21000 do Postgres)", quem: "viewer", metodo: "POST", caminho: rota,
+				corpo: lote(item(idViewer, "saldo", true), item(strings.ReplaceAll(idViewer, "-", ""), "saldo", false)), status: 400},
+			{nome: "par repetido com o uuid entre chaves", quem: "viewer", metodo: "POST", caminho: rota,
+				corpo: lote(item(idViewer, "saldo", true), item("{"+idViewer+"}", "saldo", false)), status: 400},
+			{nome: "uuid sem hífens sozinho também é recusado (só a forma canônica)", quem: "viewer", metodo: "POST", caminho: rota,
+				corpo: lote(item(strings.ReplaceAll(idViewer, "-", ""), "saldo", true)), status: 400},
 			{nome: "alterado_por no item", quem: "viewer", metodo: "POST", caminho: rota, corpo: `[{"user_id":"` + idViewer + `","tipo":"saldo","ativo":true,"alterado_por":"` + idAdmin + `"}]`, status: 400},
 			{nome: "alterado_em no item", quem: "viewer", metodo: "POST", caminho: rota, corpo: `[{"user_id":"` + idViewer + `","tipo":"saldo","ativo":true,"alterado_em":"2020-01-01T00:00:00Z"}]`, status: 400},
 			{nome: "sem ativo", quem: "viewer", metodo: "POST", caminho: rota, corpo: `[{"user_id":"` + idViewer + `","tipo":"saldo"}]`, status: 400},
@@ -139,26 +155,26 @@ func TestInscricaoDePush(t *testing.T) {
 
 	t.Run("inscrever", func(t *testing.T) {
 		m.rodar(t, []caso{
-			{nome: "novo: no nome de quem está logado", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/novo", "k1", "a1"), status: 200, tem: `"id"`, naoTem: `k1`, // chave e endpoint não voltam na resposta
+			{nome: "novo: no nome de quem está logado", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/novo", chaveP(1), chaveA(1)), status: 200, tem: `"id"`, naoTem: chaveP(1), // chave e endpoint não voltam na resposta
 
 				efeito: sub("user_id", "https://push.exemplo/novo"), quer: idViewer},
-			{nome: "reinscreve o próprio com chaves novas", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(epViewer, "kv2", "av2"), status: 200, tem: `"id"`,
-				efeito: sub("p256dh || '/' || auth", epViewer), quer: "kv2/av2"},
+			{nome: "reinscreve o próprio com chaves novas", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(epViewer, chaveP(2), chaveA(2)), status: 200, tem: `"id"`,
+				efeito: sub("p256dh || '/' || auth", epViewer), quer: chaveP(2) + "/" + chaveA(2)},
 			{nome: "o mesmo aparelho de novo não duplica", efeito: `select count(*)::text from push_subs where user_id = '` + idViewer + `'`, quer: "2"},
 			// o endpoint é de outra pessoa: 403 e a linha dela fica exatamente como estava (dono e chaves)
-			{nome: "endpoint do admin = 403 e a linha do admin intacta", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, "roubada", "roubada"), status: 403, naoTem: "ka",
+			{nome: "endpoint do admin = 403 e a linha do admin intacta", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, chaveP(9), chaveA(9)), status: 403, naoTem: "ka",
 				efeito: sub("user_id || '/' || p256dh || '/' || auth", epAdmin), quer: idAdmin + "/ka/aa"},
-			{nome: "super não toma o endpoint do admin", quem: "super", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, "roubada", "roubada"), status: 403,
+			{nome: "super não toma o endpoint do admin", quem: "super", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, chaveP(9), chaveA(9)), status: 403,
 				efeito: sub("user_id || '/' || p256dh", epAdmin), quer: idAdmin + "/ka"},
-			{nome: "admin reinscreve o próprio", quem: "admin", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, "ka2", "aa2"), status: 200,
-				efeito: sub("p256dh", epAdmin), quer: "ka2"},
-			{nome: "sessão sem perfil também inscreve o próprio aparelho", quem: "semPerfil", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/sp", "k", "a"), status: 200,
+			{nome: "admin reinscreve o próprio", quem: "admin", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, chaveP(3), chaveA(3)), status: 200,
+				efeito: sub("p256dh", epAdmin), quer: chaveP(3)},
+			{nome: "sessão sem perfil também inscreve o próprio aparelho", quem: "semPerfil", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/sp", chaveP(4), chaveA(4)), status: 200,
 				efeito: sub("user_id", "https://push.exemplo/sp"), quer: idSemPerfil},
-			{nome: "sem sessão", quem: "", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/x", "k", "a"), status: 401},
-			{nome: "impersonado", quem: "impersonado", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/imp", "k", "a"), status: 403,
+			{nome: "sem sessão", quem: "", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/x", chaveP(5), chaveA(5)), status: 401},
+			{nome: "impersonado", quem: "impersonado", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/imp", chaveP(6), chaveA(6)), status: 403,
 				efeito: sub("user_id", "https://push.exemplo/imp"), quer: "<nulo>"},
-			{nome: "impersonado nem reinscreve o endpoint do alvo", quem: "impersonado", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, "imp", "imp"), status: 403,
-				efeito: sub("p256dh", epAdmin), quer: "ka2"},
+			{nome: "impersonado nem reinscreve o endpoint do alvo", quem: "impersonado", metodo: "POST", caminho: ins, corpo: corpo(epAdmin, chaveP(7), chaveA(7)), status: 403,
+				efeito: sub("p256dh", epAdmin), quer: chaveP(3)},
 		})
 	})
 
@@ -166,19 +182,38 @@ func TestInscricaoDePush(t *testing.T) {
 		antes := m.um(t, fotoDoMundo)
 		longo := func(n int) string { return strings.Repeat("a", n) }
 		ep2048 := "https://push.exemplo/" + longo(2048-len("https://push.exemplo/"))
+		const bom = "https://push.exemplo/v"
+		P, A := chaveP(1), chaveA(1)
+		naoURL := func(nome, ep string) caso {
+			return caso{nome: nome, quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(ep, P, A), status: 400}
+		}
+		naoChave := func(nome, p, a string) caso {
+			return caso{nome: nome, quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(bom, p, a), status: 400}
+		}
 		m.rodar(t, []caso{
-			{nome: "http (e o IP de metadados)", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("http://169.254.169.254/x", "k", "a"), status: 400},
-			{nome: "esquema que não é https", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("ftp://push.exemplo/x", "k", "a"), status: 400},
-			{nome: "sem host", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https:///x", "k", "a"), status: 400},
-			{nome: "não é URL", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("isso não é url", "k", "a"), status: 400},
-			{nome: "endpoint vazio", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("", "k", "a"), status: 400},
-			{nome: "endpoint com 2049 caracteres", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(ep2048+"a", "k", "a"), status: 400},
-			{nome: "p256dh vazio", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/v", "", "a"), status: 400},
-			{nome: "auth vazio", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/v", "k", ""), status: 400},
-			{nome: "p256dh com 257", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/v", longo(257), "a"), status: 400},
-			{nome: "auth com 257", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/v", "k", longo(257)), status: 400},
-			{nome: "user_id no corpo", quem: "viewer", metodo: "POST", caminho: ins, corpo: `{"endpoint":"https://push.exemplo/v","p256dh":"k","auth":"a","user_id":"` + idAdmin + `"}`, status: 400},
-			{nome: "id no corpo", quem: "viewer", metodo: "POST", caminho: ins, corpo: `{"endpoint":"https://push.exemplo/v","p256dh":"k","auth":"a","id":"` + idAdmin + `"}`, status: 400},
+			naoURL("http (e o IP de metadados)", "http://169.254.169.254/x"),
+			naoURL("esquema que não é https", "ftp://push.exemplo/x"),
+			naoURL("sem host", "https:///x"),
+			naoURL("não é URL", "isso não é url"),
+			naoURL("endpoint vazio", ""),
+			naoURL("endpoint com 2049 caracteres", ep2048+"a"),
+			// a MESMA regra do envio (webpush.EndpointAceito): linha que o envio recusaria não entra (senão nunca é podada)
+			naoURL("https com IP literal", "https://169.254.169.254/x"),
+			naoURL("https com IP literal v6", "https://[::1]/x"),
+			naoURL("https com IP decimal", "https://2130706433/x"),
+			naoURL("localhost", "https://localhost/x"),
+			naoURL("sufixo interno", "https://api.internal/x"),
+			naoURL("userinfo", "https://quem:senha@push.exemplo/x"),
+			naoChave("p256dh vazio", "", A),
+			naoChave("auth vazio", P, ""),
+			naoChave("p256dh que não é base64url", "k!k", A),
+			naoChave("auth que não é base64url", P, "a+/="),
+			naoChave("p256dh com o tamanho errado (16 bytes)", chaveA(1), A),
+			naoChave("auth com o tamanho errado (65 bytes)", P, chaveP(1)),
+			naoChave("p256dh com 257", longo(257), A),
+			naoChave("auth com 257", P, longo(257)),
+			{nome: "user_id no corpo", quem: "viewer", metodo: "POST", caminho: ins, corpo: `{"endpoint":"` + bom + `","p256dh":"` + P + `","auth":"` + A + `","user_id":"` + idAdmin + `"}`, status: 400},
+			{nome: "id no corpo", quem: "viewer", metodo: "POST", caminho: ins, corpo: `{"endpoint":"` + bom + `","p256dh":"` + P + `","auth":"` + A + `","id":"` + idAdmin + `"}`, status: 400},
 			{nome: "corpo vazio", quem: "viewer", metodo: "POST", caminho: ins, corpo: ``, status: 400},
 		})
 		if depois := m.um(t, fotoDoMundo); depois != antes {
@@ -186,7 +221,8 @@ func TestInscricaoDePush(t *testing.T) {
 		}
 		// os limites exatos passam
 		m.rodar(t, []caso{
-			{nome: "endpoint com 2048", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(ep2048, longo(256), longo(256)), status: 200},
+			{nome: "endpoint com 2048", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo(ep2048, chaveP(1), chaveA(1)), status: 200},
+			{nome: "chave com padding também vale (o navegador às vezes manda)", quem: "viewer", metodo: "POST", caminho: ins, corpo: corpo("https://push.exemplo/pad", chaveP(1), chaveA(1)+"=="), status: 200},
 		})
 	})
 

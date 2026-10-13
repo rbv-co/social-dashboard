@@ -1,5 +1,5 @@
 -- FATIA 5.6 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1 e 5.6-1). Carrega
--- depois de 01-tabelas-5-1…5-5 (ordem de nome); pode_ver_conta vem em 03-funcoes-5-6.sql, depois de
+-- depois de 01-tabelas-5-01…5-05 (ordem de nome); pode_ver_conta vem em 03-funcoes-5-06.sql, depois de
 -- 02-gatilhos.sql (precisa de conta_ativa). Nenhuma destas tabelas tem gatilho em produção
 -- (levantamento/03-triggers.csv: zero linhas), por isso o gerador não muda. Tabelas anteriores às
 -- migrations: colunas = as que o worker grava (api/internal/meta/*_test.go, conferidas em produção por

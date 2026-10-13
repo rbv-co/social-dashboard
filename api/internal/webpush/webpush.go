@@ -40,6 +40,17 @@ func b64(s string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(strings.TrimRight(strings.TrimSpace(s), "="))
 }
 
+// ChavesAceitas: p256dh é o ponto P-256 não comprimido (65 bytes, começa com 0x04) e auth tem 16 bytes,
+// ambos base64url (o que b64 lê e o envio exige). Não prova que o ponto está na curva: isso o envio confere.
+func ChavesAceitas(p256dh, auth string) bool {
+	p, err := b64(p256dh)
+	if err != nil || len(p) != 65 || p[0] != 4 {
+		return false
+	}
+	a, err := b64(auth)
+	return err == nil && len(a) == 16
+}
+
 // cifrar monta o corpo aes128gcm de UM registro: salt(16) | rs(4) | idlen(1) | chave do
 // servidor(65) | ciphertext. Separado para o teste usar o vetor do RFC 8291, Apêndice A.
 func cifrar(payload, uaPub, authSecret []byte, as *ecdh.PrivateKey, salt []byte) ([]byte, error) {
@@ -123,7 +134,9 @@ func hostRecusado(h string) bool {
 	return false
 }
 
-func endpointAceito(u *url.URL) bool {
+// EndpointAceito é a regra do envio, exportada para a inscrição (acesso.inscrever) usar a MESMA: linha
+// que o envio recusaria nunca seria podada (só 404/410 apagam) e viraria falha a cada aviso.
+func EndpointAceito(u *url.URL) bool {
 	return u.Scheme == "https" && u.User == nil && !hostRecusado(u.Hostname())
 }
 
@@ -201,7 +214,7 @@ var padrao = clienteSeguro()
 // 404/410 = inscrição morta, apagar). Erro = nem chegou a ter resposta, ou dado inválido.
 func Enviar(ctx context.Context, cli *http.Client, s Inscricao, payload []byte, v VAPID) (int, error) {
 	u, err := url.Parse(s.Endpoint)
-	if err != nil || !endpointAceito(u) {
+	if err != nil || !EndpointAceito(u) {
 		return 0, errors.New("webpush: endpoint recusado (precisa ser https num host por nome)")
 	}
 	uaPub, err := b64(s.P256dh)

@@ -1,5 +1,6 @@
--- FATIA 5.1 do esquema de produção para os testes (D0 reconstruído: Ruling 5.1-1). Carregada por
--- testebanco.ComEsquemaDeProducao DEPOIS da camada de compatibilidade e das migrações da API.
+-- FATIA 5.1 do esquema de produção para os testes (D0 reconstruído: Ruling 5.1-1). Os próximos
+-- sub-planos acrescentam 01-tabelas-5-02.sql, 5-03... SEMPRE com dois dígitos (a ordem é a do nome do
+-- arquivo: 5-10 viria antes de 5-2). Carregada por testebanco.ComEsquemaDeProducao DEPOIS da camada de compatibilidade e das migrações da API.
 -- Fonte ao lado de cada tabela. "Presumido" = sem DDL no repositório (tabela anterior às migrations):
 -- o `api worker conferir` confere essas colunas no banco restaurado (Task 11). Tabelas de outros
 -- sub-planos entram MÍNIMAS (só o que o Escopo, os gatilhos e as rotas do 5.1 leem); FKs de
@@ -16,7 +17,8 @@ create table public.acessos_perfis (
 
 -- colunas, tipos e nulidade: levantamento/12-colunas.csv:2-16. Defaults: escopo_por_equipe
 -- (2026-08-04-equipes-e-escopo.sql:131-132), perfil_id e permissions_excecao (acessos/039:31-39);
--- os demais presumidos. allowed_accounts é "ARRAY" no CSV: uuid[] presumido (as funções fazem ::text[]).
+-- permissions, is_superadmin e allowed_accounts (uuid[]; nulo = todas):
+-- docs/superpowers/plans/2026-07-09-permissoes-granulares-fase1.md:31-33; os demais presumidos.
 create table public.profiles (
   id                   uuid primary key references public.usuarios(id) on delete cascade,
   email                text not null,
@@ -55,7 +57,8 @@ create table public.canais_grupos (
 );
 create unique index canais_grupos_nome_unico on public.canais_grupos (lower(btrim(nome)));
 
--- do 5.5, MÍNIMA (o que meus_vinculos e os gatilhos leem); grupo_id: canal-pai…sql:33-34; fechado_em presumido
+-- do 5.5, MÍNIMA (o que meus_vinculos e os gatilhos leem); grupo_id: canal-pai…sql:33-34;
+-- grupo: 2026-08-20-grupo-do-canal.sql:24-25; fechado_em: 2026-09-09-canal-fechado.sql:21-22
 create table public.bling_lojas (
   loja_id    bigint primary key,
   nome       text,
@@ -116,7 +119,8 @@ create table public.canais_grupos_membros (
   unique (grupo_id, profile_id)
 );
 
--- do 5.4, MÍNIMA: o que autz.CarregarEscopo lê
+-- do 5.4, MÍNIMA: o que autz.CarregarEscopo lê. Fonte: acessos/001_base.sql:2-11 e 004_v2.sql:21. Na fonte
+-- `nome` é NOT NULL; aqui fica anulável de propósito: os testes do autz inserem só (id, profile_id).
 create table public.acessos_pessoas (
   id                uuid primary key default gen_random_uuid(),
   nome              text,

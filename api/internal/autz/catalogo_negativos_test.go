@@ -193,6 +193,15 @@ func TestPortoesDeRPC(t *testing.T) {
 	if SuperEmail(&Escopo{Ativo: true, Email: "alguem@exemplo.com"}) {
 		t.Error("e-mail fora da lista passou")
 	}
+	// is_superadmin() compara o e-mail da lista cravada com `=` (sem caixa): outra grafia não é super
+	for _, email := range SuperAdminsPorEmail {
+		if !SuperEmail(&Escopo{Ativo: true, Email: email}) {
+			t.Errorf("%s da lista não é super", email)
+		}
+		if SuperEmail(&Escopo{Ativo: true, Email: strings.ToUpper(email[:1]) + email[1:]}) || SuperEmail(&Escopo{Ativo: true, Email: " " + email}) {
+			t.Errorf("%s: outra caixa ou espaço virou super (a comparação é exata)", email)
+		}
+	}
 	if _, err := VesselPode("outra", "ver"); err == nil {
 		t.Error("ferramenta fora da lista")
 	}
