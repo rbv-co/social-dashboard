@@ -539,3 +539,37 @@ func TestConferirNaFatiaD0NaoAcusaOPlano51(t *testing.T) {
 		}
 	}
 }
+
+// Plano 5.7 (Ruling 5.7-16): account_id das gt_* e da social_metas é TEXTO. O init só completa com uuid o que
+// a lista não declara: se sobrescrevesse, a conferência acusaria falso no banco restaurado.
+func TestContaEmTextoNaoViraUUID(t *testing.T) {
+	for _, k := range []string{"gt_fila_decisoes.account_id", "gt_budget_analises.account_id", "gt_ad_analises.account_id",
+		"gt_campanhas_rascunho.account_id", "gt_problemas_meta.account_id", "fabrica_marcas.account_id", "social_metas.account_id"} {
+		if tiposDoWorker[k] != "text" {
+			t.Errorf("tiposDoWorker[%q] = %q, esperava text", k, tiposDoWorker[k])
+		}
+	}
+	if tiposDoWorker["campaigns.account_id"] != "uuid" {
+		t.Errorf("campaigns.account_id = %q: o init deixou de completar com uuid o que não é declarado", tiposDoWorker["campaigns.account_id"])
+	}
+}
+
+// Plano 5.7: contra a fatia D0 (as 10 tabelas + fabrica_marcas, os únicos e gt_registrar_problemas), o conferir
+// não acusa nada do 5.7 — pega erro de digitação nas listas. Os presumidos (impactos, limiares_resultado) estão
+// na fatia como jsonb; no banco restaurado quem confere é o `api worker conferir`.
+func TestConferirNaFatiaD0NaoAcusaOPlano57(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	tabelas57 := []string{"gt_config_metricas", "gt_objetivo_interacao", "gt_ponderada_config", "gt_ponderada_config_log",
+		"gt_budget_analises", "gt_ad_analises", "gt_fila_decisoes", "gt_campanhas_rascunho", "gt_problemas_meta",
+		"fabrica_marcas", "interesses_sugeridos"}
+	for _, f := range faltamDe(t, p) {
+		if strings.Contains(f, "gt_registrar_problemas") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.7, mas o conferir acusa %q", f)
+		}
+		for _, tb := range tabelas57 {
+			if strings.Contains(f, " "+tb+".") || strings.Contains(f, " "+tb+"(") {
+				t.Errorf("a fatia D0 devia satisfazer o 5.7, mas o conferir acusa %q", f)
+			}
+		}
+	}
+}

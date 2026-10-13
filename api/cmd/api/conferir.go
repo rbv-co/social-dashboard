@@ -83,6 +83,19 @@ var colunasDoWorker = map[string]string{
 	"noticias_panorama":     "rodada,conteudo_md,modelo,created_at",
 	"ia_execucoes":          "id,run_at",
 	"robos_saude":           "robo,critico", // visão (relkind 'v'): ordem da leitura
+	// Plano 5.7 (gestão de tráfego): o que as rotas e a RPC presumem. Presumidos sem DDL no repositório:
+	// gt_budget_analises.impactos e gt_ponderada_config.limiares_resultado.
+	"gt_config_metricas":      "balde,metricas,updated_at",
+	"gt_objetivo_interacao":   "alvo_id,nivel,interacao,conta_id,updated_at,updated_by",
+	"gt_ponderada_config":     "id,pesos,metas,limiares,limiares_resultado,metas_por_conta,updated_at,updated_by",
+	"gt_ponderada_config_log": "id,mudou_em,mudou_quem,antes,depois",
+	"gt_budget_analises":      "campaign_id,account_id,objetivo,effective_status,veredito,justificativa,impacto_estimado,impactos,budget_atual_centavos,budget_sugerido_centavos,gerado_em,valida_ate",
+	"gt_ad_analises":          "ad_id,campaign_id,account_id,veredito,justificativa,gerado_em,valida_ate",
+	"gt_fila_decisoes":        "id,campaign_id,account_id,escopo,veredito,budget_atual_centavos,budget_sugerido_centavos,analise_gerada_em,decisao,decidido_em,decidido_por,silenciar_ate,aplicado,erro",
+	"gt_campanhas_rascunho":   "id,account_id,criado_por,estado,passo,nome,tipo,status,resultado,created_at,updated_at",
+	"gt_problemas_meta":       "ad_id,codigo,account_id,titulo,grave,primeira_vez,ultima_vez,resolvido_em",
+	"fabrica_marcas":          "id,account_id",
+	"interesses_sugeridos":    "id,marca_id,objetivo,itens,propostos,validos,gerado_em",
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
@@ -124,12 +137,19 @@ var tiposDoWorker = map[string]string{
 	"canais_grupos_membros.grupo_id": "uuid", "canais_grupos_membros.profile_id": "uuid",
 	"push_subs.user_id": "uuid", "push_preferencias.user_id": "uuid",
 	"noticias_concorrentes.rodada": "date", "noticias_panorama.rodada": "date", // o filtro faz @rodada::date[]
+	// Plano 5.7: account_id das gt_* e de fabrica_marcas é TEXTO (as policies fazem pode_ver_conta(account_id) sem
+	// cast; os filtros fazem ::text); os jsonb que as escritas gravam por jsonb_populate_record
+	"gt_budget_analises.account_id": "text", "gt_ad_analises.account_id": "text", "gt_fila_decisoes.account_id": "text",
+	"gt_campanhas_rascunho.account_id": "text", "gt_problemas_meta.account_id": "text", "fabrica_marcas.account_id": "text",
+	"gt_objetivo_interacao.conta_id": "uuid", "gt_campanhas_rascunho.criado_por": "uuid", "gt_fila_decisoes.decidido_por": "uuid",
+	"gt_ponderada_config.metas_por_conta": "jsonb", "gt_ponderada_config.limiares_resultado": "jsonb",
+	"gt_config_metricas.metricas": "jsonb", "gt_budget_analises.impactos": "jsonb", "gt_campanhas_rascunho.estado": "jsonb",
 }
 
 // anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).
 var anulaveisDoWorker = []string{"carrinho_eventos.cart_token"}
 
-func init() { // toda coluna account_id é uuid: o código a preenche e a junta com accounts.id por uuid
+func init() { // toda coluna account_id é uuid, SALVO a que tiposDoWorker declara (gt_*, fabrica_marcas, social_metas: texto)
 	for tabela, cols := range colunasDoWorker {
 		if _, definido := tiposDoWorker[tabela+".account_id"]; !definido && slices.Contains(strings.Split(cols, ","), "account_id") {
 			tiposDoWorker[tabela+".account_id"] = "uuid" // social_metas.account_id é text e fica como declarado
@@ -148,6 +168,8 @@ var unicosDoWorker = []string{
 	"chatwoot_eventos(conversation_id,tipo)", "contatos_sem_mensagem(telefone)", "shopify_pedidos(id)",
 	"social_metas(account_id,periodo,indicador)", "campaign_filters(account_id)", // Plano 5.6
 	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
+	// Plano 5.7: alvos de ON CONFLICT (tela, RPC e robô sugerir-interesses)
+	"gt_config_metricas(balde)", "gt_objetivo_interacao(alvo_id)", "gt_problemas_meta(ad_id,codigo)", "interesses_sugeridos(marca_id,objetivo)",
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
@@ -161,7 +183,8 @@ var funcoesDoWorker = []string{
 	"marcar_da_fila(text,text,text,text,bigint)", "devolver_mensagem(text,boolean)", "devolver_da_fila(text,text,boolean)",
 	"liberar_mensagens_travadas()", "liberar_travadas_da_fila()", "agendar_followups(integer,integer)",
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
-	"pode_ver_conta(text)", // Plano 5.6
+	"pode_ver_conta(text)",               // Plano 5.6
+	"gt_registrar_problemas(text,jsonb)", // Plano 5.7
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
 	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "equipes_toca_atualizado()",
 }
@@ -198,6 +221,7 @@ var parametrosDasFuncoes = map[string][]string{
 	"reabrir_checkout_abandono":          {"p_token"},
 	"registrar_pedido_para_mensagem":     {"p_pedido_id", "p_numero", "p_nome", "p_telefone", "p_criado_em"},
 	"cancelar_mensagem_pedido":           {"p_pedido_id"},
+	"gt_registrar_problemas":             {"p_conta", "p_itens"}, // Plano 5.7
 }
 
 // retornoDasFuncoes: as colunas que o código LÊ do que a função devolve (`select token, ... from f(...)`).

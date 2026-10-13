@@ -262,8 +262,21 @@ var rotas51 = []string{
 	"GET /saude/conferencias",
 }
 
+// Plano 5.7: as 16 rotas de tabela de trafego.Montar, no grupo de DOMÍNIO. Portão = catálogo, provado pela
+// matriz de cada rota em `internal/trafego`; vazamento e impersonado por `TestNadaVazaEntreContas` e
+// `TestEscritasRecusamImpersonado`. Os 3 proxies NÃO entram aqui: têm ExigirModulo (TestNenhumaRotaNovaFicaAberta).
+var rotas57 = []string{
+	"GET /gestao-trafego/analises-de-orcamento", "GET /gestao-trafego/analises-de-anuncio",
+	"GET /gestao-trafego/decisoes", "POST /gestao-trafego/decisoes",
+	"GET /gestao-trafego/rascunhos", "POST /gestao-trafego/rascunhos",
+	"PATCH /gestao-trafego/rascunhos/{id}", "DELETE /gestao-trafego/rascunhos/{id}",
+	"GET /gestao-trafego/config-metricas", "PUT /gestao-trafego/config-metricas/{balde}",
+	"GET /gestao-trafego/objetivos", "PUT /gestao-trafego/objetivos/{alvo_id}", "DELETE /gestao-trafego/objetivos/{alvo_id}",
+	"GET /gestao-trafego/regua", "PUT /gestao-trafego/regua", "GET /gestao-trafego/interesses-sugeridos",
+}
+
 func init() {
-	for _, c := range rotas51 {
+	for _, c := range append(slices.Clone(rotas51), rotas57...) {
 		soSessao[c] = true
 	}
 }
@@ -419,8 +432,10 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"GET /noticias/panorama": PrazoDominio, "GET /status-ia/execucoes": PrazoDominio,
 		"GET /status-ia/saude-dos-robos": PrazoDominio,
 		// Plano 5.12: fatura real das contas de IA (grupo autenticado, FORA do de domínio)
-		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second}
-	for _, c := range rotas51 { // Plano 5.1: no grupo de domínio, com o prazo dele
+		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
+		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
+		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
+	for _, c := range append(slices.Clone(rotas51), rotas57...) { // Planos 5.1 e 5.7: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -712,7 +727,9 @@ func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
 	const nome = "vessel_gerar_lote"
 	original, pendentes := FuncoesRPC, RPCPendentes
 	t.Cleanup(func() { FuncoesRPC, RPCPendentes = original, pendentes })
-	FuncoesRPC = []rpc.Funcao{{Nome: nome, Params: []rpc.Param{{Nome: "p_n", Tipo: "integer"}}, Retorno: rpc.Valor, Portao: autz.SuperFicha}}
+	// ACRESCENTA: com as funções dos sub-planos já registradas (e fora de RPCPendentes), trocar a lista inteira
+	// derrubaria a soma de TotalRPCDoPainel.
+	FuncoesRPC = append(slices.Clone(original), rpc.Funcao{Nome: nome, Params: []rpc.Param{{Nome: "p_n", Tipo: "integer"}}, Retorno: rpc.Valor, Portao: autz.SuperFicha})
 	RPCPendentes = slices.DeleteFunc(slices.Clone(pendentes), func(x string) bool { return x == nome })
 	p := testebanco.Novo(t)
 	s := auth.NovoStore(p)
@@ -818,5 +835,70 @@ func TestAcessoPelaMontagemReal(t *testing.T) {
 	var n int
 	if err := p.QueryRow(ctx, `select count(*) from access_requests where email = 'fulana@x.com' and status = 'pending'`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("pedidos gravados = %d (%v), esperava 1", n, err)
+	}
+}
+
+// Plano 5.7 pela montagem real: a cadeia do grupo de domínio (sessão, escopo, prazo) nas leituras e na RPC,
+// e o portão e o escopo dos três proxies no grupo de sessão. A matriz de cada rota está em internal/trafego,
+// internal/ia e internal/mapa; aqui vale a MONTAGEM. Sem chave de IA e sem ligar a nada de fora: o 503 e o 400
+// provam que o pedido passou do portão e do escopo e parou antes do externo.
+func TestTrafegoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const a1, a2 = "a5700000-0000-4000-a000-0000000000a1", "a5700000-0000-4000-a000-0000000000a2"
+	quem := map[string]string{}
+	for i, u := range []struct{ nome, papel, features, contas string }{
+		{"gestor-a1", "viewer", "{meta,meta.gestor}", "{" + a1 + "}"}, {"admin", "admin", "{}", ""},
+		{"so-meta", "viewer", "{meta}", ""}, {"nenhum", "viewer", "{}", ""},
+	} {
+		id := fmt.Sprintf("a5710000-0000-4000-a000-00000000010%d", i)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, u.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe, allowed_accounts)
+			values ($1::uuid, $2::text, $2::text, $3::text, $4::text[], false, nullif($5::text, '')::uuid[])`,
+			id, u.nome+"@x.com", u.papel, u.features, u.contas); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if quem[u.nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.Exec(ctx, `insert into gt_budget_analises (campaign_id, account_id, veredito) values ('9001', $1::text, 'escalar'), ('9002', $2::text, 'reduzir')`, a1, a2); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(nome, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if nome != "" {
+			r.Header.Set("Authorization", "Bearer "+quem[nome])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem, naoTem                        string
+	}{
+		{"leitura sem sessão", "", "GET", "/gestao-trafego/analises-de-orcamento", "", 401, "nao_autenticado", ""},
+		{"gestor com lista só vê a própria conta", "gestor-a1", "GET", "/gestao-trafego/analises-de-orcamento", "", 200, a1, a2},
+		{"admin vê as duas", "admin", "GET", "/gestao-trafego/analises-de-orcamento", "", 200, a2, ""},
+		{"RPC com conta que não se vê", "gestor-a1", "POST", "/rpc/gt_registrar_problemas", `{"p_conta":"` + a2 + `","p_itens":[]}`, 403, "sem_permissao", ""},
+		{"RPC com a conta da lista", "gestor-a1", "POST", "/rpc/gt_registrar_problemas", `{"p_conta":"` + a1 + `","p_itens":[]}`, 200, "0", ""},
+		{"IA sem o módulo do gestor", "so-meta", "POST", "/sugerir-publico-ia", `{"evidencia":{},"contaId":"` + a1 + `"}`, 403, "sem_permissao", ""},
+		{"IA passa o portão e o escopo e para sem chave", "gestor-a1", "POST", "/sugerir-publico-ia", `{"evidencia":{},"contaId":"` + a1 + `"}`, 503, "chave_nao_configurada", ""},
+		{"documento sem o módulo do gestor", "so-meta", "POST", "/ler-documento", `{}`, 403, "sem_permissao", ""},
+		{"mapa sem o módulo meta", "nenhum", "POST", "/buscar-lugar", `{"acao":"buscar","termo":"praça"}`, 403, "sem_permissao", ""},
+		{"mapa passa o portão e para na ação, sem ligar ao Nominatim", "so-meta", "POST", "/buscar-lugar", `{"acao":"apagar"}`, 400, "acao desconhecida", ""},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
+		}
 	}
 }
