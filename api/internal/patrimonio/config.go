@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -21,14 +22,18 @@ import (
 var consultaConfig = dados.Consulta{Tabela: "patrimonio_config", Alias: "t",
 	SQL: `select t.chave, t.valor, t.atualizado_em from patrimonio_config t`, OrdemPadrao: "t.chave", Desempate: "t.chave"}
 
-// formatosDeConfig: as chaves que a tela grava e o formato do valor (lista fechada, Ruling 5.2-10).
-var formatosDeConfig = map[string]*regexp.Regexp{
-	"numero_maximo": regexp.MustCompile(`^[1-9][0-9]{0,5}$`), // tela-de-patrimonio.vue:1735-1737
+// formatosDeConfig: as chaves que a tela grava, o formato do valor e a frase de recusa (lista fechada,
+// Ruling 5.2-10).
+var formatosDeConfig = map[string]struct {
+	re    *regexp.Regexp
+	frase string
+}{
+	"numero_maximo": {regexp.MustCompile(`^[1-9][0-9]{0,5}$`), "A numeração vai de 1 a 999999."}, // tela-de-patrimonio.vue:1735-1737
 }
 
-// gravarConfig: PUT /patrimonio/config/{chave} {valor}. Upsert pela chave (a tela fazia .upsert), com a
-// regra do PostgREST sob a RLS escrita à mão e na MESMA tx de ComUsuario: a linha nova passa no WITH CHECK
-// de criar e na regra de ler/editar sobre ela; a que já existe só muda se quem pede a lê e a edita.
+// gravarConfig: PUT /patrimonio/config/{chave} {valor}. Upsert pela chave (a tela fazia .upsert) por
+// dados.UpsertVisivel, na tx de ComUsuario: a linha nova passa no WITH CHECK e na regra de ler/editar; a
+// que já existe só muda se quem pede a lê e a edita. O relógio é do servidor (atualizado_em).
 func gravarConfig(p *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := autz.EscopoDo(r.Context())
@@ -48,44 +53,16 @@ func gravarConfig(p *pgxpool.Pool) http.HandlerFunc {
 		if !dados.LerCorpo(w, r, &in) {
 			return
 		}
-		if !formato.MatchString(in.Valor) {
-			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "A numeração vai de 1 a 999999.")
+		if !formato.re.MatchString(in.Valor) {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", formato.frase)
 			return
 		}
 		ctx := r.Context()
 		var corpo []byte
-		err := banco.ComUsuario(ctx, p, e.ID, func(tx pgx.Tx) error {
-			linha := map[string]any{"chave": chave, "valor": in.Valor}
-			if err := autz.Producao.PodeCriar(ctx, tx, e, "patrimonio_config", linha); err != nil {
-				return err
-			}
-			fn, err := autz.Producao.Filtro(e, "patrimonio_config", autz.EditarNova, "autz_nova")
-			if err != nil {
-				return err
-			}
-			if ok, err := autz.Conferir(ctx, tx, fn, "patrimonio_config", linha); err != nil || !ok {
-				if err == nil {
-					err = autz.ErrNegado
-				}
-				return err
-			}
-			fl, err := autz.Producao.Filtro(e, "patrimonio_config", autz.Ler, "patrimonio_config")
-			if err != nil {
-				return err
-			}
-			fe, err := autz.Producao.Filtro(e, "patrimonio_config", autz.Editar, "patrimonio_config")
-			if err != nil {
-				return err
-			}
-			err = tx.QueryRow(ctx, `with n as (insert into patrimonio_config (chave, valor, atualizado_em)
-				values (@chave::text, @valor::text, now())
-				on conflict (chave) do update set valor = excluded.valor, atualizado_em = excluded.atualizado_em
-				  where (`+fl.SQL+`) and (`+fe.SQL+`)
-				returning chave, valor, atualizado_em) select row_to_json(n) from n`,
-				fe.Juntar(fl.Juntar(pgx.NamedArgs{"chave": chave, "valor": in.Valor}))).Scan(&corpo)
-			if errors.Is(err, pgx.ErrNoRows) {
-				return autz.ErrNegado // a linha existe e quem pede não a edita: fica como estava
-			}
+		err := banco.ComUsuario(ctx, p, e.ID, func(tx pgx.Tx) (err error) {
+			corpo, err = dados.UpsertVisivel(ctx, tx, autz.Producao, e, "patrimonio_config", []string{"chave"},
+				map[string]any{"chave": chave, "valor": in.Valor, "atualizado_em": time.Now().UTC().Format(time.RFC3339Nano)},
+				"chave, valor, atualizado_em")
 			return err
 		})
 		if err != nil {
