@@ -70,6 +70,8 @@ import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 // Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
 import { areaNaApi, fetchDaApi, trocarCodigoPorFrase } from '../../compartilhado/api.js'
+// Chave `meta` (Plano 7): as tabelas do 5.6 pela API (adFetch e os .from).
+import { tabelaNaApi, fetchPostgrest, deOnde } from '../../compartilhado/banco-pela-api.js'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 // Traduz 401/42501 para uma frase que o dono entende. Ver seção 9 do
@@ -120,7 +122,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* ── Helpers copiados do legado (self-contidos) ── */
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function adTok(){return estado.currentSession?.access_token||SUPABASE_ANON_KEY;}
-function adFetch(path,opts={}){return fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...opts,headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${adTok()}`,'Content-Type':'application/json',...(opts.headers||{})}});}
+// Tabela cuja área já fala com a API em Go (Plano 7): a mesma URL traduzida para a rota.
+function adFetch(path,opts={}){if(tabelaNaApi(String(path).split('?')[0]))return fetchPostgrest(path,opts);return fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...opts,headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${adTok()}`,'Content-Type':'application/json',...(opts.headers||{})}});}
 async function metaFetch(path,params,accountId){
   const naApi=areaNaApi('edges-core');
   const{data:{session}}=naApi?{data:{session:null}}:await sbClient.auth.getSession();

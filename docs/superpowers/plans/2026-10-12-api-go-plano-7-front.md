@@ -191,6 +191,14 @@ A troca de cada robô é feita quando o caminho dele estiver pronto: os de `pg` 
 
 **Não medido com dado:** a seção Times do Admin e o Time de Vendas desenhados — eles leem `bling_lojas` (5.5) junto, e com só as áreas até `admin` ligadas essa leitura falha (cai no aviso "Não consegui carregar os times"). As escritas dessas telas foram provadas pelos mesmos ajudantes, contra a API real; a tela desenhada se mede com a área `comercial`.
 
+### Área `meta` (5.6) — branch `feat/plano-7-meta` (mescla depois do PR #357 da trilha B e do registro no `API-PRONTA.md`)
+
+**Trocado (atrás de `areaNaApi('meta')`):** as 15 tabelas com rota entram no `ROTAS` do `banco-pela-api.js` — `gte`/`lte` de data viram `_de`/`_ate`, `period_days=lte` vira `period_days_ate`, `lido_em=gte.<data>` vira o instante `<data>T00:00:00Z` (Ruling 15 do 5.6), `dia=gte` vira `dia_de`, metas em lote vão para `PUT /redes/metas` e o filtro de campanhas para `PUT /redes/filtros-de-campanha/{conta}` (sem `updated_at`, que o servidor carimba). Sítios: Redes Sociais, Relatório de Redes, Análise de Campanhas e Gestão de Tráfego (o `adFetch` próprio de cada uma passa pela ponte), Relatório por Hora, OPR, Marca de Vendas, Conteúdo e Admin.
+
+**O teto de 1000 linhas:** a tradução RECUSA `limit` acima de 1000 (cortar calado devolveria número menor sem aviso). Os pedidos de 5000 de Redes passam a pedir 1000 com a chave ligada; o aviso "bateu no teto e pode estar incompleta" passa a disparar em 1000, inclusive na série diária de anúncios (que antes não tinha aviso: ~30 campanhas por dia passam de 1000 num intervalo longo). As contagens do Admin › Dados saem do `X-Total-Count` (`contarPelaApi`), e o cartão "Ads" sai (`ads_snapshots` não tem rota nem escritor, Ruling 9 do 5.6).
+
+**Prova** (API do branch `feat/api-go-plano-5-6` em `a4cfce71`, banco com a compat + migrações + as fatias `01-tabelas-5-01`, `01-tabelas-5-06`, `02-gatilhos`, `03-funcoes-5-06`, 41 dias de dados de duas contas, `VITE_API_AREAS=conta,edges-core,paineis,comercial,admin,meta`, Chrome a 375 e 1440 px): Redes Sociais com os seguidores do banco, Relatório de Redes, Admin › Dados contando 82 snapshots pelo `X-Total-Count` e sem o cartão "Ads", nenhum pedido das tabelas do 5.6 ao Supabase em nenhuma das 6 telas e nenhuma recusa da tradução; metas em lote gravadas e lidas, filtro de campanhas gravado, conta editada (nome/@/cor e persona); e o escopo de contas — quem só vê a Vessel recebe `[]` da outra marca e `403` ao gravar meta nela, nada gravado.
+
 ### Pendências de API
 
 | Item | Dono | Situação |

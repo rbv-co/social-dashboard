@@ -39,6 +39,8 @@ import { onMounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `meta` (Plano 7): `accounts` pela API (5.6).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 
@@ -80,7 +82,7 @@ function abrirAnalise() {
    <img> troca pro avatar-placeholder com a inicial da marca. */
 async function loadBrandPickerPhotos(){
   try{
-    const{data}=await sbClient.from('accounts').select('instagram_id,profile_picture_url')
+    const{data}=await deOnde(sbClient).from('accounts').select('instagram_id,profile_picture_url')
       .in('instagram_id',['17841462952561833','17841401847160442','17841406451230767']);
     if(!data)return;
     const byId={};data.forEach(a=>byId[a.instagram_id]=a.profile_picture_url);

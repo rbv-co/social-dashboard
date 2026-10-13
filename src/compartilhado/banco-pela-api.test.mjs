@@ -178,3 +178,58 @@ test('in com aspas é recusado', async () => {
   assert.equal((await b.fetchPostgrest('equipes_membros?papel=in.(' + encodeURIComponent('"a,b",c') + ')')).ok, false)
   assert.equal(pedidos.length, 0)
 })
+/* ── 5.6 — Meta e redes ─────────────────────────────────────────────────── */
+
+test('5.6: faixa de datas vira _de/_ate; period_days lte vira period_days_ate', async () => {
+  const pedidos = api({ 'GET /redes/seguidores': [200, []], 'GET /redes/conteudo': [200, []] })
+  await b.fetchPostgrest('daily_snapshots?account_id=eq.c1&captured_at=gte.2026-09-01&captured_at=lte.2026-10-01&order=captured_at.asc&select=followers_count,captured_at')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { account_id: 'c1', captured_at_de: '2026-09-01', captured_at_ate: '2026-10-01', ordem: 'captured_at.asc' })
+  await b.fetchPostgrest('content_snapshots?captured_at=eq.2026-10-12&period_days=lte.1&select=account_id,stories_count&order=period_days.asc')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[1].busca)), { captured_at: '2026-10-12', period_days_ate: '1', ordem: 'period_days.asc' })
+})
+
+test('5.6: lido_em gte com data pura vira instante RFC 3339 (meia-noite UTC, como o PostgREST)', async () => {
+  const pedidos = api({ 'GET /redes/leituras-de-seguidores': [200, []] })
+  await b.fetchPostgrest('followers_leituras?select=followers_count,lido_em&account_id=eq.c1&lido_em=gte.2026-10-01&order=lido_em.asc')
+  assert.equal(new URLSearchParams(pedidos[0].busca).get('lido_em_de'), '2026-10-01T00:00:00Z')
+  await b.fetchPostgrest('followers_leituras?account_id=eq.c1&lido_em=gte.' + encodeURIComponent('2026-10-01T03:00:00.000Z'))
+  assert.equal(new URLSearchParams(pedidos[1].busca).get('lido_em_de'), '2026-10-01T03:00:00.000Z')
+})
+
+test('5.6: limite acima do teto da API é recusado (cortar calado daria número menor)', async () => {
+  const pedidos = api({ 'GET /redes/campanhas': [200, []] })
+  const r = await b.fetchPostgrest('campaigns?account_id=eq.c1&limit=5000&select=campaign_id')
+  assert.equal(r.ok, false)
+  assert.equal(pedidos.length, 0)
+})
+
+test('5.6: contarPelaApi lê o X-Total-Count com limite=1', async () => {
+  const pedidos = api({ 'GET /redes/seguidores': [200, [{ account_id: 'c1' }], { 'X-Total-Count': '1213' }] })
+  assert.equal(await b.contarPelaApi('daily_snapshots'), 1213)
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { limite: '1', contar: '1' })
+  api({ 'GET /redes/seguidores': [500, { error: 'erro_interno' }] })
+  assert.equal(await b.contarPelaApi('daily_snapshots'), null)
+})
+
+test('5.6: metas em lote (PUT {metas}) e filtro de campanha por conta (PUT, sem updated_at)', async () => {
+  const pedidos = api({ 'PUT /redes/metas': [200, [{ account_id: 'c1' }]], 'PUT /redes/filtros-de-campanha/c1': [200, { account_id: 'c1', selected_ids: [] }] })
+  await b.consultaPelaApi('social_metas').upsert([{ account_id: 'c1', periodo: 'mes', indicador: 'seguidores', valor: 10 }], { onConflict: 'account_id,periodo,indicador' })
+  assert.deepEqual(pedidos[0].corpo, { metas: [{ account_id: 'c1', periodo: 'mes', indicador: 'seguidores', valor: 10 }] })
+  const r = await b.fetchPostgrest('campaign_filters', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ account_id: 'c1', selected_ids: [], updated_at: '2026-10-12T00:00:00Z' }) })
+  assert.equal(r.ok, true)
+  assert.deepEqual([pedidos[1].chave, pedidos[1].corpo], ['PUT /redes/filtros-de-campanha/c1', { selected_ids: [] }])
+})
+
+test('5.6: conta editada por id vai para PATCH /redes/contas/{id}', async () => {
+  const pedidos = api({ 'PATCH /redes/contas/c1': [200, { id: 'c1', persona: 'x' }] })
+  const r = await b.fetchPostgrest('accounts?id=eq.c1&select=id,persona', { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: '{"persona":"x"}' })
+  assert.deepEqual(await r.json(), [{ id: 'c1', persona: 'x' }])
+  assert.equal(pedidos[0].chave, 'PATCH /redes/contas/c1')
+})
+
+test('o encadeado devolve status como o supabase-js (200, ou o do erro)', async () => {
+  api({ 'GET /redes/contas': [200, [{ id: 'c1', name: 'A' }]] })
+  assert.equal((await b.consultaPelaApi('accounts').select('id,name')).status, 200)
+  api({ 'GET /redes/contas': [401, { error: 'nao_autenticado' }] })
+  assert.equal((await b.consultaPelaApi('accounts').select('id,name')).status, 401)
+})
