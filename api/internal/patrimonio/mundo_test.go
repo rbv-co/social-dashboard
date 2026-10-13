@@ -21,6 +21,7 @@ const (
 	idAcessos    = "5e200000-0000-4000-a000-000000000005" // só acessos: cadastro rápido, nada de patrimônio
 	idViewer     = "5e200000-0000-4000-a000-000000000006" // nada
 	idSuperFicha = "5e200000-0000-4000-a000-000000000007" // super pela ficha, papel viewer, sem módulo (frota pela ficha)
+	idAdminT1    = "5e200000-0000-4000-a000-000000000008" // papel admin com trava, sem módulo, no time T1 (L1): a trava vale também para o admin
 
 	P1 = "9e200000-0000-4000-a000-000000000001" // acessos_pessoas da patT1 (profile_id)
 	P2 = "9e200000-0000-4000-a000-000000000002" // motorista, sem login
@@ -59,6 +60,7 @@ var pessoas = []mundoteste.Pessoa{
 	{Chave: "acessos", ID: idAcessos, Email: "acessos@x.com", Papel: "viewer", Trava: true, Modulos: []string{"acessos"}},
 	{Chave: "viewer", ID: idViewer, Email: "viewer@x.com", Papel: "viewer", Trava: true},
 	{Chave: "superFicha", ID: idSuperFicha, Email: "superficha@x.com", Papel: "viewer", Super: true, Trava: true},
+	{Chave: "adminT1", ID: idAdminT1, Email: "admint1@x.com", Papel: "admin", Trava: true},
 }
 
 // sem identidade; ligar o V1 ao BV no insert dispara o espelho de situação (já batem: em_uso/ativo)
@@ -73,7 +75,8 @@ insert into patrimonio_categorias (id, nome, ordem) values ('` + CatM + `', 'Mó
 insert into patrimonio_tipos (id, categoria_id, nome, ordem) values ('` + TpM + `', '` + CatM + `', 'Mesa', 1);
 insert into patrimonio_config (chave, valor) values ('numero_maximo', '400');
 insert into equipes (id, nome, local_id) values ('` + T1 + `', 'Tivoli', '` + L1 + `'), ('` + T2 + `', 'Dom Pedro', '` + L2 + `');
-insert into equipes_membros (equipe_id, profile_id, papel) values ('` + T1 + `', '` + idPatT1 + `', 'vendedora'), ('` + T2 + `', '` + idPatT2 + `', 'vendedora');
+insert into equipes_membros (equipe_id, profile_id, papel) values ('` + T1 + `', '` + idPatT1 + `', 'vendedora'), ('` + T2 + `', '` + idPatT2 + `', 'vendedora'),
+  ('` + T1 + `', '` + idAdminT1 + `', 'vendedora');
 insert into patrimonio_bens (id, numero, nome, local_id, categoria_id, pessoa_id, situacao) values
   ('` + B1 + `', 1, 'Cadeira da Tivoli', '` + L1 + `', '` + CatM + `', null, 'em_uso'),
   ('` + B2 + `', 2, 'Cadeira do Dom Pedro', '` + L2 + `', '` + CatM + `', null, 'em_uso'),
@@ -102,7 +105,8 @@ const fotoDoMundo = `select md5(string_agg(l, '|' order by l)) from (
   select 'pessoas:' || t::text from acessos_pessoas t union all
   select 'setores:' || t::text from acessos_setores t union all
   select 'veiculos:' || t::text from frota_veiculos t union all
-  select 'usos:' || t::text from frota_uso t) z`
+  select 'usos:' || t::text from frota_uso t union all
+  select 'equipes:' || t::text from equipes t) z` // equipes: apagar local ou empresa zera equipes.local_id/empresa_id (FK on delete set null)
 
 func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundoteste.Mundo {
 	t.Helper()
