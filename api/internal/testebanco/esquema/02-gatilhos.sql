@@ -1,7 +1,7 @@
 -- GERADO por gerar-gatilhos.mjs a partir do levantamento de produção (02-funções.csv, 03-triggers.csv).
 -- NÃO EDITE À MÃO: rode o script de novo. Corpos verbatim de produção; orientação dos gatilhos das migrations.
--- Tabelas: access_requests, acessos_perfis, acessos_pessoas, acessos_setores, audit_log, bling_lojas, canais_grupos, canais_grupos_membros, data_integrity_checks, equipes, equipes_membros, equipes_permissoes, frota_uso, frota_veiculos, ia_execucoes, patrimonio_bens, patrimonio_categorias, patrimonio_comodos, patrimonio_config, patrimonio_empresas, patrimonio_locais, patrimonio_log, patrimonio_posse, patrimonio_tipos, profiles, push_preferencias, push_subs
--- Funções (26): bem_de_veiculo_segue_a_frota, conta_ativa, criar_pessoa_rapida, criar_setor_rapido, equipes_toca_atualizado, espelhar_grupo_do_canal, espelhar_rename_do_grupo, frota_aceite_imutavel, frota_espelha_responsavel_no_bem, frota_espelha_situacao_no_bem, frota_fechar_posse_orfa, frota_uso_enfileirar_pdf, guard_profiles, impedir_autopromocao, is_acessos_admin, is_frota_admin, is_patrimonio_admin, is_superadmin, patrimonio_espelha_responsavel_no_veiculo, patrimonio_espelha_situacao_no_veiculo, patrimonio_traduz_situacao_para_frota, pessoas_para_escolher, pode_cadastrar_pessoa_rapida, setores_para_escolher, sincronizar_carro_e_bem, situacao_do_bem_pelo_veiculo
+-- Tabelas: access_requests, account_insights, accounts, acessos_perfis, acessos_pessoas, acessos_setores, ad_insights_hora, ads, audit_log, bling_lojas, campaign_adsets, campaign_filters, campaign_insights, campaign_insights_hora, campaigns, canais_grupos, canais_grupos_membros, content_snapshots, daily_snapshots, data_integrity_checks, engagement_snapshots, equipes, equipes_membros, equipes_permissoes, fabrica_marcas, followers_leituras, frota_uso, frota_veiculos, gt_ad_analises, gt_budget_analises, gt_campanhas_rascunho, gt_config_metricas, gt_fila_decisoes, gt_objetivo_interacao, gt_ponderada_config, gt_ponderada_config_log, gt_problemas_meta, ia_execucoes, interesses_sugeridos, patrimonio_bens, patrimonio_categorias, patrimonio_comodos, patrimonio_config, patrimonio_empresas, patrimonio_locais, patrimonio_log, patrimonio_posse, patrimonio_tipos, perfil_visitas_hora, profiles, push_preferencias, push_subs, social_metas, visitas_perfil_dia
+-- Funções (27): bem_de_veiculo_segue_a_frota, conta_ativa, criar_pessoa_rapida, criar_setor_rapido, equipes_toca_atualizado, espelhar_grupo_do_canal, espelhar_rename_do_grupo, frota_aceite_imutavel, frota_espelha_responsavel_no_bem, frota_espelha_situacao_no_bem, frota_fechar_posse_orfa, frota_uso_enfileirar_pdf, gt_rascunho_toca_updated_at, guard_profiles, impedir_autopromocao, is_acessos_admin, is_frota_admin, is_patrimonio_admin, is_superadmin, patrimonio_espelha_responsavel_no_veiculo, patrimonio_espelha_situacao_no_veiculo, patrimonio_traduz_situacao_para_frota, pessoas_para_escolher, pode_cadastrar_pessoa_rapida, setores_para_escolher, sincronizar_carro_e_bem, situacao_do_bem_pelo_veiculo
 set check_function_bodies = off;
 
 CREATE OR REPLACE FUNCTION public.bem_de_veiculo_segue_a_frota()
@@ -317,6 +317,15 @@ begin
       new.id, sqlerrm;
   end;
   return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.gt_rascunho_toca_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.updated_at = now();
+  return new;
 end $function$;
 
 CREATE OR REPLACE FUNCTION public.guard_profiles()
@@ -700,6 +709,7 @@ create trigger trg_frota_espelha_responsavel AFTER UPDATE OF pessoa_id on public
 create trigger trg_frota_espelha_situacao AFTER UPDATE OF situacao on public.frota_veiculos for each row EXECUTE FUNCTION frota_espelha_situacao_no_bem();
 create trigger trg_frota_espelha_situacao_no_bem AFTER INSERT or UPDATE on public.frota_veiculos for each row EXECUTE FUNCTION frota_espelha_situacao_no_bem();
 create trigger trg_frota_fechar_posse_orfa AFTER UPDATE OF pessoa_id on public.frota_veiculos for each row when (new.pessoa_id is null) EXECUTE FUNCTION frota_fechar_posse_orfa();
+create trigger gt_rascunho_updated_at BEFORE UPDATE on public.gt_campanhas_rascunho for each row EXECUTE FUNCTION gt_rascunho_toca_updated_at();
 create trigger trg_bem_de_veiculo_segue_a_frota BEFORE UPDATE on public.patrimonio_bens for each row EXECUTE FUNCTION bem_de_veiculo_segue_a_frota();
 create trigger trg_patrimonio_espelha_responsavel AFTER UPDATE OF pessoa_id on public.patrimonio_bens for each row EXECUTE FUNCTION patrimonio_espelha_responsavel_no_veiculo();
 create trigger trg_patrimonio_espelha_situacao AFTER UPDATE OF situacao on public.patrimonio_bens for each row EXECUTE FUNCTION patrimonio_espelha_situacao_no_veiculo();

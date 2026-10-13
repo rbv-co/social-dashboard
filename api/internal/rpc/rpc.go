@@ -11,7 +11,9 @@ package rpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -53,6 +55,16 @@ type Funcao struct {
 	// SoSessaoPropria: a função GRAVA. Sessão de "entrar como" recebe 403 sem a função rodar
 	// (Ruling 5.2-3); função que só lê fica aberta a quem entrou como (ver o que a pessoa vê).
 	SoSessaoPropria bool
+	// ParamConta: o parâmetro (text) que diz de qual conta da Meta a função cuida. Valor texto tem de
+	// ser de uma conta que quem pede vê (autz.PodeVerConta, a regra das restritivas so_contas_permitidas):
+	// senão 403 sem a função rodar. null segue (a função decide). Ruling 5.7-10: função SECURITY DEFINER
+	// que grava por conta não passava pela restritiva de produção.
+	ParamConta string
+	// Conferir (opcional): última barreira, na MESMA transação da função e logo antes dela (depois do
+	// portão, de SoSessaoPropria e de ParamConta). Recebe o JSON cru de cada parâmetro enviado. Devolver
+	// autz.ErrNegado = 403 sem a função rodar; outro erro segue o mapa de erros do banco. nil = nada.
+	// Serve a regra que o portão e a conta não enxergam (ex.: o item que pertence a outra conta).
+	Conferir func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, args map[string]json.RawMessage) error
 }
 
 var (
@@ -108,6 +120,9 @@ func Novo(p *pgxpool.Pool, fs ...Funcao) (*Registro, error) {
 				return nil, fmt.Errorf("rpc %s: parâmetro %q repetido", f.Nome, pr.Nome)
 			}
 			vistos[pr.Nome] = true
+		}
+		if f.ParamConta != "" && !slices.ContainsFunc(f.Params, func(p Param) bool { return p.Nome == f.ParamConta && p.Tipo == "text" }) {
+			return nil, fmt.Errorf("rpc %s: ParamConta %q não é um parâmetro text declarado", f.Nome, f.ParamConta)
 		}
 		r.funcoes[f.Nome] = f
 	}
@@ -195,10 +210,16 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	args := pgx.NamedArgs{}
+	enviados := map[string]json.RawMessage{}
 	var chamadas []string
+	var conta json.RawMessage
+	var temConta bool
 	for _, pr := range f.Params {
 		v, tem := corpo[pr.Nome]
 		delete(corpo, pr.Nome)
+		if pr.Nome == f.ParamConta {
+			conta, temConta = v, tem
+		}
 		if !tem {
 			if !pr.Opcional {
 				dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "falta o parâmetro "+pr.Nome)
@@ -211,6 +232,7 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		args[pr.Nome] = string(v)
+		enviados[pr.Nome] = v
 		chamadas = append(chamadas, pgx.Identifier{pr.Nome}.Sanitize()+" => "+expr(pr))
 	}
 	if len(corpo) > 0 {
@@ -221,9 +243,25 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "parâmetro desconhecido: "+k)
 		return
 	}
+	if f.ParamConta != "" && temConta && strings.TrimSpace(string(conta)) != "null" {
+		var c string
+		if json.Unmarshal(conta, &c) != nil {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", f.ParamConta+" deve ser texto")
+			return
+		}
+		if !autz.PodeVerConta(e, c) {
+			dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+			return
+		}
+	}
 	chamada := pgx.Identifier{f.Nome}.Sanitize() + "(" + strings.Join(chamadas, ", ") + ")"
 	var saida []byte
 	err = banco.ComUsuario(r.Context(), rg.pool, a.ID, func(tx pgx.Tx) error {
+		if f.Conferir != nil {
+			if err := f.Conferir(r.Context(), tx, e, enviados); err != nil {
+				return err
+			}
+		}
 		switch f.Retorno {
 		case Conjunto:
 			// linha inteira (r.*: uma coluna chamada r não a esconde) e o teto de linhas do PostgREST
@@ -235,6 +273,10 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return tx.QueryRow(r.Context(), `select coalesce(to_json(`+chamada+`), 'null'::json)`, args).Scan(&saida)
 	})
+	if errors.Is(err, autz.ErrNegado) {
+		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+		return
+	}
 	if err != nil {
 		dados.ErroDoBanco(w, err)
 		return

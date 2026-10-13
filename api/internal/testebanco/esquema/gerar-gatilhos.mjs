@@ -15,6 +15,7 @@ const CONFERIDOS = {
   'bling_lojas.trg_espelhar_grupo_do_canal': { de: 'grupo_id, grupo' },                // db/migrations/2026-08-27-espelho-do-grupo-nos-dois-sentidos.sql:117-119
   'canais_grupos.trg_espelhar_rename_do_grupo': {},                                     // db/migrations/2026-08-21-canal-pai-e-supervisora-de-grupo.sql:88-90
   'equipes.equipes_atualizado': {},                                                     // db/migrations/2026-08-04-equipes-e-escopo.sql:246-247
+  'gt_campanhas_rascunho.gt_rascunho_updated_at': {},                                   // db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql (BEFORE UPDATE … FOR EACH ROW; fatia do 5.7)
   'profiles.trg_guard_profiles': {},                                                    // sem migration no repositório; o corpo usa new/old (Ruling 5.1-1)
   'profiles.trg_impedir_autopromocao': {},                                              // supabase/migrations/20260727_impedir_autopromocao_de_admin.sql:51-53
   'frota_uso.trg_frota_aceite_imutavel': {},                                            // db/migrations/acessos/046_frota_aceite_de_retirada.sql:96-98

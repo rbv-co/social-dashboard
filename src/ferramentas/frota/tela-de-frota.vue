@@ -23,6 +23,8 @@ import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-u
 // Chave `conta` (Plano 7): invite-user e conferir-senha (5.0) pela API em Go.
 // Chave `edges-core` (Plano 7): avisar-decisao-de-reserva (Plano 4).
 import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi, fetchDaApi } from '../../compartilhado/api.js'
+// Chave `admin` (Plano 7): `profiles` pela API (5.1).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
 import { seloDoVeiculo, tomDoCartao, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
@@ -789,7 +791,7 @@ async function darAcessoAoDono(c) {
 
     // PASSO 2: achar o perfil. O id vem de CONSULTA, não da resposta — a edge
     // devolve `{success:true}` e mais nada, e ler `d.id` daria nulo em silêncio.
-    const { data: perfil } = await sbClient.from('profiles')
+    const { data: perfil } = await deOnde(sbClient).from('profiles')
       .select('id,permissions,features').eq('email', email).maybeSingle()
     if (!perfil || !perfil.id) {
       pendencias.push('Não achei o cadastro da conta para terminar de configurar. '
@@ -803,7 +805,7 @@ async function darAcessoAoDono(c) {
     // criação — conferido no código dela. Sem este passo a senha temporária
     // vira permanente, e quem convidou (e o grupo onde ela foi colada) fica com
     // credencial válida da conta de outra pessoa.
-    const { data: marcou } = await sbClient.from('profiles')
+    const { data: marcou } = await deOnde(sbClient).from('profiles')
       .update({ precisa_trocar_senha: true }).eq('id', perfil.id).select('id')
     if ((marcou || []).length !== 1) {
       pendencias.push('Não consegui exigir a troca da senha no primeiro acesso. '
@@ -820,7 +822,7 @@ async function darAcessoAoDono(c) {
     // central, e aí seria um estrago silencioso.
     const permissoes = { ...(perfil.permissions || {}), frota: ['ver'] }
     const recursos = [...new Set([...(perfil.features || []), 'frota'])]
-    const { data: liberou } = await sbClient.from('profiles')
+    const { data: liberou } = await deOnde(sbClient).from('profiles')
       .update({ permissions: permissoes, features: recursos }).eq('id', perfil.id).select('id')
     if ((liberou || []).length !== 1) {
       pendencias.push(`${pessoa.nome} entra no aplicativo, mas AINDA NÃO alcança a Frota. `
@@ -1080,7 +1082,7 @@ async function carregar() {
     // como pessoaDoUsuario() acha a ficha de quem está logado), sem abrir
     // e-mail nem telefone.
     sbClient.rpc('pessoas_para_escolher'),
-    sbClient.from('profiles').select('id,name'),
+    deOnde(sbClient).from('profiles').select('id,name'),
     sbClient.rpc('setores_para_escolher'),
     // A agenda de reservas: quem vê a Frota vê a agenda inteira. Saber que o
     // carro está reservado é o que evita o conflito de viagens — esconder isso

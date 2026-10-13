@@ -225,7 +225,7 @@ func TestRotasPanicaComRPCRegistradaErrada(t *testing.T) {
 		"fora da triagem":       {{Nome: "funcao_que_ninguem_chama", Portao: autz.SuperFicha}},
 		"pendente e registrada": {{Nome: "vessel_gerar_lote", Portao: autz.SuperFicha}},
 	} {
-		FuncoesRPC = fs
+		FuncoesRPC = append(slices.Clone(original), fs...) // as dos sub-planos ficam: a soma de TotalRPCDoPainel só estoura pela errada
 		func() {
 			defer func() {
 				if recover() == nil {
@@ -236,7 +236,7 @@ func TestRotasPanicaComRPCRegistradaErrada(t *testing.T) {
 		}()
 	}
 	// e uma registrada certa (movida de pendente) monta
-	FuncoesRPC = []rpc.Funcao{{Nome: "vessel_gerar_lote", Portao: autz.SuperFicha}}
+	FuncoesRPC = append(slices.Clone(original), rpc.Funcao{Nome: "vessel_gerar_lote", Portao: autz.SuperFicha})
 	saved := RPCPendentes
 	t.Cleanup(func() { RPCPendentes = saved })
 	RPCPendentes = slices.DeleteFunc(slices.Clone(saved), func(x string) bool { return x == "vessel_gerar_lote" })

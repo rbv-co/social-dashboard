@@ -504,6 +504,8 @@ import { estado, hasPermission, contasPermitidas } from '../../compartilhado/con
 // Chave `conta` (Plano 7): o convite (invite-user, 5.0) pela API em Go.
 // Chave `edges-core` (Plano 7): insights-ao-vivo, contar-collabs e serie-novos-dia (Plano 3).
 import { areaNaApi, corpoDaEdge, invocarNaArea } from '../../compartilhado/api.js'
+// Chaves `admin` e `meta` (Plano 7): `profiles` (5.1) e as tabelas do 5.6 pela API (sb, os .from e o filtro de campanhas).
+import { tabelaNaApi, fetchPostgrest, deOnde, TETO_DE_LINHAS } from '../../compartilhado/banco-pela-api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
@@ -1359,12 +1361,20 @@ function saveGoal(key, val) {
 function _metasUpsert(key, rows) {
   if (!currentAccountId || typeof sbClient === 'undefined' || !sbClient) return
   const payload = rows.map(r => ({ account_id: String(currentAccountId), periodo: String(r[0]), indicador: key, valor: r[1] }))
-  try { sbClient.from('social_metas').upsert(payload, { onConflict: 'account_id,periodo,indicador' }).then(res => { if (res && res.error) console.warn('meta upsert:', res.error.message) }).catch(() => {}) } catch (e) {}
+  try { deOnde(sbClient).from('social_metas').upsert(payload, { onConflict: 'account_id,periodo,indicador' }).then(res => {
+    if (res && res.error) {
+      console.warn('meta upsert:', res.error.message)
+      // Pela API (chave `meta`), o lote recusado (403: conta que a pessoa não vê, ou a
+      // aba de "entrar como") APARECE — antes a meta parecia salva e voltava na
+      // próxima carga (contrato do 5.6). O caminho do Supabase segue só no console.
+      if (areaNaApi('meta')) adminToast('Não consegui salvar a meta: ' + res.error.message, false)
+    }
+  }).catch(() => {}) } catch (e) {}
 }
 async function metasFetchAll(accountId) {
   if (!accountId || typeof sbClient === 'undefined' || !sbClient) return
   try {
-    const { data, error } = await sbClient.from('social_metas').select('periodo,indicador,valor').eq('account_id', String(accountId))
+    const { data, error } = await deOnde(sbClient).from('social_metas').select('periodo,indicador,valor').eq('account_id', String(accountId))
     if (error || !data) return
     data.forEach(r => localStorage.setItem(goalStorageKey(r.indicador, r.periodo, accountId), String(r.valor)))
     updateGoalDisplays(currentPeriod)
@@ -2121,8 +2131,9 @@ async function fetchData(accountId, period, customStart, customEnd) {
     // propósito: a maior conta (Vessel) tem 126 campanhas e 5 contas somam 299
     // conjuntos — nenhuma chega perto de 5000, e um corte silencioso aqui faria
     // campanha sumir do recorte sem ninguém perceber.
-    sb(`campaigns?account_id=eq.${accountId}&limit=5000&select=campaign_id,objective`),
-    sb(`campaign_adsets?account_id=eq.${accountId}&limit=5000&select=campaign_id,destination_type,optimization_goal,synced_at`),
+    // 5000 era folga; a API para em 1000 (TETO_DE_LINHAS) — e a maior conta tem 126 campanhas.
+    sb(`campaigns?account_id=eq.${accountId}&limit=${areaNaApi('meta') ? TETO_DE_LINHAS : 5000}&select=campaign_id,objective`),
+    sb(`campaign_adsets?account_id=eq.${accountId}&limit=${areaNaApi('meta') ? TETO_DE_LINHAS : 5000}&select=campaign_id,destination_type,optimization_goal,synced_at`),
   ])
   const eng = engCurr[0] || { likes: 0, saves: 0, shares: 0, comments: 0 }
   const prevEng = engPrev[0] || null
@@ -2280,10 +2291,16 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // balde é feito aqui na memória, não na URL, para não pagar duas viagens.
   let _diaRows = []
   if (!noneSelected) {
-    const ciDia = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.asc&limit=5000&select=captured_at,campaign_id,spend,post_engagement,likes,conversas,cadastros,visitas,compras,impressions`)
+    // Pela API o teto é 1000 linhas (~30 campanhas por dia: um mês já passa perto).
+    // Bater nele é leitura pela metade, e a tela diz — o Supabase deixava ir a 5000.
+    const _tetoDia = areaNaApi('meta') ? TETO_DE_LINHAS : 5000
+    const ciDia = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.asc&limit=${_tetoDia}&select=captured_at,campaign_id,spend,post_engagement,likes,conversas,cadastros,visitas,compras,impressions`)
     // .erro lido AQUI, colado no await: ele mora no array que o sb() devolveu e o .map() abaixo
     // cria um array novo, deixando o .erro pra trás.
     if (ciDia.erro && !erroAds.value) erroAds.value = ciDia.erro
+    if (!ciDia.erro && ciDia.length >= _tetoDia && !erroAds.value) {
+      erroAds.value = 'A leitura de anúncios bateu no teto de linhas e pode estar incompleta — escolha um intervalo menor.'
+    }
     if (!ciDia.erro) _diaRows = ciDia.map(r => ({
       captured_at: r.captured_at, campaign_id: String(r.campaign_id), spend: r.spend,
       // AS CONTAGENS DO DIA, CRUAS: null continua null. Elas alimentam o gráfico
@@ -2456,7 +2473,9 @@ async function fetchData(accountId, period, customStart, customEnd) {
     // são ~30 campanhas POR DIA: cinco dias já dão 150, e um mês estoura — o
     // PostgREST corta em silêncio e o investimento sai MENOR sem aviso nenhum,
     // que é o defeito mais caro desta casa (número no lugar de falha).
-    const _tetoAds = ehCustom ? 5000 : 200
+    // Pela API o teto é 1000 (TETO_DE_LINHAS): o aviso de "bateu no teto" abaixo passa a
+    // disparar em 1000 — antes ele esperava 5000, que a API nunca entrega.
+    const _tetoAds = ehCustom ? (areaNaApi('meta') ? TETO_DE_LINHAS : 5000) : 200
     const [ciCurr, ciPrev] = await Promise.all([
       sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=${_tetoAds}&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
       sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsPrev}&limit=${_tetoAds}&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
@@ -3557,7 +3576,7 @@ async function refresh() {
     // 100 dias de contagem total, e não os 6 de antes: os 6 só davam para hoje e
     // ontem. Um dia parado no meio do período precisa da contagem do DIA ANTERIOR
     // para ter de onde estimar; sem ela, volta a desenhar zero.
-    const { data: tots } = await sbClient.from('daily_snapshots').select('captured_at,followers_count').eq('account_id', currentAccountId).order('captured_at', { ascending: false }).limit(100)
+    const { data: tots } = await deOnde(sbClient).from('daily_snapshots').select('captured_at,followers_count').eq('account_id', currentAccountId).order('captured_at', { ascending: false }).limit(100)
     if (myId !== _refreshId) return // trocou de período/perfil no meio → aborta este refresh
     const totMap = {}; (tots || []).forEach(t => { totMap[t.captured_at] = Number(t.followers_count) || 0 })
     // ⚠️ A CONTAGEM DE HOJE VEM DO AO VIVO, NÃO DA FOTO DO COLETOR. O coletor
@@ -3735,7 +3754,7 @@ async function loadUsers() {
   listEl.textContent = ''
   const { data: { session } } = await sbClient.auth.getSession()
   const token = session?.access_token || SUPABASE_ANON_KEY
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?order=created_at.asc&select=id,email,name,role`, {
+  const r = tabelaNaApi('profiles') ? await fetchPostgrest('profiles?order=created_at.asc&select=id,email,name,role') : await fetch(`${SUPABASE_URL}/rest/v1/profiles?order=created_at.asc&select=id,email,name,role`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
   })
   const users = await r.json()
@@ -3751,7 +3770,7 @@ async function loadUsers() {
     sel.addEventListener('change', async () => {
       const { data: { session } } = await sbClient.auth.getSession()
       const tok = session?.access_token || SUPABASE_ANON_KEY
-      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${u.id}`, {
+      await (tabelaNaApi('profiles') ? fetchPostgrest : (c, o) => fetch(`${SUPABASE_URL}/rest/v1/${c}`, o))(`profiles?id=eq.${u.id}`, {
         method: 'PATCH',
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ role: sel.value })
@@ -3836,7 +3855,7 @@ function updateCampaignCount() {
 }
 async function saveNoneCampaigns() {
   const token = estado.currentSession?.access_token || SUPABASE_ANON_KEY
-  await fetch(SUPABASE_URL + '/rest/v1/campaign_filters', {
+  await (tabelaNaApi('campaign_filters') ? fetchPostgrest : (c, o) => fetch(SUPABASE_URL + '/rest/v1/' + c, o))('campaign_filters', {
     method: 'POST',
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({ account_id: currentAccountId, selected_ids: [], updated_at: new Date().toISOString() }),
@@ -3859,7 +3878,7 @@ async function saveCampaignFilter() {
   // salvou", o mais caro de perceber.
   let r = null
   try {
-    r = await fetch(SUPABASE_URL + '/rest/v1/campaign_filters', {
+    r = await (tabelaNaApi('campaign_filters') ? fetchPostgrest : (c, o) => fetch(SUPABASE_URL + '/rest/v1/' + c, o))('campaign_filters', {
       method: 'POST',
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({ account_id: currentAccountId, selected_ids: toSave, updated_at: new Date().toISOString() }),
