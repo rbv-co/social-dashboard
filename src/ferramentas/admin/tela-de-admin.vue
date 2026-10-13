@@ -221,7 +221,7 @@ import { estado, PERMISSION_TREE, RECURSOS } from '../../compartilhado/controle-
 // pela API em Go. O resto desta tela é a área `admin` (5.1).
 import { areaNaApi, corpoDaEdge } from '../../compartilhado/api.js'
 // Chave `admin` (Plano 7): as tabelas do 5.1 pela API (adFetch, gravar e os .from abaixo).
-import { tabelaNaApi, fetchPostgrest, deOnde } from '../../compartilhado/banco-pela-api.js'
+import { tabelaNaApi, fetchPostgrest, deOnde, contarPelaApi } from '../../compartilhado/banco-pela-api.js'
 import { APROVACOES } from '../../compartilhado/catalogo-de-ferramentas.js'
 import { agruparRecursos, contarAcoes, estadoDaSelecao, marcarTudo } from './agrupar-permissoes.js'
 import { derivarFeatures } from '../../compartilhado/derivar-features.js'
@@ -4042,7 +4042,7 @@ async function loadAdminAccounts() {
     const saveBtn = mkEl('button', 'btn btn-principal'); saveBtn.textContent = 'Salvar alterações'
     saveBtn.addEventListener('click', async () => {
       saveBtn.textContent = 'Salvando...'; saveBtn.disabled = true
-      const { error } = await sbClient.from('accounts').update({ name: nameInp.value.trim(), username: usrInp.value.trim(), accent_color: colorPick.value }).eq('id', acc.id)
+      const { error } = await deOnde(sbClient).from('accounts').update({ name: nameInp.value.trim(), username: usrInp.value.trim(), accent_color: colorPick.value }).eq('id', acc.id)
       if (error) { saveBtn.textContent = 'Salvar alterações'; saveBtn.disabled = false; adminToast('Erro ao salvar: ' + error.message, false); return }
       if (PROFILE_THEMES[acc.name]) { const t = PROFILE_THEMES[acc.name]; t.accent = colorPick.value; t.light = colorPick.value + '1a'; t.mid = colorPick.value + '4d' }
       else { PROFILE_THEMES[nameInp.value.trim()] = { accent: colorPick.value, light: colorPick.value + '1a', mid: colorPick.value + '4d' } }
@@ -4067,14 +4067,21 @@ async function loadAdminData() {
   }
   syncEl.innerHTML = ''; const loading = mkEl('div', 'sr'); loading.appendChild(mkEl('span', null, 'Carregando...')); syncEl.appendChild(loading)
   const [daily, eng, cnt, ads, syncResults] = await Promise.all([
-    sb('daily_snapshots?select=id').then(r => r.erro ? '?' : r.length),
-    sb('engagement_snapshots?select=id').then(r => r.erro ? '?' : r.length),
-    sb('content_snapshots?select=id').then(r => r.erro ? '?' : r.length),
-    sb('ads_snapshots?select=id').then(r => r.erro ? '?' : r.length),
+    // Pela API (chave `meta`): a contagem vem do X-Total-Count — `select=id` +
+    // `.length` parava no teto de 1000 linhas (`daily_snapshots` já tem mais).
+    // `ads_snapshots` não tem rota nem escritor (Ruling 9 do 5.6): o cartão sai.
+    ...(areaNaApi('meta')
+      ? ['daily_snapshots', 'engagement_snapshots', 'content_snapshots'].map((t) => contarPelaApi(t).then((n) => (n === null ? '?' : n))).concat([Promise.resolve(null)])
+      : [
+        sb('daily_snapshots?select=id').then(r => r.erro ? '?' : r.length),
+        sb('engagement_snapshots?select=id').then(r => r.erro ? '?' : r.length),
+        sb('content_snapshots?select=id').then(r => r.erro ? '?' : r.length),
+        sb('ads_snapshots?select=id').then(r => r.erro ? '?' : r.length),
+      ]),
     Promise.all(accounts.map(a => sb(`daily_snapshots?account_id=eq.${a.id}&order=captured_at.desc&limit=1&select=captured_at,followers_count`).then(r => ({ a, d: r[0] || null }))))
   ])
   const stats = document.getElementById('admin-data-stats'); stats.innerHTML = ''
-  ;[[accounts.length, 'Contas'], [daily, 'Snapshots'], [eng, 'Engajamentos'], [cnt, 'Conteúdos'], [ads, 'Ads']].forEach(([v, l]) => {
+  ;[[accounts.length, 'Contas'], [daily, 'Snapshots'], [eng, 'Engajamentos'], [cnt, 'Conteúdos'], [ads, 'Ads']].filter(([v]) => v !== null).forEach(([v, l]) => {
     const s = mkEl('div', 'admin-stat'); s.appendChild(mkEl('div', 'admin-stat-val', String(v))); s.appendChild(mkEl('div', 'admin-stat-lbl', l)); stats.appendChild(s)
   })
   syncEl.innerHTML = ''
