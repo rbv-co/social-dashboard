@@ -1,6 +1,7 @@
 package conteudo
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
@@ -53,7 +54,7 @@ func TestPecas(t *testing.T) {
 			Corpo: `{"avisado_em":"2026-10-01T00:00:00Z"}`, Status: 400, Tem: "avisado_em"},
 		{Nome: "gravar ig_media_id", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
 			Corpo: `{"ig_media_id":"IG1"}`, Status: 400, Tem: "corpo_invalido"},
-		{Nome: "agendar sem data (check do banco)", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
+		{Nome: "agendar sem data (check do banco)", Quem: "aprovador", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
 			Corpo: `{"status":"agendada"}`, Status: 400},
 		{Nome: "impersonado não edita", Quem: "impersonado", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
 			Corpo: `{"titulo":"x"}`, Status: 403, Tem: "Quem entrou como outra pessoa"},
@@ -104,10 +105,22 @@ func TestFilhasSoComAPecaVisivel(t *testing.T) {
 		{Nome: "evento assinado por outro", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/eventos",
 			Corpo: `{"peca_id":"` + P1 + `","acao":"criou","quem":"` + idAprovador + `"}`, Status: 400, Tem: "corpo_invalido"},
 		{Nome: "evento com estado fora da lista", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/eventos",
-			Corpo: `{"peca_id":"` + P1 + `","de":"x","acao":"mudou_status"}`, Status: 400},
+			Corpo: `{"peca_id":"` + P1 + `","de":"x","acao":"mudou_status"}`, Status: 400, Tem: "de e para são estados da peça ou null."},
 		{Nome: "só conteudo.aprovar não grava evento", Quem: "soAprovar", Metodo: "POST", Caminho: "/conteudo/eventos",
 			Corpo: `{"peca_id":"` + P1 + `","acao":"criou"}`, Status: 403},
 	})
+	// a mãe invisível e a inexistente respondem IGUAL (status e corpo): o pedido não confirma que a peça existe
+	for _, c := range [][2]string{
+		{"/conteudo/arquivos", arq(P3, A2) + "|" + arq(inexistente, A2)},
+		{"/conteudo/eventos", `{"peca_id":"` + P3 + `","acao":"criou"}|{"peca_id":"` + inexistente + `","acao":"criou"}`},
+	} {
+		corpos := strings.Split(c[1], "|")
+		s1, b1 := m.Pedir(t, "conteudistaA1", "POST", c[0], corpos[0])
+		s2, b2 := m.Pedir(t, "conteudistaA1", "POST", c[0], corpos[1])
+		if s1 != 403 || s2 != 403 || b1 != b2 {
+			t.Errorf("%s: invisível = %d %s; inexistente = %d %s", c[0], s1, b1, s2, b2)
+		}
+	}
 	m.Rodar(t, []mundoteste.Caso{
 		{Nome: "evento na própria peça, assinado pela sessão", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/eventos",
 			Corpo: `{"peca_id":"` + P1 + `","de":"rascunho","para":"em_aprovacao","acao":"mudou_status"}`, Status: 201,
@@ -145,5 +158,39 @@ func TestArquivos(t *testing.T) {
 			Efeito: `select string_agg(ordem::text, ',' order by caminho) from conteudo_arquivos where peca_id = '` + P1 + `'`, Quer: "2,1,3"},
 		{Nome: "apagar", Quem: "conteudistaA1", Metodo: "DELETE", Caminho: "/conteudo/arquivos/" + AR2, Status: 204,
 			Efeito: `select count(*)::text from conteudo_arquivos where id = '` + AR2 + `'`, Quer: "0"},
+	})
+}
+
+// O furo da guarda de produção: ela só barra 'aprovada'/'agendada' vindo de em_aprovacao. Quem não aprova
+// voltava a peça para rascunho e agendava dali (ou de reprovada), e o robô da hora H avisava a publicação.
+func TestAgendarSemAprovarPeloRascunho(t *testing.T) {
+	m := novoMundo(t, montarPecas)
+	const status = `select status from conteudo_pecas where id = '`
+	agendar := func(quem, peca string) mundoteste.Caso {
+		return mundoteste.Caso{Nome: quem + " agenda " + peca, Quem: quem, Metodo: "PATCH", Caminho: "/conteudo/pecas/" + peca,
+			Corpo: `{"status":"agendada","publicar_em":"2026-11-01T15:00:00.000Z"}`}
+	}
+	nega := func(quem, peca string) mundoteste.Caso { c := agendar(quem, peca); c.Status = 403; return c }
+	intacto(t, m, []mundoteste.Caso{nega("conteudista", P1)}) // rascunho
+	m.Um(t, `with u as (update conteudo_pecas set status = 'reprovada' where id = '`+P1+`' returning 1) select count(*) from u`)
+	aprovar := nega("conteudista", P1) // reprovada
+	aprovar.Corpo = `{"status":"aprovada"}`
+	intacto(t, m, []mundoteste.Caso{nega("conteudista", P1), aprovar, nega("conteudistaA1", P1)})
+	// em_aprovacao → rascunho o editor ainda faz; dali, agendar não
+	m.Rodar(t, []mundoteste.Caso{{Nome: "devolver ao rascunho", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P2,
+		Corpo: `{"status":"rascunho"}`, Status: 200, Efeito: status + P2 + `'`, Quer: "rascunho"}})
+	intacto(t, m, []mundoteste.Caso{nega("conteudista", P2)})
+	m.Rodar(t, []mundoteste.Caso{
+		func() mundoteste.Caso {
+			c := agendar("aprovador", P1)
+			c.Status = 200
+			c.Efeito = status + P1 + `'`
+			c.Quer = "agendada"
+			return c
+		}(),
+		// já agendada: remarcar (status continua agendada) o editor pode
+		{Nome: "editor remarca a agendada", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
+			Corpo: `{"status":"agendada","publicar_em":"2026-11-05T15:00:00.000Z","avisado_em":null}`, Status: 200,
+			Efeito: `select status || '|' || publicar_em::text from conteudo_pecas where id = '` + P1 + `'`, Quer: "agendada|2026-11-05 15:00:00+00"},
 	})
 }

@@ -82,7 +82,34 @@ func (c corpoPecaNova) Validar() error {
 // tabelaPecas: catálogo (conteudo_pecas_escrita + a restritiva pela regra de Ler no PodeEditar/PodeApagar) e,
 // na criação, a peça nova tem de ser legível (a conta dela, Ruling 5.9-4).
 var tabelaPecas = dados.Tabela{Nome: "conteudo_pecas", Resposta: colunasPeca, Autor: "criado_por",
-	Conferir: soLegivelAoCriar("conteudo_pecas")}
+	Conferir: conferirPeca}
+
+var soLegivelPeca = soLegivelAoCriar("conteudo_pecas")
+
+// conferirPeca: na criação, a peça nova legível (soLegivelAoCriar). Na edição, o furo da guarda de produção:
+// conteudo_guarda_aprovacao só barra 'aprovada'/'agendada' quando o status ANTIGO é 'em_aprovacao'. Quem não
+// aprova fazia em_aprovacao → rascunho e depois rascunho → agendada (ou reprovada → agendada), pulava a
+// aprovação, e o robô da hora H avisava a publicação. Aqui, sem conteudo.aprovar, só se vai para 'aprovada' ou
+// 'agendada' a partir de uma peça que JÁ está num dos dois (remarcar a agendada) ou em em_aprovacao (aí o
+// gatilho decide e recusa). A linha fica travada
+// (for update) até o UPDATE: o status lido é o que o gatilho enxerga como OLD.
+func conferirPeca(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+	if id == "" {
+		return soLegivelPeca(ctx, tx, e, id, campos)
+	}
+	if novo, _ := comoTexto(bruto(campos, "status")); (novo != "aprovada" && novo != "agendada") || Aprovador(e) {
+		return nil
+	}
+	var atual string
+	if err := tx.QueryRow(ctx, `select status from conteudo_pecas where id = $1::uuid for update`, id).Scan(&atual); err != nil {
+		return err
+	}
+	// em_aprovacao fica com o gatilho: ele responde o 400 "Sem permissao para aprovar..." da produção
+	if atual != "aprovada" && atual != "agendada" && atual != "em_aprovacao" {
+		return autz.ErrNegado
+	}
+	return nil
+}
 
 // reCaminho: <conta>/<peça>/<nome> como subirArquivo monta (dados-conteudo.js:543: `${account}/${peca}/${ordem}-${slug}.${ext}`).
 var reCaminho = regexp.MustCompile(`^[0-9a-f-]{36}/[0-9a-f-]{36}/[A-Za-z0-9][A-Za-z0-9._-]{0,159}$`)
