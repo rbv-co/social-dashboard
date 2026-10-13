@@ -406,40 +406,6 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 - **Conta e senha (paridade com o Supabase, mantida):** `trocar-senha` não exige a senha atual (era o `updateUser`); `definir-senha` não limpa `precisa_trocar_senha`; os limites de taxa são em memória, de uma instância só; um super-admin que troca a PRÓPRIA senha perde a sessão em uso (a edge não derrubava); sessão de tipo `servico` de conta admin passaria no portão do `invite-user` (nada cria sessão de serviço hoje); `conferir-senha` não tem limite por IP (igual à edge).
 - **Antes do corte:** o catálogo de policies e as funções do oráculo (`api/internal/autz/autzteste/ajudantes.sql`) são de 2026-10-09. Se alguém criar/alterar policy ou uma das 25 funções em produção antes do corte, refazer o levantamento, copiar o JSON novo para `api/internal/autz/`, regerar `ajudantes.sql` e rodar o teste de contrato: forma nova de policy faz a API NÃO subir. O Auth do Supabase deixa de mandar e-mail de convite/troca: conferir no ZeptoMail o domínio remetente e a cota.
 
-## Plano 5.6 — Meta e redes (métricas)
-
-### Rotas novas (com sessão; regra = catálogo de produção; escrita de sessão "entrar como" = 403)
-- Leituras: `/redes/contas`, `/redes/seguidores`, `/redes/leituras-de-seguidores`, `/redes/engajamento`, `/redes/conteudo`, `/redes/campanhas`, `/redes/conjuntos`, `/redes/anuncios`, `/redes/insights-de-campanha`, `/redes/insights-da-conta`, `/redes/campanhas-por-hora`, `/redes/anuncios-por-hora`, `/redes/visitas-por-hora`, `/redes/metas`, `/redes/filtros-de-campanha`.
-- Escritas: `PATCH /redes/contas/{id}` (papel admin), `PUT /redes/metas`, `PUT /redes/filtros-de-campanha/{account_id}`.
-- `meta-proxy`, `insights-ao-vivo`, `serie-novos-dia`, `contar-collabs` (Plano 3) passam por `autz.ComEscopo` e recusam conta fora de `allowed_accounts` (Ruling 34).
-
-### Mudanças de contrato que o Plano 7 absorve
-- `limite` vai até 1000: `limit=5000` (tela-de-redes-sociais.vue:2121, 2122, 2280, 2456-2459) vira `limite=1000&contar=1`, e a tela avisa quando `X-Total-Count` passa do que veio (substitui `length >= _tetoAds`, que nunca disparava). Contagens do Admin (`select=id` + `.length`, tela-de-admin.vue:4029-4031) viram `contar=1&limite=1` + `X-Total-Count`.
-- Filtros com nome: `account_id`, `period_days`, `period_days_ate`, `captured_at`, `captured_at_de`, `captured_at_ate`, `campaign_id` (lista por vírgula), `lido_em_de` (instante RFC 3339: o Gestor, tela-de-gestao-trafego.vue:746, manda `<data>T00:00:00Z` em vez da data pura), `dia_de`; ordens `captured_at`, `lido_em`, `period_days`, `name`.
-- Metas: `PUT /redes/metas {"metas":[…]}` (o lote é atômico; recusa = 403 e a tela mostra, em vez do `console.warn`). Filtros: `PUT /redes/filtros-de-campanha/{account_id} {"selected_ids": …}` (sem `updated_at`).
-- Conta: `PATCH /redes/contas/{id}` (Admin 4004, Gestor 1331, Conteúdo 499); quem não tem papel admin recebe 403 (o Portal de Notícias da Central de Conteúdo hoje "salvava" sem gravar).
-- `ads_snapshots`: sem rota; o cartão "Ads" da aba Dados do Admin (tela-de-admin.vue:4032) sai.
-- `meta-proxy`: conta fora da lista = `400 conta nao encontrada`; caminho fora da conta (para quem tem lista) = `403 caminho fora da conta`; `POST`/`DELETE`/mídia de sessão "entrar como" = `403 sem_permissao`. Rotas ao vivo: conta fora da lista = 404.
-- `meta-proxy`, detalhes decididos na execução: qualquer chave de `params` que, normalizada para `method` (`TrimSpace`, corte no primeiro `[`, sem diferenciar maiúsculas), seja `method` conta como escrita (sessão impersonada = `403 sem_permissao`); quem não vê todas as contas não pode mandar os params `ids`/`batch` (`403 caminho fora da conta`); `?campaign_id=` vazio devolve `200 []` (não `400`).
-
-### Achados para o dono
-1. `accounts` e `visitas_perfil_dia` não têm a restritiva por conta em produção (o plano-mestre dizia que todas as 17 tinham): qualquer sessão lista todas as marcas e, pelo PostgREST de hoje, lê as visitas por dia de qualquer conta. A API mantém a lista de contas (paridade, colunas fechadas) e não abre rota para `visitas_perfil_dia`; correção = duas policies `so_contas_permitidas` em produção.
-2. O Ruling 34 literal não fechava nada: o token do core é único, então quem tem lista lia qualquer conta pondo outro `path` no `meta-proxy`. A API ancora o caminho na conta do pedido; custo: pessoa com lista perde `/me/*` e edição por id de objeto no Gestor e na Análise de campanhas (31/07: 0 de 15 perfis tinham lista; conferir antes do corte).
-3. "Entrar como" criava campanha e subia mídia na Meta pela edge (o JWT do alvo valia). A API recusa `POST`/`DELETE`/mídia de sessão impersonada.
-4. O push de saldo (Plano 4) avisa todo inscrito sobre o saldo de TODAS as contas de anúncio, tenha ou não lista (como o push de vendas, Ruling 24): decisão de produto.
-5. Corte silencioso de linhas (se o `max_rows` é 1000): o intervalo personalizado de Redes pede 5000 e só avisa ao chegar a 5000; a fila do Gestor soma 3 dias de todas as contas numa leitura; os contadores do Admin param em 1000. A API devolve `X-Total-Count` e o Plano 7 passa a avisar.
-6. Métricas sem módulo: qualquer sessão lê as métricas das contas que vê, com ou sem `social`/`meta` (as policies não olham módulo). Mantido; fechar = policy por módulo.
-7. Tabelas sem dono: ninguém grava `ads_snapshots` (o cartão "Ads" do Admin conta uma tabela morta); `account_insights` só é gravada pelo coletor Python do Mac (o Plano 4 não o portou): com o Mac parado, o alcance deduplicado de Redes some sem aviso.
-8. Edição de marca: o Portal de Notícias (Central de Conteúdo) "salva" sem gravar para quem não tem papel admin (update de 0 linhas sem erro); super-admin com papel viewer também não edita marca. A API responde 403 (a tela passa a dizer).
-9. `contar-collabs` lê `/media` dos outros perfis pelo token único do core e devolve só totais: decisão de produto se isso conta como ler outra conta.
-10. RESOLVIDO no Core (vessel PR #293, core-go 2e9d7b852): o `/api/interno/meta/graph` recusava `access_token` por igualdade exata, mas `access_token[]` passava e virava `access_token=` (o `bling.Query` tira o `[]`); agora `access_token[]` e `ACCESS_TOKEN` devolvem 400. Nada a fazer na API.
-
-### Antes do corte
-- `api worker conferir` no banco restaurado: colunas, tipos, únicos e `pode_ver_conta(text)` do 5.6 (em especial os presumidos: `social_metas`, `campaign_filters`, `account_insights`, `engagement_snapshots.created_at`).
-- Grant por coluna de `accounts`: `select has_column_privilege('authenticated','public.accounts','access_token','SELECT')` = `false` e o mesmo para `publicacao_automatica` (a lista fechada das rotas replica isso; coluna nova que a tela precise ler entra na lista com Ruling).
-- Nenhum gatilho nas 17 tabelas: `select count(*) from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname in ('accounts','account_insights','daily_snapshots','engagement_snapshots','content_snapshots','campaigns','campaign_insights','campaign_insights_hora','campaign_adsets','campaign_filters','ads','ads_snapshots','ad_insights_hora','perfil_visitas_hora','followers_leituras','social_metas','visitas_perfil_dia')` = 0.
-- Quem tem lista de contas: `select count(*) filter (where allowed_accounts is not null) as com_lista, count(*) filter (where allowed_accounts is not null and features && '{meta}') as com_lista_e_meta from profiles` — se `com_lista_e_meta` > 0, avisar que o Gestor/Análise de campanhas perdem `/me/*` e objetos soltos para essas pessoas (Ruling 5.6-5).
-- Conta de serviço que chamar o `meta-proxy` (robôs do `coletor/`, Plano 7) precisa de perfil ativo com `allowed_accounts` nulo (ou papel admin): sem perfil, toda conta é recusada.
 ## Plano 5.1 — admin, equipes e acesso
 
 ### Rotas novas
@@ -533,3 +499,38 @@ location = /api/custo-openai {
 ### Mudanças de contrato que o Plano 7 absorve
 - 6 sítios (plano 5.12, seção I.1): 3 leituras de notícias, 2 do status da IA e a chamada das duas edges de custo. A saúde vem `[]` para quem não tem admin, super-admin pela ficha ou `claude.status` em `features`. Não-2xx de `custo-*` agora traz corpo: `403 {"error":"sem_permissao"}`, `500 {"error":"falha","detalhe":…}`. Corpo com `dias` que não é número (`{"dias":"30"}`) dá `400 {"error":"pedido_invalido"}` (a edge coagia o texto em número; Ruling 14 do 5.12 recusa). A rota é só `POST`: `GET` (a edge aceitava `?dias=`) e os demais verbos dão `405` com `Allow: POST`. Todo 500 da rota agora deixa um `slog.Warn` (`custo: devolvendo 500`, com o detalhe sem a chave), como a edge custo-openai registrava.
 - Os logos de concorrentes (`tela-de-noticias.vue:99`, Storage `ig-cache`) são do Plano 6.
+
+## Plano 5.6 — Meta e redes (métricas)
+
+### Rotas novas (com sessão; regra = catálogo de produção; escrita de sessão "entrar como" = 403)
+- Leituras: `/redes/contas`, `/redes/seguidores`, `/redes/leituras-de-seguidores`, `/redes/engajamento`, `/redes/conteudo`, `/redes/campanhas`, `/redes/conjuntos`, `/redes/anuncios`, `/redes/insights-de-campanha`, `/redes/insights-da-conta`, `/redes/campanhas-por-hora`, `/redes/anuncios-por-hora`, `/redes/visitas-por-hora`, `/redes/metas`, `/redes/filtros-de-campanha`.
+- Escritas: `PATCH /redes/contas/{id}` (papel admin), `PUT /redes/metas`, `PUT /redes/filtros-de-campanha/{account_id}`.
+- `meta-proxy`, `insights-ao-vivo`, `serie-novos-dia`, `contar-collabs` (Plano 3) passam por `autz.ComEscopo` e recusam conta fora de `allowed_accounts` (Ruling 34).
+
+### Mudanças de contrato que o Plano 7 absorve
+- `limite` vai até 1000: `limit=5000` (tela-de-redes-sociais.vue:2121, 2122, 2280, 2456-2459) vira `limite=1000&contar=1`, e a tela avisa quando `X-Total-Count` passa do que veio (substitui `length >= _tetoAds`, que nunca disparava). Contagens do Admin (`select=id` + `.length`, tela-de-admin.vue:4029-4031) viram `contar=1&limite=1` + `X-Total-Count`.
+- Filtros com nome: `account_id`, `period_days`, `period_days_ate`, `captured_at`, `captured_at_de`, `captured_at_ate`, `campaign_id` (lista por vírgula), `lido_em_de` (instante RFC 3339: o Gestor, tela-de-gestao-trafego.vue:746, manda `<data>T00:00:00Z` em vez da data pura), `dia_de`; ordens `captured_at`, `lido_em`, `period_days`, `name`.
+- Metas: `PUT /redes/metas {"metas":[…]}` (o lote é atômico; recusa = 403 e a tela mostra, em vez do `console.warn`). Filtros: `PUT /redes/filtros-de-campanha/{account_id} {"selected_ids": …}` (sem `updated_at`).
+- Conta: `PATCH /redes/contas/{id}` (Admin 4004, Gestor 1331, Conteúdo 499); quem não tem papel admin recebe 403 (o Portal de Notícias da Central de Conteúdo hoje "salvava" sem gravar).
+- `ads_snapshots`: sem rota; o cartão "Ads" da aba Dados do Admin (tela-de-admin.vue:4032) sai.
+- `meta-proxy`: conta fora da lista = `400 conta nao encontrada`; caminho fora da conta (para quem tem lista) = `403 caminho fora da conta`; `POST`/`DELETE`/mídia de sessão "entrar como" = `403 sem_permissao`. Rotas ao vivo: conta fora da lista = 404.
+- `meta-proxy`, detalhes decididos na execução: qualquer chave de `params` que, normalizada para `method` (`TrimSpace`, corte no primeiro `[`, sem diferenciar maiúsculas), seja `method` conta como escrita (sessão impersonada = `403 sem_permissao`); quem não vê todas as contas não pode mandar os params `ids`/`batch` (`403 caminho fora da conta`); `?campaign_id=` vazio devolve `200 []` (não `400`).
+
+### Achados para o dono
+1. `accounts` e `visitas_perfil_dia` não têm a restritiva por conta em produção (o plano-mestre dizia que todas as 17 tinham): qualquer sessão lista todas as marcas e, pelo PostgREST de hoje, lê as visitas por dia de qualquer conta. A API mantém a lista de contas (paridade, colunas fechadas) e não abre rota para `visitas_perfil_dia`; correção = duas policies `so_contas_permitidas` em produção.
+2. O Ruling 34 literal não fechava nada: o token do core é único, então quem tem lista lia qualquer conta pondo outro `path` no `meta-proxy`. A API ancora o caminho na conta do pedido; custo: pessoa com lista perde `/me/*` e edição por id de objeto no Gestor e na Análise de campanhas (31/07: 0 de 15 perfis tinham lista; conferir antes do corte).
+3. "Entrar como" criava campanha e subia mídia na Meta pela edge (o JWT do alvo valia). A API recusa `POST`/`DELETE`/mídia de sessão impersonada.
+4. O push de saldo (Plano 4) avisa todo inscrito sobre o saldo de TODAS as contas de anúncio, tenha ou não lista (como o push de vendas, Ruling 24): decisão de produto.
+5. Corte silencioso de linhas (se o `max_rows` é 1000): o intervalo personalizado de Redes pede 5000 e só avisa ao chegar a 5000; a fila do Gestor soma 3 dias de todas as contas numa leitura; os contadores do Admin param em 1000. A API devolve `X-Total-Count` e o Plano 7 passa a avisar.
+6. Métricas sem módulo: qualquer sessão lê as métricas das contas que vê, com ou sem `social`/`meta` (as policies não olham módulo). Mantido; fechar = policy por módulo.
+7. Tabelas sem dono: ninguém grava `ads_snapshots` (o cartão "Ads" do Admin conta uma tabela morta); `account_insights` só é gravada pelo coletor Python do Mac (o Plano 4 não o portou): com o Mac parado, o alcance deduplicado de Redes some sem aviso.
+8. Edição de marca: o Portal de Notícias (Central de Conteúdo) "salva" sem gravar para quem não tem papel admin (update de 0 linhas sem erro); super-admin com papel viewer também não edita marca. A API responde 403 (a tela passa a dizer).
+9. `contar-collabs` lê `/media` dos outros perfis pelo token único do core e devolve só totais: decisão de produto se isso conta como ler outra conta.
+10. RESOLVIDO no Core (vessel PR #293, core-go 2e9d7b852): o `/api/interno/meta/graph` recusava `access_token` por igualdade exata, mas `access_token[]` passava e virava `access_token=` (o `bling.Query` tira o `[]`); agora `access_token[]` e `ACCESS_TOKEN` devolvem 400. Nada a fazer na API.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas, tipos, únicos e `pode_ver_conta(text)` do 5.6 (em especial os presumidos: `social_metas`, `campaign_filters`, `account_insights`, `engagement_snapshots.created_at`).
+- Grant por coluna de `accounts`: `select has_column_privilege('authenticated','public.accounts','access_token','SELECT')` = `false` e o mesmo para `publicacao_automatica` (a lista fechada das rotas replica isso; coluna nova que a tela precise ler entra na lista com Ruling).
+- Nenhum gatilho nas 17 tabelas: `select count(*) from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname in ('accounts','account_insights','daily_snapshots','engagement_snapshots','content_snapshots','campaigns','campaign_insights','campaign_insights_hora','campaign_adsets','campaign_filters','ads','ads_snapshots','ad_insights_hora','perfil_visitas_hora','followers_leituras','social_metas','visitas_perfil_dia')` = 0.
+- Quem tem lista de contas: `select count(*) filter (where allowed_accounts is not null) as com_lista, count(*) filter (where allowed_accounts is not null and features && '{meta}') as com_lista_e_meta from profiles` — se `com_lista_e_meta` > 0, avisar que o Gestor/Análise de campanhas perdem `/me/*` e objetos soltos para essas pessoas (Ruling 5.6-5).
+- Conta de serviço que chamar o `meta-proxy` (robôs do `coletor/`, Plano 7) precisa de perfil ativo com `allowed_accounts` nulo (ou papel admin): sem perfil, toda conta é recusada.
