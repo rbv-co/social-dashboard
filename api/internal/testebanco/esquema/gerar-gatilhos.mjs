@@ -18,6 +18,12 @@ const CONFERIDOS = {
   'gt_campanhas_rascunho.gt_rascunho_updated_at': {},                                   // db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql (BEFORE UPDATE … FOR EACH ROW; fatia do 5.7)
   'profiles.trg_guard_profiles': {},                                                    // sem migration no repositório; o corpo usa new/old (Ruling 5.1-1)
   'profiles.trg_impedir_autopromocao': {},                                              // supabase/migrations/20260727_impedir_autopromocao_de_admin.sql:51-53
+  'frota_checklist.trg_frota_checklist_enfileirar_pdf': { de: 'assinada_em' },            // db/migrations/acessos/036_frota_checklist_pdf.sql:119-121 (after insert or update of assinada_em)
+  'frota_checklist.trg_frota_checklist_imutavel': { quando: 'old.assinada_em is not null' }, // db/migrations/acessos/032_frota_checklist_assinatura.sql:50-54 (sem o WHEN recusaria TODA edição de ficha)
+  'frota_checklist_respostas.trg_frota_resposta_imutavel': {},                          // db/migrations/acessos/033_frota_resposta_imutavel_insert.sql:20-22 (before insert or update or delete)
+  'frota_requisicoes.trg_frota_checar_arquivamento': {},                                // db/migrations/acessos/047_frota_reserva_arquivar.sql:88-92
+  'frota_requisicoes.trg_frota_checar_decisao': {},                                     // db/migrations/acessos/045_frota_reserva_editar_cancelar_revogar.sql:244-247 (recriado de 023:88 e 040:58)
+  'frota_requisicoes.trg_frota_gravar_historico': {},                                   // db/migrations/acessos/045_frota_reserva_editar_cancelar_revogar.sql:155-158
   'frota_uso.trg_frota_aceite_imutavel': {},                                            // db/migrations/acessos/046_frota_aceite_de_retirada.sql:96-98
   'frota_uso.trg_frota_uso_enfileirar_pdf': { de: 'aceite_em' },                        // db/migrations/2026-08-18-fila-do-pdf-do-aceite.sql:76-78
   'frota_veiculos.trg_frota_espelha_responsavel': { de: 'pessoa_id' },                  // db/migrations/acessos/043_frota_patrimonio_responsavel.sql:50-52
