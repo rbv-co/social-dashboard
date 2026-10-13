@@ -231,6 +231,11 @@ func TestFatiaDoPatrimonioPosseDefaultsERPCsFelizes(t *testing.T) {
 	if v := um(`select count(*)::text from patrimonio_bens where numero = 78`); v != "0" {
 		t.Errorf("o item 78 criado pela chamada abortada ficou (%s item): a função inteira tem de desfazer", v)
 	}
+	// um carro por bem (acessos/048): a função confia no índice único para não ligar dois carros ao mesmo item
+	err = como(`insert into frota_veiculos (placa, nome, bem_id) select 'ZZZ9Z99', 'Duplicado', bem_id from frota_veiculos where placa = 'QWE1A23'`)
+	if c := erroDoBanco(err); !strings.HasPrefix(c, "23505 ") {
+		t.Errorf("dois carros no mesmo bem: %q", c)
+	}
 }
 
 // erroDoBanco devolve "SQLSTATE mensagem" do erro do Postgres ("" se não for um).
