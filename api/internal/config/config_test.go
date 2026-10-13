@@ -268,3 +268,15 @@ func TestCarregarChavesDeCusto(t *testing.T) {
 		}
 	}
 }
+
+func TestChaveDaIATrafego(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ANTHROPIC_API_KEY_TRAFEGO", " SEGREDO-ia ")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IATrafego != "SEGREDO-ia" || !slices.Contains(c.Segredos(), "SEGREDO-ia") {
+		t.Fatalf("%q %v", c.IATrafego, c.Segredos())
+	}
+}
