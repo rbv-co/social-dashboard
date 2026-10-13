@@ -129,6 +129,51 @@ const ROTAS = {
       return { metodo: 'PUT', caminho: `/redes/filtros-de-campanha/${encodeURIComponent(l.account_id)}`, corpo: { selected_ids: l.selected_ids } }
     },
   },
+  // ── 5.7 — Gestão de tráfego ──
+  gt_budget_analises: {
+    area: 'trafego', rota: '/gestao-trafego/analises-de-orcamento',
+    filtros: { account_id: eq('account_id'), veredito: eq('veredito') }, ordens: [],
+  },
+  gt_ad_analises: {
+    area: 'trafego', rota: '/gestao-trafego/analises-de-anuncio',
+    filtros: { account_id: eq('account_id'), veredito: eq('veredito'), campaign_id: eq('campaign_id') }, ordens: [],
+  },
+  gt_fila_decisoes: {
+    area: 'trafego', rota: '/gestao-trafego/decisoes',
+    filtros: { account_id: eq('account_id'), campaign_id: eq('campaign_id'), escopo: eq('escopo') }, ordens: ['decidido_em'],
+    // quem decidiu vem da sessão; o silêncio de 7 dias o servidor calcula (Ruling 5.7-17)
+    autoria: ['decidido_por', 'silenciar_ate', 'decidido_em'],
+  },
+  gt_campanhas_rascunho: {
+    area: 'trafego', rota: '/gestao-trafego/rascunhos',
+    filtros: { account_id: eq('account_id'), status: eq('status') }, ordens: ['updated_at'],
+    autoria: ['criado_por', 'created_at', 'updated_at'],
+  },
+  gt_config_metricas: {
+    area: 'trafego', rota: '/gestao-trafego/config-metricas', filtros: {}, ordens: [], autoria: ['updated_at'],
+    upsert: (linhas) => {
+      if (linhas.length !== 1) throw new ErroDeTraducao('gt_config_metricas: um balde por vez')
+      return { metodo: 'PUT', caminho: `/gestao-trafego/config-metricas/${encodeURIComponent(linhas[0].balde)}`, corpo: { metricas: linhas[0].metricas } }
+    },
+  },
+  gt_objetivo_interacao: {
+    area: 'trafego', rota: '/gestao-trafego/objetivos',
+    filtros: { alvo_id: eq('alvo_id'), conta_id: eq('conta_id'), nivel: eq('nivel') }, ordens: [],
+    autoria: ['updated_by', 'updated_at'],
+    upsert: (linhas) => {
+      if (linhas.length !== 1) throw new ErroDeTraducao('gt_objetivo_interacao: um alvo por vez')
+      const [l] = linhas
+      return { metodo: 'PUT', caminho: `/gestao-trafego/objetivos/${encodeURIComponent(l.alvo_id)}`, corpo: { nivel: l.nivel, interacao: l.interacao, conta_id: l.conta_id ?? null } }
+    },
+    // 204 também sem linha (Ruling 5.7-8)
+    apagarPor: { alvo_id: (v) => ({ metodo: 'DELETE', caminho: `/gestao-trafego/objetivos/${encodeURIComponent(v)}` }) },
+  },
+  // a escrita da régua é UM `PUT /gestao-trafego/regua` com o histórico junto: feita na tela
+  gt_ponderada_config: { area: 'trafego', rota: '/gestao-trafego/regua', filtros: {}, ordens: [] },
+  interesses_sugeridos: {
+    area: 'trafego', rota: '/gestao-trafego/interesses-sugeridos',
+    filtros: { account_id: eq('account_id'), marca_id: eq('marca_id'), objetivo: eq('objetivo') }, ordens: [],
+  },
   data_integrity_checks: {
     area: 'admin', rota: '/saude/conferencias',
     filtros: { checked_date: eq('checked_date'), status: eq('status') }, ordens: ['checked_date', 'created_at'],
@@ -236,7 +281,9 @@ function ordenarNaTela(linhas, ordem) {
 
 function erroDoSupabase(error, corpo) {
   // o formato que as telas leem do supabase-js/PostgREST: `message`, `code`
-  return { message: fraseDoCorpo(corpo) || error.message, code: error.codigo || String(error.status), status: error.status, details: null, hint: null }
+  // `details` = a frase do SERVIDOR (quando veio): a tela que traduz "sem permissão"
+  // para a frase dela sabe que, aqui, a do servidor diz mais (ex.: "entrar como").
+  return { message: fraseDoCorpo(corpo) || error.message, code: error.codigo || String(error.status), status: error.status, details: corpo?.mensagem || null, hint: null }
 }
 
 /**
@@ -352,9 +399,12 @@ export async function escreverPelaApi(operacao, partes, corpo) {
     const f = partes.filtros
     const atalho = f.length === 1 && f[0].op === 'eq' && def.apagarPor?.[f[0].col]
     if (atalho) {
-      const p = atalho(valorDoEq(f[0].val))
+      const v = valorDoEq(f[0].val)
+      const p = atalho(v)
       const r = await um(p.metodo, p.caminho, p.corpo)
-      return r.erro ? { data: null, error: r.erro } : { data: null, error: null }
+      // A rota responde 204 também quando não havia linha: o que se sabe é que a
+      // linha daquela chave NÃO EXISTE mais — e é isso que a tela pergunta.
+      return r.erro ? { data: null, error: r.erro } : { data: [{ [f[0].col]: v }], error: null }
     }
     let ids
     if (f.length === 1 && f[0].col === 'id' && f[0].op === 'eq') ids = [valorDoEq(f[0].val)]

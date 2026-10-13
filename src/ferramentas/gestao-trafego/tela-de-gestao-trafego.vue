@@ -182,7 +182,8 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 // Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
-import { areaNaApi, fetchDaApi, trocarCodigoPorFrase } from '../../compartilhado/api.js'
+import { areaNaApi, fetchDaApi, trocarCodigoPorFrase, rpc, pedir, invocarNaArea } from '../../compartilhado/api.js'
+import { fraseDoProxy } from './frases-dos-proxies.js'
 // Chave `meta` (Plano 7): as tabelas do 5.6 pela API (adFetch e os .from).
 import { tabelaNaApi, fetchPostgrest, deOnde } from '../../compartilhado/banco-pela-api.js'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
@@ -769,12 +770,12 @@ async function _gtCarregarCustoSeguidorConta(acc,campaigns,insights,since,until)
 // 'meta.gestor', igual à régua) — nunca por sb(), que é só leitura.
 async function _gtSalvarObjetivo(alvoId,nivel,interacao){
   const resp=interacao
-    ?await sbClient.from('gt_objetivo_interacao').upsert({
+    ?await deOnde(sbClient).from('gt_objetivo_interacao').upsert({
         alvo_id:String(alvoId),nivel,interacao,
         conta_id:_gtCurAcc?.id||null,updated_by:estado.userId||null,
         updated_at:new Date().toISOString(),
       },{onConflict:'alvo_id'}).select()
-    :await sbClient.from('gt_objetivo_interacao').delete().eq('alvo_id',String(alvoId)).select();
+    :await deOnde(sbClient).from('gt_objetivo_interacao').delete().eq('alvo_id',String(alvoId)).select();
   const{data,error}=resp;
   if(error){
     // H2(a) do review: mesmo com o selo gated por permissão, uma sessão que
@@ -876,7 +877,7 @@ async function _gtSaveConfig(balde,metricas){
   // escrita autenticada via sbClient (JWT do usuário) — gated no banco por RLS
   // (profiles.role='admin'), mesmo padrão de adminSaveSetting()/platform_settings
   // e sr-btn de accounts.accent_color (ver db/migrations/006_accounts_update_policy.sql).
-  const{error}=await sbClient.from('gt_config_metricas').upsert({balde,metricas,updated_at:new Date().toISOString()},{onConflict:'balde'});
+  const{error}=await deOnde(sbClient).from('gt_config_metricas').upsert({balde,metricas,updated_at:new Date().toISOString()},{onConflict:'balde'});
   if(error) throw error;
   _gtConfig[balde]=metricas;
 }
@@ -946,7 +947,9 @@ async function _gtGuardarProblemas(porConta) {
   for (const [conta, linhas] of porConta) {
     try {
       // A lista vai inteira, inclusive vazia: é ela que fecha o que sumiu.
-      const { error } = await sbClient.rpc('gt_registrar_problemas', { p_conta: conta, p_itens: linhas });
+      const { error } = areaNaApi('trafego')
+      ? await rpc('gt_registrar_problemas', { p_conta: conta, p_itens: linhas })
+      : await sbClient.rpc('gt_registrar_problemas', { p_conta: conta, p_itens: linhas });
       if (error) console.warn('[problemas] não consegui guardar em', conta, error.message);
     } catch (e) {
       console.warn('[problemas] não consegui guardar em', conta, (e && e.message) || e);
@@ -1026,7 +1029,10 @@ async function _gtCarregarFila() {
     // sb() nunca lança: devolve [] com .erro (ver buscar-e-salvar-dados.js).
     const [analises, decisoes, gastos] = await Promise.all([
       sb('gt_budget_analises?select=campaign_id,account_id,veredito,justificativa,impacto_estimado,impactos,budget_atual_centavos,budget_sugerido_centavos,gerado_em,valida_ate'),
-      sb('gt_fila_decisoes?select=campaign_id,decisao,decidido_em,silenciar_ate&order=decidido_em.desc'),
+      // Pela API a decisão vem COM a conta: a fila casa pelo par conta + campanha (5.7).
+      // `escopo` junto: sem ele o filtro de `montarFila` não separava as perguntas, e uma
+      // decisão de criativos ou de saúde calava a sugestão de VERBA da mesma campanha.
+      sb(`gt_fila_decisoes?select=campaign_id,${areaNaApi('trafego') ? 'account_id,' : ''}decisao,decidido_em,silenciar_ate,escopo&order=decidido_em.desc`),
       // O GASTO de verdade, do coletor — sem chamada nova à Meta. Só as capturas
       // dos últimos dias: `lerGastos` fica com a mais nova de cada campanha, e
       // trazer meses de histórico para descartar seria peso de rede à toa.
@@ -1036,7 +1042,12 @@ async function _gtCarregarFila() {
     // Guarda as análises CRUAS: a fila vazia precisa contar quantas o robô olhou
     // e quantas vieram 'manter', e 'manter' é justamente o que montarFila filtra.
     _gtAnalisesCruas = analises || [];
-    _gtFila = montarFila(analises || [], decisoes || [], new Date().toISOString());
+    // Pela API (5.7) a decisão casa pelo par conta + campanha, e a conta CERTA é a
+    // da Meta: a gravada na análise pode ser antiga (achado 4 das NOTAS do 5.7),
+    // enquanto a decisão vai com a corrigida. Os nomes vêm ANTES de montar a fila.
+    const mapaAntes = areaNaApi('trafego') ? await _gtFilaBuscarNomes() : null;
+    const comContaCerta = (a) => { const info = mapaAntes && mapaAntes.get(String(a.campaign_id)); return info ? { ...a, account_id: info.conta.id } : a; };
+    _gtFila = montarFila((analises || []).map(comContaCerta), decisoes || [], new Date().toISOString());
     // O gasto entra DEPOIS de montar a fila, por campanha. Agrupar aqui em vez
     // de dentro de montarFila mantém aquele módulo puro sem saber de insights.
     _gtGastosPorCampanha = new Map();
@@ -1051,7 +1062,7 @@ async function _gtCarregarFila() {
     // campanhas ativas, e uma delas pode ter alerta sem o robô ter proposto nada
     // (foi o caso da "[Leads] Para WhatsApp" da Motoeasy, frequência 4,2× com o
     // robô dizendo 'manter').
-    const mapa = await _gtFilaBuscarNomes();
+    const mapa = mapaAntes || await _gtFilaBuscarNomes();
     // SÓ CAMPANHA VIVA fica na fila. O robô guarda a análise mesmo depois de a
     // campanha parar, e o `effective_status` gravado é o do dia da análise —
     // envelhece. Sem cruzar com a Meta agora, a fila pedia decisão sobre
@@ -1130,7 +1141,7 @@ async function _gtCarregarFila() {
     // As decisões de saúde vão junto: sem elas o alerta dispensado ressuscitava a
     // cada carregamento (`mesclarSaude` roda depois de `montarFila` e só pulava
     // campanha que já estivesse na fila de orçamento).
-    const decisoesSaude = await sb('gt_fila_decisoes?select=campaign_id,decisao,decidido_em,silenciar_ate,escopo&escopo=eq.saude&order=decidido_em.desc');
+    const decisoesSaude = await sb(`gt_fila_decisoes?select=campaign_id,${areaNaApi('trafego') ? 'account_id,' : ''}decisao,decidido_em,silenciar_ate,escopo&escopo=eq.saude&order=decidido_em.desc`);
     _gtFila = mesclarSaude(_gtFila, saudes, decisoesSaude || [], agoraMs);
 
     // CRIATIVOS SEM TRAÇÃO: o robô analisa anúncio a anúncio e marca 'pausar'
@@ -1139,7 +1150,7 @@ async function _gtCarregarFila() {
     // ("esta campanha precisa de criativo novo").
     const [adAnalises, decisoesCr] = await Promise.all([
       sb('gt_ad_analises?select=ad_id,veredito,justificativa,gerado_em&veredito=eq.pausar'),
-      sb('gt_fila_decisoes?select=campaign_id,decisao,decidido_em,escopo&escopo=eq.criativos&order=decidido_em.desc'),
+      sb(`gt_fila_decisoes?select=campaign_id,${areaNaApi('trafego') ? 'account_id,' : ''}decisao,decidido_em,escopo&escopo=eq.criativos&order=decidido_em.desc`),
     ]);
     const porAd = {};
     for (const a of adAnalises || []) if (a && a.ad_id) porAd[String(a.ad_id)] = a;
@@ -1312,15 +1323,21 @@ async function _gtLerArquivoDePersona(arquivo) {
   for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
   const base64 = btoa(bin);
 
-  const { data: { session } } = await sbClient.auth.getSession();
-  if (!session) throw new Error('Sessao expirada. Recarregue a pagina.');
-  const r = await fetch(SUPABASE_URL + '/functions/v1/ler-documento', {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + session.access_token, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base64, limite: PERSONA_MAXIMO }),
-  });
+  const corpoDoc = JSON.stringify({ base64, limite: PERSONA_MAXIMO });
+  let r;
+  // Chave `trafego` (Plano 7): o proxy do 5.7 (10 PDFs por hora por pessoa).
+  if (areaNaApi('trafego')) r = await fetchDaApi('/ler-documento', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpoDoc });
+  else {
+    const { data: { session } } = await sbClient.auth.getSession();
+    if (!session) throw new Error('Sessao expirada. Recarregue a pagina.');
+    r = await fetch(SUPABASE_URL + '/functions/v1/ler-documento', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + session.access_token, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: corpoDoc,
+    });
+  }
   const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.ok) throw new Error(d.detalhe || d.error || `Nao consegui ler o PDF (HTTP ${r.status}).`);
+  if (!r.ok || !d.ok) throw new Error(areaNaApi('trafego') ? fraseDoProxy(d, r.status) : (d.detalhe || d.error || `Nao consegui ler o PDF (HTTP ${r.status}).`));
   if (!pareceTexto(d.texto)) throw new Error('A leitura do PDF nao devolveu texto legivel.');
   return d.texto;
 }
@@ -1384,7 +1401,7 @@ async function _gtFilaGravarDecisao(item, decisao, aplicado, erro, escopo) {
     aplicado: aplicado || [],
     erro: erro || null,
   };
-  const { error } = await sbClient.from('gt_fila_decisoes').insert(linha);
+  const { error } = await deOnde(sbClient).from('gt_fila_decisoes').insert(linha);
   return error || null;
 }
 
@@ -1595,7 +1612,11 @@ async function _gtCarregarRegua() {
 function _gtEhErroDePermissao(e) {
   const codigo = e && e.code;
   const msg = String((e && e.message) || '').toLowerCase();
-  return codigo === '42501' || msg.includes('row-level security') || msg.includes('permission denied');
+  // Pela API (Plano 7), a recusa da regra é 403 `sem_permissao`. Se o SERVIDOR mandou
+  // a frase dele (`details`, ex.: "Quem entrou como outra pessoa só consulta."), ela
+  // diz mais que a nossa: aí não é tratado como o "sem permissão" genérico.
+  if (e && e.details) return false;
+  return codigo === '42501' || codigo === 'sem_permissao' || (e && e.status === 403) || msg.includes('row-level security') || msg.includes('permission denied');
 }
 
 async function _gtSalvarRegua(nova, botao) {
@@ -1617,6 +1638,18 @@ async function _gtSalvarRegua(nova, botao) {
     // mesclarMetasDaConta devolve o mapa inteiro com só esta conta trocada: sem
     // isso, salvar a régua da Vessel apagaria as metas das outras quatro, que
     // moram no mesmo campo do banco.
+    // Chave `trafego` (Plano 7): UM `PUT /gestao-trafego/regua` grava os ajustes, funde
+    // SÓ as metas desta conta em `metas_por_conta` (com a linha travada: duas pessoas
+    // salvando contas diferentes não apagam uma à outra) e grava o histórico na MESMA
+    // transação — o update e o insert no log abaixo viram uma chamada.
+    if (areaNaApi('trafego')) {
+      const r = await pedir('PUT', '/gestao-trafego/regua', { corpo: { pesos: nova.pesos, limiares: nova.limiares, limiares_resultado: nova.limiares_resultado, conta_id: String(contaId), metas: nova.metas } });
+      if (r.error) throw { message: r.error.message, status: r.error.status, code: r.error.codigo, details: r.data?.mensagem || null };
+      _gtRegua = normalizarRegua(r.data);
+      adminToast('Régua salva');
+      await loadGtData();
+      return;
+    }
     const metasPorConta = mesclarMetasDaConta(_gtRegua, contaId, nova.metas);
     // QUEM mexeu: estado.userId é o mesmo id já usado no resto da tela (ver
     // _setGubAvatar em tela-de-admin.vue) — sem isto, updated_by/mudou_quem
@@ -3895,27 +3928,31 @@ async function _gtPubBuscarInteresses(termo){
 async function _gtPubLeituraDaIA(sugestao,rotulo){
   try{
     _gtPubSugestaoDados={..._gtPubSugestaoDados,pensando:true};_gtPubRedesenha();
-    const {data:{session}}=await sbClient.auth.getSession();
-    if(!session)return;
+    // Chave `trafego` (Plano 7): o proxy do 5.7 exige a conta aberta (`contaId`).
+    const _naApiIA=areaNaApi('trafego');
+    const {data:{session}}=_naApiIA?{data:{session:null}}:await sbClient.auth.getSession();
+    if(!_naApiIA&&!session)return;
     const sub=_gtNovo?_gtNovoObjetivos.find(o=>o.id===_gtNovo.objetivo):null;
-    const r=await fetch(SUPABASE_URL+'/functions/v1/sugerir-publico-ia',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({
+    const _iaInit=(corpo)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_naApiIA?{...corpo,contaId:_gtCurAcc&&_gtCurAcc.id}:corpo)});
+    const _corpoIA={
         evidencia:{contando:rotulo,idade:sugestao.idade,cidades:sugestao.cidades,interesses:sugestao.interesses,porque:sugestao.porqueDosConjuntos},
         marca:(_gtCurAcc&&(_gtCurAcc.display_name||_gtCurAcc.name))||'',
         // QUEM a marca atende. Sem isto a IA tira a idade dos numeros da conta,
         // que dizem quem CLICOU -- nao para quem a marca quer vender.
         persona:limparPersona((_gtCurAcc&&_gtCurAcc.persona)||''),
         objetivo:(sub&&sub.rotulo)||'',
-      }),
+    };
+    const r=_naApiIA?await fetchDaApi('/sugerir-publico-ia',_iaInit(_corpoIA)):await fetch(SUPABASE_URL+'/functions/v1/sugerir-publico-ia',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify(_corpoIA),
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){
       // O MOTIVO VAI PARA A TELA, inclusive o "rode o robô da chave". Erro
       // genérico aqui faria parecer que a IA não existe.
       _gtPubSugestaoDados={..._gtPubSugestaoDados,pensando:false,
-        erroIA:(d&&(d.comoResolver||d.detalhe||d.error))||('a função respondeu '+r.status)};
+        erroIA:_naApiIA?fraseDoProxy(d,r.status):((d&&(d.comoResolver||d.detalhe||d.error))||('a função respondeu '+r.status))};
       return;
     }
     _gtPubSugestaoDados={..._gtPubSugestaoDados,pensando:false,
@@ -4279,7 +4316,7 @@ function _gtPubSecaoLugar(){
     lugares,
     buscarNaMeta: (params) => metaFetch('/search', params, _gtCurAcc?.id),
     buscarNoMapa: async (termo) => {
-      const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'buscar', termo } });
+      const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'buscar', termo } });
       // O MOTIVO VAI PRA TELA. Engolir o erro aqui devolveria lista vazia, e
       // "nada encontrado" quando na verdade a busca falhou é a mentira que o
       // padrão da casa proíbe.
@@ -4304,7 +4341,7 @@ function _gtPubSecaoLugar(){
         // quando chega o rotulo deixa de ser um par de numeros.
         aoPorPonto: async (ponto) => {
           try {
-            const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } });
+            const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } });
             if (error || data?.error) throw new Error(data?.error || error?.message || 'sem resposta');
             const achado = enderecoDeOndeCaiu(data);
             ponto.nome = achado.nome; ponto.endereco = achado.endereco;
@@ -4688,8 +4725,12 @@ function _gtPublicoModal(nomeConjunto,rotuloDoBotao){
 async function _gtListarSugestoes(){
   const conta=_gtCurAcc&&_gtCurAcc.id;
   if(!conta)return null;
-  const linhas=await sb('interesses_sugeridos?select=objetivo,itens,gerado_em,'
-    +'fabrica_marcas!inner(account_id)&fabrica_marcas.account_id=eq.'+encodeURIComponent(conta));
+  // Pela API (chave `trafego`), a conta vem da marca no servidor: `?account_id=`
+  // substitui o `fabrica_marcas!inner(account_id)` (contrato do 5.7).
+  const linhas=areaNaApi('trafego')
+    ? await sb('interesses_sugeridos?select=objetivo,itens,gerado_em&account_id=eq.'+encodeURIComponent(conta))
+    : await sb('interesses_sugeridos?select=objetivo,itens,gerado_em,'
+      +'fabrica_marcas!inner(account_id)&fabrica_marcas.account_id=eq.'+encodeURIComponent(conta));
   return Array.isArray(linhas)?linhas:null;
 }
 
@@ -4874,10 +4915,10 @@ async function _gtNovoSalvarRascunho(){
       tipoRotulo:(sub&&sub.rotulo)||'',
     });
     if(_gtNovoRascunhoId){
-      const {error}=await sbClient.from('gt_campanhas_rascunho').update(linha).eq('id',_gtNovoRascunhoId);
+      const {error}=await deOnde(sbClient).from('gt_campanhas_rascunho').update(linha).eq('id',_gtNovoRascunhoId);
       if(error)return;
     }else{
-      const {data,error}=await sbClient.from('gt_campanhas_rascunho').insert(linha).select('id').single();
+      const {data,error}=await deOnde(sbClient).from('gt_campanhas_rascunho').insert(linha).select('id').single();
       if(error||!data)return;
       _gtNovoRascunhoId=data.id;
     }
@@ -4890,7 +4931,7 @@ async function _gtNovoSalvarRascunho(){
 async function _gtNovoFecharRascunho(status,resultado){
   try{
     if(!_gtNovoRascunhoId)return;
-    await sbClient.from('gt_campanhas_rascunho')
+    await deOnde(sbClient).from('gt_campanhas_rascunho')
       .update({status,resultado:resultado||null}).eq('id',_gtNovoRascunhoId);
   }catch(e){ /* idem */ }
 }
@@ -4923,7 +4964,7 @@ async function _gtHistDesenhar(){
   let cruas=[],erro='';
   try{
     if(!_gtCurAcc)throw new Error('nenhuma conta selecionada');
-    const {data,error}=await sbClient.from('gt_campanhas_rascunho')
+    const {data,error}=await deOnde(sbClient).from('gt_campanhas_rascunho')
       .select('id,nome,tipo,status,passo,estado,resultado,updated_at,created_at,criado_por')
       .eq('account_id',String(_gtCurAcc.id))
       .order('updated_at',{ascending:false}).limit(60);
@@ -4950,7 +4991,7 @@ async function _gtHistDesenhar(){
         +'Isso apaga só o registro aqui. Campanha que já foi criada na Meta CONTINUA lá — '
         +'apagar daqui não desfaz nada lá.',{okLabel:'Apagar'});
       if(!ok)return;
-      const {error}=await sbClient.from('gt_campanhas_rascunho').delete().eq('id',id);
+      const {error}=await deOnde(sbClient).from('gt_campanhas_rascunho').delete().eq('id',id);
       if(error){adminToast('Não consegui apagar: '+(error.message||''),false);return;}
       // Se era o rascunho aberto no assistente, o id guardado ficou órfão —
       // e a próxima gravação recriaria a linha que a pessoa acabou de apagar.
@@ -4972,7 +5013,7 @@ function _gtHistFechar(){
 async function _gtNovoLerHistorico(){
   try{
     if(!_gtCurAcc)return [];
-    const {data,error}=await sbClient.from('gt_campanhas_rascunho')
+    const {data,error}=await deOnde(sbClient).from('gt_campanhas_rascunho')
       .select('id,nome,tipo,status,passo,estado,resultado,updated_at,created_at')
       .eq('account_id',String(_gtCurAcc.id))
       .order('updated_at',{ascending:false}).limit(40);
@@ -5076,14 +5117,14 @@ async function _gtNovoBuscarTextos(){
 async function _gtNovoLeituraDeTexto(evidencia,rotulo){
   try{
     _gtNovoTextos={..._gtNovoTextos,pensando:true};_gtNovoRedesenhar();
-    const {data:{session}}=await sbClient.auth.getSession();
-    if(!session)return;
+    // Chave `trafego` (Plano 7): o proxy do 5.7 exige a conta aberta (`contaId`).
+    const _naApiIA=areaNaApi('trafego');
+    const {data:{session}}=_naApiIA?{data:{session:null}}:await sbClient.auth.getSession();
+    if(!_naApiIA&&!session)return;
     const sub=_gtNovoObjetivos.find(o=>o.id===_gtNovo.objetivo);
     const enxuto=(x)=>({texto:String(x.texto).slice(0,300),custo:Number(x.custo.toFixed(2)),resultados:x.resultados});
-    const r=await fetch(SUPABASE_URL+'/functions/v1/sugerir-publico-ia',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({
+    const _iaInit=(corpo)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_naApiIA?{...corpo,contaId:_gtCurAcc&&_gtCurAcc.id}:corpo)});
+    const _corpoIA={
         modo:'texto',
         marca:(_gtCurAcc&&(_gtCurAcc.display_name||_gtCurAcc.name))||'',
         // QUEM a marca atende. Sem isto a IA tira a idade dos numeros da conta,
@@ -5099,12 +5140,16 @@ async function _gtNovoLeituraDeTexto(evidencia,rotulo){
           vagas:(evidencia.vagas||[]).slice(0,4).map(enxuto),
           diferenca:evidencia.diferenca,
         },
-      }),
+    };
+    const r=_naApiIA?await fetchDaApi('/sugerir-publico-ia',_iaInit(_corpoIA)):await fetch(SUPABASE_URL+'/functions/v1/sugerir-publico-ia',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify(_corpoIA),
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){
       _gtNovoTextos={..._gtNovoTextos,pensando:false,
-        erro:(d&&(d.comoResolver||d.detalhe||d.error))||('a função respondeu '+r.status)};
+        erro:_naApiIA?fraseDoProxy(d,r.status):((d&&(d.comoResolver||d.detalhe||d.error))||('a função respondeu '+r.status))};
       return;
     }
     _gtNovoTextos={..._gtNovoTextos,pensando:false,leitura:d.leitura||'',cuidado:d.cuidado||'',sugestoes:d.sugestoes||[]};

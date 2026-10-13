@@ -32,6 +32,22 @@ import './lib/carregar-env.mjs';
 import { linhasDaConta } from './lib/problemas-por-conta.mjs';
 import { metaDoColetor } from './lib/core-meta.mjs';
 
+// DEPOIS DO SUPABASE (Plano 7, decisão registrada nas NOTAS do 5.7): com
+// `VIGIA_DATABASE_URL` no ambiente, o robô fala com o Postgres próprio por `pg` —
+// lê as contas e chama a MESMA função, numa transação com o claim
+// `service_role` (é o que a função confere por dentro). Não passa pela API: a
+// regra "problema não muda de conta" da rota vale para a tela, não para o robô.
+// O papel de banco dele precisa de SELECT em `accounts` e EXECUTE na função.
+// Sem a variável, segue o caminho de hoje (REST do Supabase com a chave de serviço).
+const PG_URL = process.env.VIGIA_DATABASE_URL;
+let _pg = null;
+async function banco() {
+  // import sob demanda: sem a variável o robô roda sem `pg` instalado (o workflow
+  // manual não faz `npm ci`), exatamente como antes
+  if (!_pg) { const { default: pg } = await import('pg'); _pg = new pg.Client({ connectionString: PG_URL }); await _pg.connect(); }
+  return _pg;
+}
+
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
@@ -71,6 +87,13 @@ if (ARGS.erro) {
 // ------------------------------------------------------------- Supabase
 
 async function contasComAnuncio() {
+  if (PG_URL) {
+    // as mesmas colunas do caminho REST (sem `access_token` com CORE_META ligado);
+    // nomes fixos deste arquivo, nunca vindos de fora
+    const cols = META.colunas('id,name,ad_account_id,access_token').split(',').map((c) => (c === 'id' ? 'id::text as id' : c)).join(', ');
+    const { rows } = await (await banco()).query(`select ${cols} from accounts`);
+    return rows.filter((c) => c && c.ad_account_id && META.token(c));
+  }
   const r = await fetch(`${REST}/accounts?select=${META.colunas('id,name,ad_account_id,access_token')}`, { headers: sb });
   if (!r.ok) throw new Error(`GET accounts -> ${r.status} ${(await r.text()).slice(0, 200)}`);
   return (await r.json()).filter((c) => c && c.ad_account_id && META.token(c));
@@ -79,6 +102,20 @@ async function contasComAnuncio() {
 // A MESMA função que a tela chama. Ela é `security definer`, sabe fechar o que
 // sumiu, e o `service_role` já tem permissão de executar (conferido em 18/08/2026).
 async function registrar(contaId, linhas) {
+  if (PG_URL) {
+    const cli = await banco();
+    await cli.query('begin');
+    try {
+      // `true` = só nesta transação, como o PostgREST fazia por pedido
+      await cli.query(`select set_config('request.jwt.claims', '{"role":"service_role"}', true)`);
+      await cli.query('select gt_registrar_problemas($1::text, $2::jsonb)', [String(contaId), JSON.stringify(linhas)]);
+      await cli.query('commit');
+    } catch (e) {
+      await cli.query('rollback').catch(() => {});
+      throw e;
+    }
+    return;
+  }
   const r = await fetch(`${REST}/rpc/gt_registrar_problemas`, {
     method: 'POST',
     headers: sb,
@@ -113,8 +150,8 @@ async function graphTudo(caminho, campos, token) {
 // ------------------------------------------------------------- rodada
 
 async function principal() {
-  if (!SERVICE_KEY) {
-    console.error('✗ falta SUPABASE_SERVICE_KEY no ambiente.');
+  if (!PG_URL && !SERVICE_KEY) {
+    console.error('✗ falta SUPABASE_SERVICE_KEY (ou VIGIA_DATABASE_URL, depois do Supabase) no ambiente.');
     process.exit(1);
   }
 
@@ -181,7 +218,7 @@ async function principal() {
   }
 }
 
-principal().catch((e) => {
+principal().then(() => _pg?.end()).catch((e) => {
   console.error('✗', (e && e.message) || e);
   process.exit(1);
 });
