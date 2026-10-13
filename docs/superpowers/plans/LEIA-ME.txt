@@ -47,5 +47,7 @@ O que enganava:
 Agora o corpo não é lido pra isso. Só o cabeçalho, onde a declaração é
 deliberada.
 
-A regra vive em coletor/status-projetos.mjs (analisarConteudo/statusDeclarado) e
-tem teste em coletor/status-projetos.test.mjs — os três casos acima estão lá.
+A regra vivia em coletor/status-projetos.mjs (analisarConteudo/statusDeclarado),
+com teste ao lado. O robô foi APOSENTADO em 12/10/2026 (Plano 7 da saída do
+Supabase): o quadro que lia `projetos_status` tinha saído do Painel em 19/08 e
+ninguém mais lia o que ele gravava. O código está no histórico do git.

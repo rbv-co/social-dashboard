@@ -1,8 +1,9 @@
 import { reactive } from 'vue'
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './conectar-no-banco-de-dados.js'
+import { SUPABASE_URL, SUPABASE_ANON_KEY, sbClient } from './conectar-no-banco-de-dados.js'
 import { classificarErro, ERRO_DE_REDE, CONTA_DESATIVADA } from './classificar-erro.js'
 import { lerPerfil, precisaPerguntarSeDesativou } from './leitura-de-perfil.js'
 import { RECURSOS, PERMISSION_TREE, chavesDoGrupo, podeAbrirRota } from './catalogo-de-ferramentas.js'
+import { areaNaApi, pedir, lerToken, guardarToken, apagarToken, erroDaApi } from './api.js'
 
 export const estado = reactive({
   currentSession: null,
@@ -85,6 +86,7 @@ async function contaEstaDesativada(tok) {
 // Agora "é viewer" e "não consegui carregar" são estados distintos.
 // Nunca lança: devolve { ok, erro } e quem chama decide o que mostrar.
 export async function carregarPerfil(session) {
+  if (areaNaApi('conta')) return carregarPerfilDaApi()
   estado.erroPerfil = null
   estado.userId = session?.user?.id || null
   try {
@@ -114,20 +116,116 @@ export async function carregarPerfil(session) {
       estado.erroPerfil = CONTA_DESATIVADA
       return { ok: false, erro: CONTA_DESATIVADA }
     }
-    const p = leitura.perfil || {}
-    estado.role = p.role || 'viewer'
-    estado.features = p.features || ['banco']
-    estado.permissions = p.permissions || {}
-    estado.allowed_accounts = p.allowed_accounts ?? null
-    estado.is_superadmin = !!p.is_superadmin
-    estado.precisa_trocar_senha = !!p.precisa_trocar_senha
-    estado.escopo_por_equipe = !!p.escopo_por_equipe
-    estado.avatarUrl = p.avatar_url || null
+    aplicarPerfil(leitura.perfil)
     return { ok: true, erro: null }
   } catch (e) {
     estado.erroPerfil = ERRO_DE_REDE
     return { ok: false, erro: ERRO_DE_REDE }
   }
+}
+
+function aplicarPerfil(perfil) {
+  const p = perfil || {}
+  estado.role = p.role || 'viewer'
+  estado.features = p.features || ['banco']
+  estado.permissions = p.permissions || {}
+  estado.allowed_accounts = p.allowed_accounts ?? null
+  estado.is_superadmin = !!p.is_superadmin
+  estado.precisa_trocar_senha = !!p.precisa_trocar_senha
+  estado.escopo_por_equipe = !!p.escopo_por_equipe
+  estado.avatarUrl = p.avatar_url || null
+}
+
+/* ── A SESSÃO PELA API EM GO (chave `conta`, Plano 7) ──────────────────────────
+ *
+ * Quem é a pessoa vem de `GET /auth/eu`; o perfil, de `GET /eu/perfil` (o mesmo
+ * array que a tela lia de `profiles`). Conta desativada não chega aqui: a API
+ * recusa a sessão dela (401) e o login devolve 403 `conta_desativada` — por isso
+ * a pergunta `minha_conta_esta_desativada` não existe deste lado.
+ *
+ * 401 = o token morreu (venceu, foi revogado, a senha foi trocada noutro lugar):
+ * apaga e zera, e a guarda do roteador leva ao login. Qualquer outra falha
+ * (rede, servidor) PRESERVA a sessão e o perfil anterior, como o caminho do
+ * Supabase: rebaixar alguém por um blip é a mentira que `erroPerfil` evita. */
+export async function carregarPerfilDaApi() {
+  estado.erroPerfil = null
+  const enviado = lerToken()
+  const eu = await pedir('GET', '/auth/eu')
+  if (eu.error) {
+    // Só apaga se o token guardado ainda for o que morreu: noutra aba alguém
+    // pode ter entrado durante este pedido, e o token novo é dela.
+    if (eu.error.status === 401) {
+      if (lerToken() === enviado) apagarToken()
+      limparEstado()
+    }
+    estado.erroPerfil = eu.error
+    return { ok: false, erro: eu.error }
+  }
+  if (!eu.data?.id) {
+    estado.erroPerfil = erroDaApi(502, null)
+    return { ok: false, erro: estado.erroPerfil }
+  }
+  // `email` e `nome` entram no /auth/eu pelo Ruling 37 do plano-mãe (pedido da trilha C).
+  const user = { id: eu.data.id, email: eu.data.email || '', user_metadata: { name: eu.data.nome ?? null } }
+  estado.userId = user.id
+  estado.user = user
+  if (estado.currentSession) estado.currentSession = { ...estado.currentSession, user }
+  const perfil = await pedir('GET', '/eu/perfil')
+  if (perfil.error || !Array.isArray(perfil.data)) {
+    estado.erroPerfil = perfil.error || ERRO_DE_REDE
+    return { ok: false, erro: estado.erroPerfil }
+  }
+  aplicarPerfil(lerPerfil(perfil.data).perfil)
+  return { ok: true, erro: null }
+}
+
+// A sessão do Supabase que ficou guardada neste navegador (de antes da chave,
+// ou de outra pessoa) não pode servir às telas que ainda estão no Supabase
+// depois de um login ou de um sair pela API. `scope: 'local'`: só apaga daqui.
+async function encerrarSessaoDoSupabase() {
+  try { await sbClient.auth.signOut({ scope: 'local' }) } catch { /* sem sessão para encerrar */ }
+}
+
+/** Abre a sessão com um token da API (login, link de senha, "entrar como"). */
+export async function abrirSessaoDaApi(token) {
+  await encerrarSessaoDoSupabase()
+  guardarToken(token)
+  setSession({ access_token: token, user: null })
+  return carregarPerfil()
+}
+
+/** No boot: retoma o token guardado, se houver. */
+export async function retomarSessaoDaApi() {
+  const token = lerToken()
+  if (!token) return { ok: false, erro: null }
+  setSession({ access_token: token, user: null })
+  return carregarPerfil()
+}
+
+/** POST /auth/entrar. Devolve { ok, erro } com a frase que a tela mostra. */
+export async function entrarPelaApi(email, senha) {
+  const r = await pedir('POST', '/auth/entrar', { corpo: { email, senha }, semSessao: true })
+  if (r.error) return { ok: false, erro: fraseDoLogin(r.error) }
+  if (!r.data?.token) return { ok: false, erro: erroDaApi(502, null).message }
+  // Falha ao carregar o PERFIL não é falha de login: a sessão abriu, e a tela
+  // de Início mostra o `erroPerfil` com "tentar de novo" — como no Supabase.
+  await abrirSessaoDaApi(r.data.token)
+  return { ok: true, erro: null }
+}
+
+/** A frase do login para cada recusa de POST /auth/entrar. */
+export function fraseDoLogin(erro) {
+  if (erro.codigo === 'credenciais_invalidas') return 'Email ou senha incorretos.'
+  if (erro.codigo === 'pedido_invalido') return 'Preencha o email e a senha.'
+  return erro.message
+}
+
+/** POST /auth/sair: revoga SÓ a sessão desta aba (na de "entrar como", a impersonada). */
+export async function sairDaApi() {
+  await pedir('POST', '/auth/sair')
+  apagarToken()
+  await encerrarSessaoDoSupabase()
+  limparEstado()
 }
 
 // Catálogo de recursos → ações válidas. A FONTE MUDOU DE CASA em 24/09/2026:

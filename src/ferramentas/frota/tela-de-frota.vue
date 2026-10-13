@@ -20,6 +20,11 @@ import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
+// Chave `conta` (Plano 7): invite-user e conferir-senha (5.0) pela API em Go.
+// Chave `edges-core` (Plano 7): avisar-decisao-de-reserva (Plano 4).
+import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi, fetchDaApi } from '../../compartilhado/api.js'
+// Chave `admin` (Plano 7): `profiles` pela API (5.1).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
 import { seloDoVeiculo, tomDoCartao, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
@@ -753,17 +758,18 @@ async function darAcessoAoDono(c) {
   const senha = senhaInicial(12)
   try {
     // PASSO 1: a conta.
-    const r = await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
+    const corpo = { email, name: pessoa.nome, role: 'viewer', password: senha }
+    const r = areaNaApi('conta') ? null : await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${(await sbClient.auth.getSession()).data.session?.access_token || ''}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, name: pessoa.nome, role: 'viewer', password: senha }),
+      body: JSON.stringify(corpo),
     })
-    const d = await r.json().catch(() => ({}))
-    if (!r.ok) {
+    const d = r ? await r.json().catch(() => ({})) : await corpoDaEdge('invite-user', corpo)
+    if (r ? !r.ok : d.error) {
       const cru = String(d.error || '')
       // A mensagem crua da Supabase vem em inglês. Traduzir o caso mais comum
       // evita "already been registered" na cara de quem não lê inglês.
@@ -785,7 +791,7 @@ async function darAcessoAoDono(c) {
 
     // PASSO 2: achar o perfil. O id vem de CONSULTA, não da resposta — a edge
     // devolve `{success:true}` e mais nada, e ler `d.id` daria nulo em silêncio.
-    const { data: perfil } = await sbClient.from('profiles')
+    const { data: perfil } = await deOnde(sbClient).from('profiles')
       .select('id,permissions,features').eq('email', email).maybeSingle()
     if (!perfil || !perfil.id) {
       pendencias.push('Não achei o cadastro da conta para terminar de configurar. '
@@ -799,7 +805,7 @@ async function darAcessoAoDono(c) {
     // criação — conferido no código dela. Sem este passo a senha temporária
     // vira permanente, e quem convidou (e o grupo onde ela foi colada) fica com
     // credencial válida da conta de outra pessoa.
-    const { data: marcou } = await sbClient.from('profiles')
+    const { data: marcou } = await deOnde(sbClient).from('profiles')
       .update({ precisa_trocar_senha: true }).eq('id', perfil.id).select('id')
     if ((marcou || []).length !== 1) {
       pendencias.push('Não consegui exigir a troca da senha no primeiro acesso. '
@@ -816,7 +822,7 @@ async function darAcessoAoDono(c) {
     // central, e aí seria um estrago silencioso.
     const permissoes = { ...(perfil.permissions || {}), frota: ['ver'] }
     const recursos = [...new Set([...(perfil.features || []), 'frota'])]
-    const { data: liberou } = await sbClient.from('profiles')
+    const { data: liberou } = await deOnde(sbClient).from('profiles')
       .update({ permissions: permissoes, features: recursos }).eq('id', perfil.id).select('id')
     if ((liberou || []).length !== 1) {
       pendencias.push(`${pessoa.nome} entra no aplicativo, mas AINDA NÃO alcança a Frota. `
@@ -1076,7 +1082,7 @@ async function carregar() {
     // como pessoaDoUsuario() acha a ficha de quem está logado), sem abrir
     // e-mail nem telefone.
     sbClient.rpc('pessoas_para_escolher'),
-    sbClient.from('profiles').select('id,name'),
+    deOnde(sbClient).from('profiles').select('id,name'),
     sbClient.rpc('setores_para_escolher'),
     // A agenda de reservas: quem vê a Frota vê a agenda inteira. Saber que o
     // carro está reservado é o que evita o conflito de viagens — esconder isso
@@ -2126,9 +2132,10 @@ async function gravarChecklist({ ficha, respostas, assinatura }) {
 
     // 1) A senha, no SERVIDOR. `signInWithPassword` aqui TROCARIA A SESSÃO
     //    (D19a) — é a razão de a Edge `conferir-senha` existir.
-    const { data: conf, error: erroConf } = await sbClient.functions.invoke('conferir-senha', {
-      body: { senha: assinatura.senha },
-    })
+    //    Pela API (chave `conta`), o motivo já vem no `{ ok, erro }`.
+    const { data: conf, error: erroConf } = areaNaApi('conta')
+      ? await conferirSenhaPelaApi(assinatura.senha).then((c) => ({ data: c, error: null }))
+      : await sbClient.functions.invoke('conferir-senha', { body: { senha: assinatura.senha } })
     if (erroConf || !conf?.ok) {
       // A Edge responde 429 (bloqueado), 401 (sem sessão) e 400 (sem senha)
       // FORA do 2xx, e o supabase-js transforma isso em `error` com `data`
@@ -2519,15 +2526,16 @@ async function avisarQuemPediu(requisicaoId, acao) {
   // 'cancelada', 'revogada'). O QUE vai no celular da pessoa é montado no
   // servidor, a partir do que está gravado — nunca do que esta tela mandar.
   try {
-    const { data: { session } } = await sbClient.auth.getSession()
-    const r = await fetch(`${SUPABASE_URL}/functions/v1/avisar-decisao-de-reserva`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ requisicaoId }),
-    })
+    const r = areaNaApi('edges-core')
+      ? await fetchDaApi('/avisar-decisao-de-reserva', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requisicaoId }) })
+      : await fetch(`${SUPABASE_URL}/functions/v1/avisar-decisao-de-reserva`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${(await sbClient.auth.getSession()).data.session?.access_token || SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requisicaoId }),
+      })
     const res = await r.json().catch(() => null)
     if (!r.ok || !res || res.ok === false) {
       adminToast(`Reserva ${acao}. Não consegui avisar quem pediu — fale com a pessoa.`, false)

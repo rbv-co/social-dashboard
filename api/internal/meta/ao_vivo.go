@@ -236,6 +236,10 @@ func (av *AoVivo) Insights(w http.ResponseWriter, r *http.Request) {
 			campanhas = append(campanhas, textoDe(c))
 		}
 	}
+	if !contaVisivel(r, textoDe(in["account_id"])) {
+		responder(w, http.StatusNotFound, obj{"meta_erro": "conta não encontrada"})
+		return
+	}
 	var ig, adAcc *string
 	err := av.Pool.QueryRow(r.Context(), `select instagram_id::text, ad_account_id::text from accounts where id::text = $1`, textoDe(in["account_id"])).Scan(&ig, &adAcc)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -525,6 +529,10 @@ func (av *AoVivo) SerieNovosDia(w http.ResponseWriter, r *http.Request) {
 		responder(w, http.StatusOK, obj{"serie": []any{}})
 		return
 	}
+	if !contaVisivel(r, textoDe(in.AccountID)) {
+		responder(w, http.StatusNotFound, obj{"erro": "conta não encontrada"})
+		return
+	}
 	var ig *string
 	err := av.Pool.QueryRow(r.Context(), `select instagram_id::text from accounts where id::text = $1`, textoDe(in.AccountID)).Scan(&ig)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -588,6 +596,10 @@ func (av *AoVivo) ContarCollabs(w http.ResponseWriter, r *http.Request) {
 	since, until, conta := textoDe(in.Since), textoDe(in.Until), textoDe(in.AccountID)
 	if since == "" || until == "" {
 		responder(w, http.StatusOK, obj{"posts": 0, "reels": 0})
+		return
+	}
+	if !contaVisivel(r, conta) {
+		responder(w, http.StatusNotFound, obj{"erro": "conta não encontrada"})
 		return
 	}
 	var alvo *string

@@ -2,6 +2,7 @@ package config
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -164,5 +165,118 @@ func TestCarregarZAPI(t *testing.T) {
 		if !slices.Contains(c.Segredos(), s) {
 			t.Errorf("%q fora de Segredos()", s)
 		}
+	}
+}
+
+func TestCarregarVariaveisDoPlano5(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ZEPTOMAIL_TOKEN", " zepto-segredo-123 ")
+	t.Setenv("ZEPTOMAIL_DE", "")
+	t.Setenv("ZEPTOMAIL_NOME", "")
+	t.Setenv("ENDERECOS_DO_APP", "")
+	t.Setenv("ENDERECO_PADRAO", "")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ZeptoToken != "zepto-segredo-123" || c.ZeptoDe != "nao-responda@vesselbrasil.com.br" || c.ZeptoNome != "Central de Inteligência RBV" ||
+		len(c.EnderecosDoApp) != 2 || c.EnderecoPadrao != "https://socialdashboard.rbvcompany.com" {
+		t.Fatalf("padrões = %+v", c)
+	}
+	if !slices.Contains(c.Segredos(), "zepto-segredo-123") {
+		t.Fatal("ZEPTOMAIL_TOKEN fora de Segredos()")
+	}
+	t.Setenv("ENDERECOS_DO_APP", "https://a.exemplo, https://b.exemplo")
+	t.Setenv("ENDERECO_PADRAO", "https://b.exemplo")
+	t.Setenv("ZEPTOMAIL_DE", "central@exemplo.com.br")
+	t.Setenv("ZEPTOMAIL_NOME", " Outra Central ")
+	c, _ = Carregar()
+	if len(c.EnderecosDoApp) != 2 || c.EnderecosDoApp[1] != "https://b.exemplo" || c.EnderecoPadrao != "https://b.exemplo" ||
+		c.ZeptoDe != "central@exemplo.com.br" || c.ZeptoNome != "Outra Central" {
+		t.Fatalf("endereços = %v %q %q %q", c.EnderecosDoApp, c.EnderecoPadrao, c.ZeptoDe, c.ZeptoNome)
+	}
+}
+
+// O link de senha só vai para endereço da lista, comparado por texto exato com o Origin: valor
+// que nunca casaria (barra no fim, caminho, maiúscula) ou que abriria o link para fora é erro
+// na subida, não e-mail com link quebrado (ou, pior, para o lugar errado) em produção.
+func TestEnderecosDoAppValidadosNaSubida(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ENDERECO_PADRAO", "")
+	for lista, ok := range map[string]bool{
+		"https://central.exemplo": true, "https://a.exemplo,https://b.exemplo:8443": true, "http://localhost:5199": true, "http://127.0.0.1:5199": true,
+		"http://central.exemplo": false, "central.exemplo": false, "https://central.exemplo/app": false, "https://central.exemplo?x=1": false,
+		"https://central.exemplo#frag": false, "https://u:p@central.exemplo": false, "ftp://central.exemplo": false, "https://": false,
+		"javascript:alert(1)": false, "https://a.exemplo,http://b.exemplo": false, "http://localhost.evil.com": false,
+	} {
+		t.Setenv("ENDERECOS_DO_APP", lista)
+		if _, err := Carregar(); (err == nil) != ok {
+			t.Errorf("ENDERECOS_DO_APP=%q: err=%v, esperava ok=%v", lista, err, ok)
+		}
+	}
+	// a barra final e a caixa são normalizadas (o Origin do navegador nunca leva barra e vem em minúsculas)
+	t.Setenv("ENDERECOS_DO_APP", "HTTPS://Central.Exemplo/")
+	c, err := Carregar()
+	if err != nil || c.EnderecosDoApp[0] != "https://central.exemplo" || c.EnderecoPadrao != "https://central.exemplo" {
+		t.Fatalf("normalização: %v %+v", err, c.EnderecosDoApp)
+	}
+	// o padrão tem de ser um dos endereços da lista (Ruling 16: o link só leva a ENDERECOS_DO_APP)
+	t.Setenv("ENDERECOS_DO_APP", "https://a.exemplo")
+	for padrao, ok := range map[string]bool{"https://a.exemplo": true, "https://b.exemplo": false, "a.exemplo": false} {
+		t.Setenv("ENDERECO_PADRAO", padrao)
+		if _, err := Carregar(); (err == nil) != ok {
+			t.Errorf("ENDERECO_PADRAO=%q: err=%v, esperava ok=%v", padrao, err, ok)
+		}
+	}
+}
+
+func TestZeptoDeTemDeSerUmEnderecoDeEmail(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	for de, ok := range map[string]bool{"a@exemplo.com": true, "Nome <a@exemplo.com>": false, "sem-arroba": false, "a@": false, "a@b.c, d@e.f": false} {
+		t.Setenv("ZEPTOMAIL_DE", de)
+		if _, err := Carregar(); (err == nil) != ok {
+			t.Errorf("ZEPTOMAIL_DE=%q: err=%v, esperava ok=%v", de, err, ok)
+		}
+	}
+}
+
+// Nenhum erro de configuração carrega o valor do segredo (o log da subida mostra o erro).
+func TestErroDeConfiguracaoNaoVazaOToken(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ZEPTOMAIL_TOKEN", "Zoho-enczapikey segredo-que-nao-pode-vazar")
+	t.Setenv("ENDERECOS_DO_APP", "http://errado.exemplo")
+	_, err := Carregar()
+	if err == nil || strings.Contains(err.Error(), "segredo-que-nao-pode-vazar") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCarregarChavesDeCusto(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ANTHROPIC_ADMIN_KEY", " sk-ant-admin-falsa-123 ")
+	t.Setenv("OPENAI_ADMIN_KEY", " sk-admin-falsa-456\n") // espaço e quebra de linha de .env/segredo copiado
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AnthropicAdmin != "sk-ant-admin-falsa-123" || c.OpenAIAdmin != "sk-admin-falsa-456" {
+		t.Fatalf("%q %q", c.AnthropicAdmin, c.OpenAIAdmin)
+	}
+	for _, s := range []string{"sk-ant-admin-falsa-123", "sk-admin-falsa-456"} {
+		if !slices.Contains(c.Segredos(), s) {
+			t.Errorf("%q fora de Segredos()", s)
+		}
+	}
+}
+
+func TestChaveDaIATrafego(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ANTHROPIC_API_KEY_TRAFEGO", " SEGREDO-ia ")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IATrafego != "SEGREDO-ia" || !slices.Contains(c.Segredos(), "SEGREDO-ia") {
+		t.Fatalf("%q %v", c.IATrafego, c.Segredos())
 	}
 }

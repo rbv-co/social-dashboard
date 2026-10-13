@@ -311,7 +311,9 @@ import { criarCacheDeCusto } from './cache-de-custo.js'
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
-import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
+import { sb, lerDaApi } from '../../compartilhado/buscar-e-salvar-dados.js'
+// Chave `paineis` (Plano 7): execuções, saúde dos robôs e custos pelo 5.12.
+import { areaNaApi, edge } from '../../compartilhado/api.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 
@@ -331,7 +333,10 @@ const ROBOS = [
   { slug: 'fabrica-gerar',    label: 'Fábrica · Criar Criativos', faz: 'Cria as imagens (criativos) dos anúncios.', quando: 'quando você manda', verbo: 'Criou' },
   { slug: 'fabrica-subir',    label: 'Fábrica · Subir Campanha', faz: 'Monta a campanha e sobe os anúncios para o Meta.', quando: 'quando você manda', verbo: 'Subiu' },
   { slug: 'fabrica-ativar',   label: 'Fábrica · Ligar Anúncios', faz: 'Liga os anúncios no Gerenciador do Meta.', quando: 'quando você manda', verbo: 'Ligou' },
-  { slug: 'status-projetos',  label: 'Andamento dos Projetos', faz: 'Lê os planos e anota em que pé está cada projeto. O quadro saiu desta tela em 19/08/2026; ele segue guardando o andamento, que fica no banco.', quando: 'a cada mudança nos planos', verbo: 'Anotou' },
+  // Aposentado em 12/10/2026 (Plano 7, decisão da orquestradora da migração): o quadro
+  // que lia `projetos_status` saiu da tela em 19/08 e ninguém mais lia o que ele
+  // gravava. Fica na lista só para o histórico antigo continuar com nome; sem cartão.
+  { slug: 'status-projetos',  label: 'Andamento dos Projetos', aposentado: true, faz: 'Lia os planos e anotava em que pé estava cada projeto. Aposentado em 12/10/2026.', quando: '—', verbo: 'Anotou' },
   { slug: 'sugerir-interesses', label: 'Sugestões de Interesse', faz: 'Descobre os interesses de público de cada objetivo buscando no catálogo do Meta, e mostra na Fábrica.', quando: 'todo domingo de manhã', verbo: 'Sugeriu' },
 ]
 const META = Object.fromEntries(ROBOS.map(r => [r.slug, r]))
@@ -411,7 +416,7 @@ const kpis = computed(() => {
 const robosView = computed(() => {
   const ultimaPorRobo = {}
   for (const e of execucoes.value) if (!ultimaPorRobo[e.robo]) ultimaPorRobo[e.robo] = e // execucoes vem desc
-  const lista = ROBOS.map(r => ({ ...r, ult: ultimaPorRobo[r.slug] || null }))
+  const lista = ROBOS.filter(r => !r.aposentado).map(r => ({ ...r, ult: ultimaPorRobo[r.slug] || null }))
   return lista.sort((a, b) => {
     const ta = a.ult ? new Date(a.ult.run_at).getTime() : -1
     const tb = b.ult ? new Date(b.ult.run_at).getTime() : -1
@@ -446,8 +451,11 @@ async function _buscarCustoReal(funcao, dias) {
   const guardado = _cacheCusto.ler(funcao, dias, Date.now())
   if (guardado) return { dados: guardado }
   try {
-    const { data, error } = await sbClient.functions.invoke(funcao, { body: { dias } })
-    if (error) return { erro: error.message || 'não consegui falar com o servidor' }
+    const naApi = areaNaApi('paineis')
+    const { data, error } = naApi ? await edge(funcao, { dias }) : await sbClient.functions.invoke(funcao, { body: { dias } })
+    // Pela API, o não-2xx traz corpo: o `detalhe` (ex.: chave_admin_nao_configurada)
+    // diz mais que a frase genérica do status.
+    if (error) return { erro: (naApi && data?.detalhe) || error.message || 'não consegui falar com o servidor' }
     if (data && data.error) return { erro: data.detalhe || data.error }
     if (!data || typeof data.totalBrl !== 'number') return { erro: 'resposta sem valor' }
     // Só o que deu certo é guardado: cachear erro grudaria a frase "não consegui
@@ -700,11 +708,11 @@ async function carregar() {
   // quadro voltar um dia, o dado está lá. Buscar o que ninguém mostra só faz
   // a tela demorar mais para abrir.
   const [ex, sa] = await Promise.all([
-    sb('ia_execucoes?select=*&order=run_at.desc&limit=200'),
+    areaNaApi('paineis') ? lerDaApi('/status-ia/execucoes', { limite: 200 }) : sb('ia_execucoes?select=*&order=run_at.desc&limit=200'),
     // Saúde dos robôs agendados. NÃO entra no erroCarregar abaixo: se esta
     // consulta falhar, o painel inteiro não pode sumir por causa dela — o pior
     // que acontece é o aviso não aparecer.
-    sb('robos_saude?select=*'),
+    areaNaApi('paineis') ? lerDaApi('/status-ia/saude-dos-robos') : sb('robos_saude?select=*'),
   ])
   if (!sa.erro) saudeDosRobos.value = sa
   // Antes: falha virava [] e a tela dizia "0 execuções, R$ 0" como se fosse
