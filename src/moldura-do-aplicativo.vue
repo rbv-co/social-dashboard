@@ -35,15 +35,18 @@
          espaço pra ele custava caro: uma quebrou 10 topbars, outra apertou barras
          que já estavam no limite. Quem quer trocar senha ou sair volta pra
          Central — um toque, e as barras ficam livres pro que é da ferramenta. -->
-    <div v-if="estado.user && naTelaInicio" class="perfil-menu" :class="{ 'perfil-menu--com-faixa': emModoEntrarComo }">
-      <button class="perfil-avatar" type="button" @click="menuAberto = !menuAberto" :title="estado.user.email" aria-label="Menu do perfil">
+    <!-- Pela SESSÃO, e não por `estado.user`: na API em Go (Plano 7) a pessoa só
+         chega com `/auth/eu`, e sem rede no boot o menu — com o "Sair" — sumia.
+         No Supabase os dois nascem e morrem juntos, então nada muda lá. -->
+    <div v-if="estado.currentSession && naTelaInicio" class="perfil-menu" :class="{ 'perfil-menu--com-faixa': emModoEntrarComo }">
+      <button class="perfil-avatar" type="button" @click="menuAberto = !menuAberto" :title="estado.user?.email" aria-label="Menu do perfil">
         <img v-if="estado.avatarUrl" :src="estado.avatarUrl" alt="Perfil">
         <span v-else class="perfil-avatar-ph">{{ iniciais }}</span>
       </button>
       <template v-if="menuAberto">
         <div class="perfil-backdrop" @click="menuAberto = false"></div>
         <div class="perfil-dropdown">
-          <div class="perfil-dropdown-email">{{ estado.user.email }}</div>
+          <div class="perfil-dropdown-email">{{ estado.user?.email }}</div>
           <div class="perfil-dropdown-role" v-if="estado.role === 'admin'">Administrador</div>
           <div class="perfil-dropdown-sep"></div>
           <!-- Ativar notificações: só aparece enquanto NÃO ativou. Ativação é só
@@ -200,7 +203,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import AvisoDeAtualizacao from './compartilhado/aviso-de-atualizacao.vue'
 import { useRouter, useRoute } from 'vue-router'
-import { estado } from './compartilhado/controle-de-login-e-usuario.js'
+import { estado, sairDaApi } from './compartilhado/controle-de-login-e-usuario.js'
+import { areaNaApi, pedir } from './compartilhado/api.js'
 import { sbClient, emModoEntrarComo } from './compartilhado/conectar-no-banco-de-dados.js'
 import { inscrever, jaInscrito, permissaoAtual, pushSuportado, registrarSW, devePedirPush, deveInscreverEmSilencio, observarPermissao } from './compartilhado/notificacoes-push.js'
 import { recadoDoPush, deuCerto } from './compartilhado/recado-do-push.js'
@@ -220,6 +224,17 @@ import { observarAbaAtiva } from './compartilhado/aba-ativa-a-vista.js'
 
 const router = useRouter()
 
+// Chave `conta` (Plano 7): troca de senha e saída pela API em Go.
+const naApi = areaNaApi('conta')
+
+// POST /auth/trocar-senha: grava a senha E tira `precisa_trocar_senha` numa
+// transação só (substitui o updateUser + a RPC marcar_senha_trocada). Devolve a
+// frase do erro, ou '' quando deu certo.
+async function trocarSenhaPelaApi(senha) {
+  const { error } = await pedir('POST', '/auth/trocar-senha', { corpo: { senha } })
+  return error ? error.message : ''
+}
+
 // ── A troca obrigatória da senha inicial ────────────────────────────────────
 const senha1 = ref('')
 const senha2 = ref('')
@@ -234,6 +249,13 @@ async function trocarSenhaAgora() {
   if (senha1.value !== senha2.value) { erroSenha.value = 'As duas senhas estão diferentes.'; return }
   salvandoSenha.value = true
   try {
+    if (naApi) {
+      const falha = await trocarSenhaPelaApi(senha1.value)
+      if (falha) throw new Error(falha)
+      estado.precisa_trocar_senha = false
+      senha1.value = ''; senha2.value = ''
+      return
+    }
     const { error } = await sbClient.auth.updateUser({ password: senha1.value })
     if (error) throw new Error(error.message)
     // A MARCA SÓ CAI DEPOIS que a senha trocou de verdade. Na ordem inversa,
@@ -259,7 +281,8 @@ async function trocarSenhaAgora() {
 }
 
 async function sairDaConta() {
-  try { await sbClient.auth.signOut() } catch (e) {}
+  if (naApi) await sairDaApi()
+  else try { await sbClient.auth.signOut() } catch (e) {}
   window.location.href = '/'
 }
 const route = useRoute()
@@ -292,7 +315,8 @@ const iniciais = computed(() => {
 
 async function sair() {
   menuAberto.value = false
-  try { await sbClient.auth.signOut() } catch (e) { /* segue para o login de qualquer forma */ }
+  if (naApi) await sairDaApi()
+  else try { await sbClient.auth.signOut() } catch (e) { /* segue para o login de qualquer forma */ }
   router.push({ name: 'login' })
 }
 
@@ -304,7 +328,10 @@ async function sairDoModoEntrarComo() {
   // e o padrão do supabase-js v2 (`global`) revogaria todos os refresh tokens
   // dela — deslogando a pessoa do celular e do computador dela sem motivo.
   // 'local' encerra só esta aba (sessionStorage). Não copie para `sair()`.
-  try { await sbClient.auth.signOut({ scope: 'local' }) } catch (e) { /* segue mesmo assim */ }
+  // Pela API, `sair` revoga só a sessão desta aba — que é a impersonada, criada
+  // pelo "entrar como"; as sessões da pessoa-alvo nos aparelhos dela seguem.
+  if (naApi) await sairDaApi()
+  else try { await sbClient.auth.signOut({ scope: 'local' }) } catch (e) { /* segue mesmo assim */ }
   try { sessionStorage.removeItem('modo_entrar_como') } catch (e) {}
   // A aba foi aberta por script (window.open em tela-de-admin.vue),
   // entao fecha sem pedir permissao na maioria dos navegadores.
@@ -341,8 +368,13 @@ async function salvarSenha() {
   salvando.value = true
   msgSenha.value = ''
   try {
-    const { error } = await sbClient.auth.updateUser({ password: novaSenha.value })
-    if (error) { msgErro.value = true; msgSenha.value = 'Não deu pra trocar: ' + error.message }
+    let falha = ''
+    if (naApi) falha = await trocarSenhaPelaApi(novaSenha.value)
+    else {
+      const { error } = await sbClient.auth.updateUser({ password: novaSenha.value })
+      if (error) falha = error.message || 'erro desconhecido'
+    }
+    if (falha) { msgErro.value = true; msgSenha.value = 'Não deu pra trocar: ' + falha }
     else {
       msgSenha.value = 'Senha alterada com sucesso!'
       setTimeout(() => { trocarSenhaAberto.value = false }, 1200)

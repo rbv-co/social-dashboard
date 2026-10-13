@@ -81,7 +81,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { setSession, carregarPerfil } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { setSession, carregarPerfil, entrarPelaApi, abrirSessaoDaApi } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { areaNaApi, pedir } from '../../compartilhado/api.js'
+
+// Chave `conta` (Plano 7): login, link de senha e "esqueci a senha" pela API em
+// Go. Desligada, cada função abaixo segue exatamente como era no Supabase.
+const naApi = areaNaApi('conta')
 
 const router = useRouter()
 
@@ -108,6 +113,13 @@ const loginBtnTexto = computed(() => (loginCarregando.value ? 'Entrando...' : 'E
 async function entrar() {
   loginErro.value = ''
   loginCarregando.value = true
+  if (naApi) {
+    const r = await entrarPelaApi(email.value.trim(), senha.value)
+    loginCarregando.value = false
+    if (!r.ok) { loginErro.value = r.erro; return }
+    router.push({ name: 'inicio' })
+    return
+  }
   const { data, error } = await sbClient.auth.signInWithPassword({
     email: email.value.trim(),
     password: senha.value,
@@ -151,6 +163,11 @@ async function definirSenha() {
     return
   }
   setPassCarregando.value = true
+  if (naApi) {
+    await definirSenhaPelaApi()
+    setPassCarregando.value = false
+    return
+  }
   const { error } = await sbClient.auth.updateUser({ password: novaSenha.value })
   setPassCarregando.value = false
   if (error) {
@@ -175,6 +192,25 @@ async function definirSenha() {
   }
 }
 
+// O link da API traz um token de uso único (o boot o tirou do hash e guardou
+// em window.__tokenDoLink). Trocá-lo pela senha já devolve a sessão.
+async function definirSenhaPelaApi() {
+  const token = window.__tokenDoLink
+  if (!token) { setPassErro.value = 'Este link é inválido ou já venceu. Peça um novo.'; return }
+  const r = await pedir('POST', '/auth/definir-senha', { corpo: { token, senha: novaSenha.value }, semSessao: true })
+  if (r.error || !r.data?.token) {
+    // 400 senha_invalida / token_invalido vêm com a frase pronta da API.
+    setPassErro.value = r.error?.codigo === 'pedido_invalido' ? 'Este link é inválido ou já venceu. Peça um novo.'
+      : (r.error?.message || 'O servidor não respondeu. Tente de novo.')
+    return
+  }
+  // Uso único: o token já não vale nada, e o fluxo acabou.
+  window.__tokenDoLink = null
+  window.__fluxoDeSenha = null
+  await abrirSessaoDaApi(r.data.token)
+  router.push({ name: 'inicio' })
+}
+
 /* ── Esqueci a senha (doForgotPassword) ── */
 const forgotEmail = ref('')
 const forgotMsg = ref('')
@@ -191,9 +227,13 @@ async function esqueciSenha() {
     return
   }
   forgotCarregando.value = true
-  const { error } = await sbClient.auth.resetPasswordForEmail(alvo, {
-    redirectTo: location.origin + location.pathname,
-  })
+  // Pela API, a resposta é a MESMA exista a conta ou não (sem enumeração); o
+  // link volta para o endereço da Central que a API conhece, nunca o do pedido.
+  const { error } = naApi
+    ? await pedir('POST', '/auth/esqueci-senha', { corpo: { email: alvo }, semSessao: true })
+    : await sbClient.auth.resetPasswordForEmail(alvo, {
+      redirectTo: location.origin + location.pathname,
+    })
   forgotCarregando.value = false
   if (error) {
     forgotMsgCor.value = 'var(--red)'

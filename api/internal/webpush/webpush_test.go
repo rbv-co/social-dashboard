@@ -238,8 +238,8 @@ func TestEndpointsRecusadosPorNomeEForma(t *testing.T) {
 		ins := boa
 		ins.Endpoint = e
 		// a regra de nome/forma é que recusa (não um erro de certificado lá na frente)
-		if u, err := url.Parse(e); err == nil && endpointAceito(u) {
-			t.Errorf("endpointAceito(%q) deveria ser false", e)
+		if u, err := url.Parse(e); err == nil && EndpointAceito(u) {
+			t.Errorf("EndpointAceito(%q) deveria ser false", e)
 		}
 		if _, err := Enviar(context.Background(), cli, ins, []byte("x"), v); err == nil || !strings.Contains(err.Error(), "endpoint recusado") {
 			t.Errorf("endpoint %q deveria ser recusado pela validação, err=%v", e, err)
@@ -250,7 +250,7 @@ func TestEndpointsRecusadosPorNomeEForma(t *testing.T) {
 	}
 	for _, e := range []string{"https://example.com/p", "https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/x", "https://web.push.apple.com/Qx", "https://wns2-par02p.notify.windows.com/w/?token=a", "https://exemplo.de/p", "https://push.example.com.br/p"} {
 		u, _ := url.Parse(e)
-		if !endpointAceito(u) {
+		if !EndpointAceito(u) {
 			t.Errorf("endpoint %q deveria passar", e)
 		}
 	}

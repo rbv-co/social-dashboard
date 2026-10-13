@@ -58,3 +58,8 @@ test('nenhuma mensagem vaza jargao tecnico pro usuario', () => {
     assert.doesNotMatch(c.mensagem, /PGRST|JWT|42501|null|undefined|Error/i, `vazou jargao: ${c.mensagem}`)
   }
 })
+
+test('classificarErro (caminho do Supabase) não mudou: 429 segue "tente de novo"', () => {
+  assert.equal(classificarErro(429, { message: 'rate limit' }).tipo, 'servidor')
+  assert.equal(classificarErro(429, null).acao, 'tentar')
+})

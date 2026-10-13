@@ -86,8 +86,10 @@ import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-aut
 // ⚠️ Isto é recorte de TELA. A edge `bling-proxy` continua devolvendo todos os
 // canais — ela confere permissão, não canal. Ver o cabeçalho do módulo.
 import {
-  canaisDoEscopo, estaLimitada, filtrarPedidos, filtrarMapaDeCanais, fraseDoRecorte,
+  canaisDoEscopo, estaLimitada, filtrarPedidos, filtrarMapaDeCanais, fraseDoRecorte, canaisDaApi,
 } from '../../compartilhado/canais-de-venda-permitidos.js'
+// Chave `comercial` (Plano 7): o recorte de lojas vem pronto de `GET /eu/canais`.
+import { areaNaApi, pedir } from '../../compartilhado/api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { hojeLocal, diasAtras } from '../../compartilhado/datas.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
@@ -399,7 +401,7 @@ async function loadSalesAnalysisData(period,opcoes){
       // elas `canaisDoEscopo` responde `[]` para quem é de time, ou seja, tela
       // vazia com o motivo escrito. É o lado seguro: o outro seria mostrar o
       // faturamento da empresa inteira para quem não pode ver.
-      Promise.all([
+      areaNaApi('comercial') ? pedir('GET','/eu/canais') : Promise.all([
         sbClient.from('equipes').select('id,nome,canal_loja_id').then(r=>r.data||[]),
         // `papel` entrou em 20/08: sem ele a supervisora vira vendedora.
         sbClient.from('equipes_membros').select('equipe_id,profile_id,papel').then(r=>r.data||[]),
@@ -413,7 +415,9 @@ async function loadSalesAnalysisData(period,opcoes){
 
     // O RECORTE POR TIME. `null` = vê tudo, e é o caminho de 15 dos 17 perfis
     // de hoje: nada muda para eles, que foi exatamente o pedido do dono.
-    const meusCanais=canaisDoEscopo({
+    const meusCanais=areaNaApi('comercial')
+      ? canaisDaApi(meusTimes,{isSuperadmin:estado.is_superadmin,escopoPorEquipe:estado.escopo_por_equipe})
+      : canaisDoEscopo({
       isSuperadmin:estado.is_superadmin,
       escopoPorEquipe:estado.escopo_por_equipe,
       meuId:estado.userId,
