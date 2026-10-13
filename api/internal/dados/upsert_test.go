@@ -44,17 +44,17 @@ func TestUpsertVisivel(t *testing.T) {
 		quer  *int
 	}{
 		{nome: "nova visível", esc: e, linha: map[string]any{"account_id": coisaA1, "valor": 1},
-			corpo: `{"account_id":"` + coisaA1 + `","valor":1}`, conta: coisaA1, quer: ptr(1)},
+			corpo: `{"account_id":"` + coisaA1 + `","valor":1}`, conta: coisaA1, quer: ptrInt(1)},
 		{nome: "de novo muda", esc: e, linha: map[string]any{"account_id": coisaA1, "valor": 2},
-			corpo: `{"account_id":"` + coisaA1 + `","valor":2}`, conta: coisaA1, quer: ptr(2)},
+			corpo: `{"account_id":"` + coisaA1 + `","valor":2}`, conta: coisaA1, quer: ptrInt(2)},
 		{nome: "existe e invisível", esc: e, linha: map[string]any{"account_id": coisaA2, "valor": 99},
-			erro: autz.ErrNegado, conta: coisaA2, quer: ptr(20)},
+			erro: autz.ErrNegado, conta: coisaA2, quer: ptrInt(20)},
 		{nome: "não existe e invisível", esc: e, linha: map[string]any{"account_id": inexistente, "valor": 5},
 			erro: autz.ErrNegado, conta: inexistente, quer: nil},
 		{nome: "escopo nulo", esc: nil, linha: map[string]any{"account_id": coisaA1, "valor": 7},
-			erro: autz.ErrNegado, conta: coisaA1, quer: ptr(2)},
+			erro: autz.ErrNegado, conta: coisaA1, quer: ptrInt(2)},
 		{nome: "só a chave", esc: e, linha: map[string]any{"account_id": coisaA1},
-			erro: autz.ErrDeclaracao, conta: coisaA1, quer: ptr(2)},
+			erro: autz.ErrDeclaracao, conta: coisaA1, quer: ptrInt(2)},
 	}
 	for _, c := range casos {
 		tx, err := p.Begin(ctx)
@@ -77,4 +77,4 @@ func TestUpsertVisivel(t *testing.T) {
 	}
 }
 
-func ptr(n int) *int { return &n }
+func ptrInt(n int) *int { return &n }
