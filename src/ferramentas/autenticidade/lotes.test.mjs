@@ -336,7 +336,7 @@ test('linhasDaListaDoLote: ponto-e-virgula no motivo nao quebra a coluna', () =>
  * lote que continua la achando que sumiu. */
 
 test('fraseDaSenha: cada recusa da edge vira frase em portugues, sem codigo cru', () => {
-  const codigos = ['senha_incorreta', 'bloqueado', 'sem_senha', 'sem_sessao', 'falha_interna']
+  const codigos = ['senha_incorreta', 'bloqueado', 'sem_senha', 'sem_sessao', 'entrou_como_outra_pessoa', 'falha_interna']
   for (const c of codigos) {
     const f = fraseDaSenha(c)
     assert.ok(f.length > 20, `a frase de ${c} ficou curta demais para explicar`)
@@ -347,7 +347,7 @@ test('fraseDaSenha: cada recusa da edge vira frase em portugues, sem codigo cru'
 test('fraseDaSenha: toda recusa diz que NADA foi apagado', () => {
   // esta e a parte que a pessoa precisa ler: sem ela, quem errou a senha fica
   // sem saber se o lote foi embora ou nao — e a tela nunca mente.
-  for (const c of ['senha_incorreta', 'bloqueado', 'sem_sessao', 'falha_interna']) {
+  for (const c of ['senha_incorreta', 'bloqueado', 'sem_sessao', 'entrou_como_outra_pessoa', 'falha_interna']) {
     assert.match(fraseDaSenha(c), /nada foi apagado/i, `a frase de ${c} nao diz o que sobrou`)
   }
 })

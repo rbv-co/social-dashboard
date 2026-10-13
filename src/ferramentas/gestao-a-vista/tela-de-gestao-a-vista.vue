@@ -126,8 +126,10 @@ import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-u
 // própria divergiriam no primeiro ajuste. ⚠️ Recorte de TELA: a edge
 // `bling-proxy` continua devolvendo todos os canais.
 import {
-  canaisDoEscopo, estaLimitada, filtrarPedidos, filtrarMapaDeCanais, fraseDoRecorte,
+  canaisDoEscopo, estaLimitada, filtrarPedidos, filtrarMapaDeCanais, fraseDoRecorte, canaisDaApi,
 } from '../../compartilhado/canais-de-venda-permitidos.js'
+// Chave `comercial` (Plano 7): o recorte de lojas vem pronto de `GET /eu/canais`.
+import { areaNaApi, pedir } from '../../compartilhado/api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
 import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo, categoriasDisponiveis, normalizarDepositos, DEPOSITOS_SEMENTE } from './estoque-gv.js'
@@ -687,14 +689,16 @@ async function loadGestaoVistaData(period){
       // Os times e quem está neles. Falhar devolve lista vazia — e com ela quem
       // é de time fica com `[]` (tela vazia com o motivo escrito), não com a
       // empresa inteira. É o lado seguro do erro.
-      sbClient.from('equipes').select('id,nome,canal_loja_id').then(r=>r.data||[]).catch(()=>[]),
+      // Pela API (chave `comercial`), este lugar recebe a resposta de /eu/canais
+      // e os dois seguintes ficam vazios: a regra roda no servidor.
+      areaNaApi('comercial') ? pedir('GET','/eu/canais') : sbClient.from('equipes').select('id,nome,canal_loja_id').then(r=>r.data||[]).catch(()=>[]),
       // `papel` entrou em 20/08: sem ele a supervisora é tratada como vendedora.
-      sbClient.from('equipes_membros').select('equipe_id,profile_id,papel').then(r=>r.data||[]).catch(()=>[]),
+      areaNaApi('comercial') ? [] : sbClient.from('equipes_membros').select('equipe_id,profile_id,papel').then(r=>r.data||[]).catch(()=>[]),
       // A supervisora que mora no GRUPO (27/08/2026). O banco já reconhece este
       // vínculo desde 21/08 (`meus_vinculos`); sem ler aqui, o banco liberaria e
       // esta tela mostraria zero, sem erro. Falhar devolve lista vazia — o lado
       // seguro do erro, igual aos vizinhos.
-      sbClient.from('canais_grupos_membros').select('grupo_id,profile_id,papel').then(r=>r.data||[]).catch(()=>[]),
+      areaNaApi('comercial') ? [] : sbClient.from('canais_grupos_membros').select('grupo_id,profile_id,papel').then(r=>r.data||[]).catch(()=>[]),
       // ── OS DEPÓSITOS, e o vínculo canal↔depósito ──
       //
       // ⚠️ ANTES ISTO ERA UMA LISTA ESCRITA À MÃO com três depósitos, e o Bling
@@ -717,7 +721,9 @@ async function loadGestaoVistaData(period){
     // O RECORTE POR TIME. `null` = vê tudo, o caminho de 15 dos 17 perfis de
     // hoje: para eles nada muda, inclusive os canais zerados continuam
     // aparecendo como sempre apareceram (pedido do dono).
-    const meusCanais=canaisDoEscopo({
+    const meusCanais=areaNaApi('comercial')
+      ? canaisDaApi(eqTimes,{isSuperadmin:estado.is_superadmin,escopoPorEquipe:estado.escopo_por_equipe})
+      : canaisDoEscopo({
       isSuperadmin:estado.is_superadmin,
       escopoPorEquipe:estado.escopo_por_equipe,
       meuId:estado.userId,

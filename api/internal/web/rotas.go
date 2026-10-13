@@ -4,17 +4,27 @@ package web
 import (
 	"context"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/acesso"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/canais"
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
+	"github.com/rbv-co/social-dashboard/api/internal/custo"
+	"github.com/rbv-co/social-dashboard/api/internal/email"
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
+	"github.com/rbv-co/social-dashboard/api/internal/ia"
+	"github.com/rbv-co/social-dashboard/api/internal/mapa"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
+	"github.com/rbv-co/social-dashboard/api/internal/paineis"
+	"github.com/rbv-co/social-dashboard/api/internal/redes"
+	"github.com/rbv-co/social-dashboard/api/internal/trafego"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 )
@@ -28,6 +38,29 @@ const (
 	PrazoCollabs    = 120 * time.Second
 	// bling-proxy: usuário limitado a lojas faz UMA chamada ao core por loja (até 25 s cada).
 	PrazoBling = 90 * time.Second
+	// Plano 5.12: custo-*: a Anthropic chegou a 18 s (cache-de-custo.js:13-15); 90 dias = 3 páginas em série.
+	PrazoCusto = 90 * time.Second
+	// Plano 5: o grupo de DOMÍNIO inteiro (leituras, escritas e POST /rpc/{nome}), do carregamento do
+	// escopo à resposta: função lenta ou consulta presa não segura conexão do pool (o contexto
+	// cancelado cancela a consulta no banco; a resposta é 504 prazo_esgotado). Fica ABAIXO dos 60 s do
+	// proxy_read_timeout padrão do nginx e do WriteTimeout do servidor (main.go).
+	PrazoDominio = 30 * time.Second
+	// Plano 5.7: proxies de IA da Gestão de Tráfego (um PDF pela IA leva até ~2 min; 30 s de folga antes do
+	// EscritaDoServidor) e de mapa (fila de uma ligação por segundo ao Nominatim).
+	PrazoIA   = 120 * time.Second
+	PrazoMapa = 20 * time.Second
+
+	// EscritaDoServidor é o WriteTimeout do http.Server (main.go): a folga de 30 s acima do maior
+	// prazo por requisição (PrazoCollabs) deixa o handler terminar e responder antes de a conexão cair.
+	// TestPrazosPorRotaPelaMontagemReal confere cada prazo de rota contra ESTA constante.
+	EscritaDoServidor = PrazoCollabs + 30*time.Second
+)
+
+// FuncoesRPC é a lista branca de POST /rpc/{nome}. Vazia no 5.0: cada sub-plano acrescenta as
+// funções do seu domínio, com parâmetros, retorno e o portão que espelha a checagem interna da
+// função, e TIRA os nomes dela de RPCPendentes (montarRPC recusa os dois lugares ao mesmo tempo).
+var FuncoesRPC = slices.Concat(
+	trafego.FuncoesRPC, // Plano 5.7
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
@@ -57,6 +90,12 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 	})
 	h := auth.NovosHandlers(p, s, l)
 	r.Post("/auth/entrar", h.Entrar)
+	// Plano 5.0: links de senha (públicos; limite por IP e por e-mail lá dentro, resposta sem enumeração).
+	conta := auth.NovaConta(p, s, &email.ZeptoMail{Token: cfg.ZeptoToken, De: cfg.ZeptoDe, Nome: cfg.ZeptoNome},
+		cfg.EnderecosDoApp, cfg.EnderecoPadrao)
+	r.Post("/auth/esqueci-senha", conta.EsqueciSenha)
+	r.Post("/auth/definir-senha", conta.DefinirSenha)
+	acesso.MontarPublicas(r, p) // Plano 5.1: POST /pedir-acesso, público com limite por IP e teto global (fora de auth.Exigir)
 
 	// Webhooks: públicos, sem sessão. O fan-out do core vem de um IP só: teto folgado.
 	// Só POST: outro método = 405 do chi (testado).
@@ -71,6 +110,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Post("/receber-opt-out-chatwoot", cw.OptOut)
 	})
 
+	rpcs, err := montarRPC(p, FuncoesRPC, RPCPendentes, RPCForaDoPainel)
+	if err != nil {
+		panic(err) // declaração errada: a API não sobe
+	}
 	cli := core.Novo(cfg.CoreURL, cfg.CoreToken)
 	av := &meta.AoVivo{Pool: p, Core: cli}
 	r.Group(func(r chi.Router) {
@@ -78,14 +121,50 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Post("/auth/sair", h.Sair)
 		r.Get("/auth/eu", h.Eu)
 		r.Get("/eu/canais", canais.Handler(p))
-		r.With(comPrazo(PrazoBling)).Post("/bling-proxy", (&comercial.Bling{Pool: p, Core: cli}).ServeHTTP)                                // portão por caminho, lá dentro
-		r.With(auth.ExigirModulo("meta")).Post("/meta-proxy", (&meta.Proxy{Pool: p, Core: cli, HostsDeMidia: cfg.HostsDeMidia}).ServeHTTP) // prazo próprio (25/45/75 s)
-		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/insights-ao-vivo", av.Insights)
-		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)
-		r.With(auth.ExigirModulo("social"), comPrazo(PrazoCollabs)).Post("/contar-collabs", av.ContarCollabs)
+		r.With(comPrazo(PrazoBling)).Post("/bling-proxy", (&comercial.Bling{Pool: p, Core: cli}).ServeHTTP)                                                   // portão por caminho, lá dentro
+		r.With(auth.ExigirModulo("meta"), autz.ComEscopo(p)).Post("/meta-proxy", (&meta.Proxy{Pool: p, Core: cli, HostsDeMidia: cfg.HostsDeMidia}).ServeHTTP) // prazo próprio (25/45/75 s)
+		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoMetaAoVivo)).Post("/insights-ao-vivo", av.Insights)
+		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)
+		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoCollabs)).Post("/contar-collabs", av.ContarCollabs)
 		// Plano 4: o mesmo portão da edge (superadmin ou permissions['frota.aprovar'] com 'ver').
 		r.With(auth.ExigirPermissao("frota.aprovar", "ver")).Post("/avisar-decisao-de-reserva",
 			(&frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}).ServeHTTP)
+
+		// Plano 5.7: proxies de IA (chave em ANTHROPIC_API_KEY_TRAFEGO) e de mapa (Nominatim). Portões = os das edges.
+		// No grupo de SESSÃO: o prazo do grupo de domínio (30 s) cortaria a IA.
+		iaTrafego, lugar := ia.Nova(cfg.IATrafego), mapa.Novo()
+		r.With(auth.ExigirModulo("meta.gestor"), autz.ComEscopo(p), comPrazo(PrazoIA)).Post("/sugerir-publico-ia", iaTrafego.SugerirPublico)
+		r.With(auth.ExigirModulo("meta.gestor"), comPrazo(PrazoIA)).Post("/ler-documento", iaTrafego.LerDocumento)
+		r.With(auth.ExigirModulo("meta"), comPrazo(PrazoMapa)).Post("/buscar-lugar", lugar.ServeHTTP)
+
+		// Plano 5.0: conta. Os portões de invite-user e entrar-como são os das edges (papel admin;
+		// super-admin pela ficha), dentro do handler, com a resposta 400 {"error": frase} das edges.
+		r.Post("/auth/trocar-senha", conta.TrocarSenha)
+		r.Get("/eu/perfil", conta.Perfil)
+		r.Post("/invite-user", conta.InviteUser)
+		r.Post("/entrar-como-usuario", conta.EntrarComo)
+		r.Post("/conferir-senha", conta.ConferirSenha)
+
+		// Plano 5.12: a fatura real das contas de IA. Portão da edge (papel admin) DENTRO do handler,
+		// antes de ler o corpo, a chave ou chamar o fornecedor.
+		r.With(comPrazo(PrazoCusto)).Post("/custo-anthropic", custo.Rota{Chave: cfg.AnthropicAdmin, Buscar: custo.Anthropic{}.Buscar}.ServeHTTP)
+		r.With(comPrazo(PrazoCusto)).Post("/custo-openai", custo.Rota{Chave: cfg.OpenAIAdmin, Buscar: custo.OpenAI{}.Buscar}.ServeHTTP)
+
+		// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
+		// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de
+		// banco.ComUsuario, RPC pelo registro (lista branca). Prazo (PrazoDominio) e escopo vêm do grupo:
+		// rota nova de domínio entra AQUI, nunca solta no grupo de cima. Os sub-planos 5.1+ acrescentam aqui.
+		r.Group(func(r chi.Router) {
+			r.Use(comPrazo(PrazoDominio), autz.ComEscopo(p))
+			r.Post("/rpc/{nome}", rpcs.ServeHTTP)
+			redes.Montar(r, p)   // Plano 5.6
+			acesso.Montar(r, p)  // Plano 5.1
+			trafego.Montar(r, p) // Plano 5.7
+			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
+			if err := paineis.Montar(r, p, autz.Producao); err != nil {
+				panic(err) // declaração errada: a API não sobe
+			}
+		})
 	})
 	return r
 }

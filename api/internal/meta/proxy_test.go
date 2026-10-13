@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 )
@@ -50,6 +51,10 @@ const (
 	uSocial = "aaaaaaaa-0000-0000-0000-000000000012"
 	uAdmin  = "aaaaaaaa-0000-0000-0000-000000000013"
 	uNada   = "aaaaaaaa-0000-0000-0000-000000000014"
+	// Ruling 34 (5.6-4): quem tem lista de contas, o admin com lista (papel vence) e o super pela ficha.
+	uRestrito      = "aaaaaaaa-0000-0000-0000-000000000015"
+	uAdminRestrito = "aaaaaaaa-0000-0000-0000-000000000016"
+	uSuper         = "aaaaaaaa-0000-0000-0000-000000000017"
 )
 
 // ambienteMeta monta banco (accounts + perfis), core de mentira e roteador com as rotas do pacote.
@@ -77,19 +82,31 @@ func montarMetaCom(t *testing.T, resp func(core.PedidoMeta) (int, string, map[st
 	if _, err := p.Exec(ctx, ddlAccounts); err != nil {
 		t.Fatal(err)
 	}
+	testebanco.TabelasDoEscopo(t, p)
 	s := auth.NovoStore(p)
 	tokens := map[string]string{}
-	for _, u := range []struct{ id, role, features string }{
-		{uMeta, "viewer", "{meta}"}, {uSocial, "viewer", "{social}"}, {uAdmin, "admin", "{}"}, {uNada, "viewer", "{banco}"},
+	for _, u := range []struct {
+		id, role, features string
+		contas             *string // allowed_accounts (nulo = todas)
+		super              bool
+	}{
+		{uMeta, "viewer", "{meta}", nil, false}, {uSocial, "viewer", "{social}", nil, false}, {uAdmin, "admin", "{}", nil, false},
+		{uNada, "viewer", "{banco}", nil, false},
+		{uRestrito, "viewer", "{meta,social}", ptr("{conta-1}"), false},
+		{uAdminRestrito, "admin", "{}", ptr("{conta-1}"), false},
+		{uSuper, "viewer", "{}", nil, true},
 	} {
 		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $1::text || '@x')`, u.id); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := p.Exec(ctx, `insert into profiles (id, email, role, features, escopo_por_equipe) values ($1::uuid, $1::text || '@x', $2, $3::text[], false)`, u.id, u.role, u.features); err != nil {
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, role, features, escopo_por_equipe, allowed_accounts, is_superadmin) values ($1::uuid, $1::text || '@x', $2, $3::text[], false, $4::text[], $5)`, u.id, u.role, u.features, u.contas, u.super); err != nil {
 			t.Fatal(err)
 		}
 		tokens[u.id], _ = s.Criar(ctx, u.id, "painel", nil)
 	}
+	// "Entrar como": o impersonador só vale enquanto for super-admin pela ficha (uSuper).
+	super := uSuper
+	tokens["impersonado"], _ = s.Criar(ctx, uMeta, "painel", &super)
 	f := &coreMeta{resp: resp}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
@@ -98,6 +115,7 @@ func montarMetaCom(t *testing.T, resp func(core.PedidoMeta) (int, string, map[st
 	r := chi.NewRouter()
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Exigir(p, s))
+		r.Use(autz.ComEscopo(p))
 		r.With(auth.ExigirModulo("meta")).Post("/meta-proxy", (&Proxy{Pool: p, Core: cli, HostsDeMidia: hosts}).ServeHTTP)
 		av := &AoVivo{Pool: p, Core: cli}
 		r.With(auth.ExigirModulo("social")).Post("/insights-ao-vivo", av.Insights)
@@ -106,6 +124,8 @@ func montarMetaCom(t *testing.T, resp func(core.PedidoMeta) (int, string, map[st
 	})
 	return &ambienteMeta{p: p, h: r, core: f, cli: cli, tokens: tokens}
 }
+
+func ptr(s string) *string { return &s }
 
 func (a *ambienteMeta) post(caminho, token, corpo string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest("POST", caminho, strings.NewReader(corpo))

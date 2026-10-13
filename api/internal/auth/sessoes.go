@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,20 +39,38 @@ func hashDoToken(t string) string {
 }
 
 func (s *Store) Criar(ctx context.Context, usuarioID, tipo string, impersonadorID *string) (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	token := base64.RawURLEncoding.EncodeToString(b)
-	agora := s.agora()
-	_, err := s.pool.Exec(ctx,
-		`insert into sessoes (token_hash, usuario_id, tipo, impersonador_id, criada_em, expira_em, ultimo_uso_em)
-		 values ($1, $2, $3, $4, $5, $6, $5)`,
-		hashDoToken(token), usuarioID, tipo, impersonadorID, agora, agora.Add(s.TTL))
+	return s.CriarComPrazo(ctx, usuarioID, tipo, impersonadorID, s.TTL)
+}
+
+// CriarComPrazo cria a sessão com vida própria (a de "entrar como" vale 1 h e não renova).
+func (s *Store) CriarComPrazo(ctx context.Context, usuarioID, tipo string, impersonadorID *string, ttl time.Duration) (string, error) {
+	token, _, err := s.inserir(ctx, s.pool, usuarioID, tipo, impersonadorID, ttl)
 	return token, err
 }
 
-// Buscar valida o token (conta e impersonador ativos: `profiles.disabled` é a
+// executor é o que o pool e a transação têm em comum: "entrar como" insere a auditoria e a
+// sessão na mesma transação.
+type executor interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// inserir grava a sessão e devolve o token (em claro, só aqui) e a expiração gravada.
+func (s *Store) inserir(ctx context.Context, q executor, usuarioID, tipo string, impersonadorID *string, ttl time.Duration) (string, time.Time, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", time.Time{}, err
+	}
+	token := base64.RawURLEncoding.EncodeToString(b)
+	agora := s.agora()
+	expira := agora.Add(ttl)
+	_, err := q.Exec(ctx,
+		`insert into sessoes (token_hash, usuario_id, tipo, impersonador_id, criada_em, expira_em, ultimo_uso_em)
+		 values ($1, $2, $3, $4, $5, $6, $5)`,
+		hashDoToken(token), usuarioID, tipo, impersonadorID, agora, expira)
+	return token, expira, err
+}
+
+// Buscar valida o token (conta ativa e, na sessão de "entrar como", impersonador ativo E ainda super-admin: `profiles.disabled` é a
 // desativação real em produção; `usuarios.desativado_em` vem do Auth) e, só para sessão normal, renova a expiração
 // (no máximo a cada 5 min, para não escrever no banco a cada requisição).
 func (s *Store) Buscar(ctx context.Context, token string) (*Sessao, error) {
@@ -68,7 +87,8 @@ func (s *Store) Buscar(ctx context.Context, token string) (*Sessao, error) {
 		   left join profiles pi on pi.id = s.impersonador_id
 		  where s.token_hash = $1
 		    and u.desativado_em is null and not coalesce(p.disabled, false)
-		    and (s.impersonador_id is null or (ui.desativado_em is null and not coalesce(pi.disabled, false)))`, h).
+		    and (s.impersonador_id is null or (ui.desativado_em is null and not coalesce(pi.disabled, false)
+		         and coalesce(pi.is_superadmin, false)))`, h).
 		Scan(&se.UsuarioID, &se.Tipo, &se.ImpersonadorID, &se.ExpiraEm, &ultimo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSessaoInvalida

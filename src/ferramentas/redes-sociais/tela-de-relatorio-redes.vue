@@ -75,6 +75,8 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { estado, hasPermission, contasPermitidas } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `meta` (Plano 7): as tabelas do 5.6 pela API.
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 
 const router = useRouter()
@@ -144,14 +146,14 @@ async function carregar() {
   carregando.value = true
   const desde = periodo.value === 'tudo' ? null : dataMenos(periodo.value === '30' ? 30 : 90)
   const q = (tabela, cols, diario) => {
-    let s = sbClient.from(tabela).select(cols).eq('account_id', contaId.value)
+    let s = deOnde(sbClient).from(tabela).select(cols).eq('account_id', contaId.value)
     if (diario) s = s.eq('period_days', 1)
     if (desde) s = s.gte('captured_at', desde)
     return s
   }
   // Ads por DIA = campaign_insights com period_days=0 (o dia único), SOMADO por campanha. NÃO usar
   // account_insights nem pd=1: o pd=1 coleta a janela [ontem, hoje] = 2 dias (time_range inclusivo) → infla.
-  let adsQ = sbClient.from('campaign_insights').select('captured_at,spend,impressions').eq('account_id', contaId.value).eq('period_days', 0)
+  let adsQ = deOnde(sbClient).from('campaign_insights').select('captured_at,spend,impressions').eq('account_id', contaId.value).eq('period_days', 0)
   if (desde) adsQ = adsQ.gte('captured_at', desde)
   const [ds, eng, cont, ads, hist] = await Promise.all([
     q('daily_snapshots', 'captured_at,followers_count,gained,lost', false),
@@ -160,7 +162,7 @@ async function carregar() {
     adsQ,
     // histórico COMPLETO da contagem (sem filtro de período) p/ o líquido pela variação da contagem
     // nos dias que a Meta ainda não fechou o bruto (gained/lost = 0/0) — mesma lógica da dashboard.
-    sbClient.from('daily_snapshots').select('captured_at,followers_count').eq('account_id', contaId.value).order('captured_at'),
+    deOnde(sbClient).from('daily_snapshots').select('captured_at,followers_count').eq('account_id', contaId.value).order('captured_at'),
   ])
   // soma o gasto/impressões das campanhas por dia (o dia recente ainda acumula → prévia; dias fechados batem).
   const adsPorDia = {}
@@ -227,7 +229,7 @@ function exportar(tipo) {
 
 onMounted(async () => {
   if (!hasPermission('social.relatorio', 'ver')) { adminToast('Sem acesso', false); router.push({ name: 'inicio' }); return }
-  const { data } = await sbClient.from('accounts').select('id,name').order('name')
+  const { data } = await deOnde(sbClient).from('accounts').select('id,name').order('name')
   const permitidas = contasPermitidas() // null = todos
   contas.value = (data || []).filter(c => !permitidas || permitidas.includes(c.id))
   if (contas.value.length) { contaId.value = contas.value[0].id; await carregar() }
