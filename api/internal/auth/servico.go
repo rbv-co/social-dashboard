@@ -33,7 +33,7 @@ var (
 // PodeModulo, predicados do autz e policies do catálogo de produção), mais o default 'banco'.
 // TestModulosConhecidosCobremOsModulosDoCodigo falha se o código passar a conferir um módulo fora daqui.
 var ModulosConhecidos = []string{"abandono-carrinho", "acessos", "autenticidade", "banco", "carrinho", "claude.status",
-	"conteudo", "frota", "frota.aprovar", "gestor", "meta", "meta.gestor", "meta.leads", "patrimonio", "sales", "social"}
+	"conteudo", "conteudo.aprovar", "frota", "frota.aprovar", "gestor", "meta", "meta.gestor", "meta.leads", "patrimonio", "sales", "social"}
 
 // buscarServico valida um token `srv_`: não revogado, usuário sem desativado_em e perfil sem disabled.
 // Sem expiração e sem renovação (ExpiraEm fica zero); só ultimo_uso_em é gravado, no máximo a cada 5 min.
