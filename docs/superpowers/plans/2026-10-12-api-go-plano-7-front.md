@@ -154,6 +154,13 @@ O inventário (robô × tabelas/edges × caminho) é a primeira task deste item,
 
 **Prova** (API do `main` com o 5.12 e o DDL de `testebanco/paineis.go`, `VITE_API_AREAS=conta,edges-core,paineis`, Chrome a 375 e a 1440 px): e-mail do `/auth/eu` no menu do perfil; Notícias com Panorama e marcas; Status da IA com a linha do tempo; 0 pedidos dessas leituras ao Supabase; sem rolagem lateral. Com o e-mail, a faixa do "entrar como" ocupa duas linhas e o avatar fica no lugar (a sobreposição registrada na área `conta` sumiu). O custo aparece "indisponível" no ensaio porque a API local não tem a chave admin da Anthropic — é o comportamento certo.
 
+### Pendências resolvidas — 12/10/2026, branch `feat/plano-7-pendencias`
+
+- **`GET /eu/canais` trocado, atrás da chave `comercial`** (Análise de Vendas e Gestão à Vista): a regra `canaisDoEscopo` roda no servidor e a tela só lê `{canais}`; `canaisDaApi` (em `canais-de-venda-permitidos.js`) mantém o lado seguro da leitura antiga quando a chamada falha — limitada fica com `[]`, super-admin e não limitada com `null`, nunca "vê tudo" por falha. Fica atrás de `comercial` porque essas telas leem o resto (lojas, metas, vendedores) do domínio 5.5; ligar sozinha não abre a tela. Prova (Chrome, API local): super-admin → `null`; vendedora limitada no time da loja 203 → `[203]`.
+- **Menu do perfil sem rede no boot:** a moldura passou a mostrá-lo pela SESSÃO (`estado.currentSession`), não por `estado.user`; no Supabase os dois nascem e morrem juntos, então nada muda lá. Prova: `/auth/eu` derrubado no boot → "Sem conexão" + menu presente + "Sair" leva ao login.
+- **`isSelf` do Admin:** resolvido com o `email` do `/auth/eu` (PR #352).
+- **Frase do 403 do `meta-proxy` na aba de "entrar como":** já coberta por `trocarCodigoPorFrase` (Análise de Campanhas, Gestão de Tráfego) e por `invocar` (`painel-subir`); a Fábrica só usa a resposta para "excluída ou não". As respostas novas do 5.6 (`conta nao encontrada`, `caminho fora da conta`) já vêm como frase.
+
 ### Pendências de API
 
 | Item | Dono | Situação |
