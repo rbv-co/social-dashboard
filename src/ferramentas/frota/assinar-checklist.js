@@ -41,6 +41,10 @@ export function recusaDaSenha(codigo) {
     case 'sem_sessao':
       return 'Seu acesso expirou enquanto você preenchia. Saia e entre de novo no aplicativo — '
         + 'o checklist ainda não foi gravado, você vai precisar preencher outra vez.'
+    case 'entrou_como_outra_pessoa':
+      // API em Go (Plano 7): a aba de "entrar como" não assina por ninguém.
+      return 'Nesta aba você entrou como outra pessoa, e a assinatura é só dela. '
+        + 'Nada foi gravado — o checklist continua por preencher.'
     default:
       // 'falha_interna', erro de rede, resposta que não deu pra ler: tudo cai
       // aqui, e todos têm a mesma orientação honesta — não sabemos, nada foi

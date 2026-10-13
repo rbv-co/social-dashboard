@@ -75,6 +75,10 @@ var colunasDoWorker = map[string]string{
 	"fabrica_campanhas":           "id,created_at,fechada_em,purgado_em",
 	"fabrica_criativos":           "campanha_id,storage_path,purgado_em",
 	"robos_execucoes":             "robo,disparado_em,status_code,ok,resposta,conferido_em",
+	"noticias_concorrentes":       "id,rodada,destaque,created_at", // Plano 5.12: filtro e ordem das leituras
+	"noticias_panorama":           "rodada,conteudo_md,modelo,created_at",
+	"ia_execucoes":                "id,run_at",
+	"robos_saude":                 "robo,critico", // visão (relkind 'v'): ordem da leitura
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
@@ -111,6 +115,7 @@ var tiposDoWorker = map[string]string{
 	"equipes_permissoes.equipe_id": "uuid", "equipes_permissoes.profile_id": "uuid",
 	"canais_grupos_membros.grupo_id": "uuid", "canais_grupos_membros.profile_id": "uuid",
 	"push_subs.user_id": "uuid", "push_preferencias.user_id": "uuid",
+	"noticias_concorrentes.rodada": "date", "noticias_panorama.rodada": "date", // o filtro faz @rodada::date[]
 }
 
 // anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).
@@ -134,6 +139,7 @@ var unicosDoWorker = []string{
 	"conteudo_casamentos(peca_id,ig_media_id)", "conteudo_metricas(peca_id,capturado_em)",
 	"chatwoot_eventos(conversation_id,tipo)", "contatos_sem_mensagem(telefone)", "shopify_pedidos(id)",
 	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
+	"acessos_perfis(nome)", // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
@@ -148,7 +154,14 @@ var funcoesDoWorker = []string{
 	"liberar_mensagens_travadas()", "liberar_travadas_da_fila()", "agendar_followups(integer,integer)",
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
-	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "equipes_toca_atualizado()",
+	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
+}
+
+// gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados
+// (tgenabled = 'D'). Conferir só a função (acima) não pega um gatilho que o restore deixou de ligar.
+var gatilhosDoWorker = [][2]string{
+	{"equipes_atualizado", "equipes"}, {"trg_espelhar_grupo_do_canal", "bling_lojas"}, {"trg_espelhar_rename_do_grupo", "canais_grupos"},
+	{"trg_guard_profiles", "profiles"}, {"trg_impedir_autopromocao", "profiles"},
 }
 
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há
@@ -373,6 +386,19 @@ func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 			continue
 		}
 		faltam = append(faltam, melhor...)
+	}
+
+	// Plano 5.1: gatilhos por nome e tabela (pg_trigger), ligados.
+	for _, g := range gatilhosDoWorker {
+		var tem bool
+		if err := tx.QueryRow(ctx, `select exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+			 where not t.tgisinternal and t.tgname = $1::text and c.relname = $2::text
+			   and c.relnamespace = current_schema()::regnamespace and t.tgenabled <> 'D')`, g[0], g[1]).Scan(&tem); err != nil {
+			return nil, err
+		}
+		if !tem {
+			faltam = append(faltam, "gatilho "+g[0]+" em "+g[1]+" (ausente ou desabilitado)")
+		}
 	}
 
 	// Plano 5.0: ambiente da gramática de SQL, papel da API na auditoria do "entrar como" e as RPC declaradas.

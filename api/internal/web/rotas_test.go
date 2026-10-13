@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,7 +69,7 @@ var publicas = map[string]bool{
 	"POST /receber-opt-out-chatwoot": true,
 	// Plano 5.0: links de senha (sem enumeração, limite por IP e por e-mail no handler)
 	"POST /auth/esqueci-senha": true, "POST /auth/definir-senha": true,
-	// Plano 5.1: o pedido de acesso da tela de login (limite de 10 por IP por hora e validação no handler)
+	// Plano 5.1: o pedido de acesso da tela de login (JSON obrigatório, 10 por IP e 100 no total por hora, validação no handler)
 	"POST /pedir-acesso": true,
 }
 
@@ -137,6 +138,20 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 		if !slices.Contains(vistas, chave) {
 			t.Errorf("rota só-sessão %s não está montada", chave)
 		}
+	}
+	// Plano 5.1: estar na lista pública e montada não basta: sem sessão, o pedido de acesso responde 201 com JSON
+	// (montá-la no grupo autenticado faria 401; o 415 sem o cabeçalho é do handler, não de sessão).
+	if _, err := p.Exec(context.Background(), `create table access_requests (id uuid primary key default gen_random_uuid(), name text not null,
+		email text not null, message text, status text not null, created_at timestamptz not null default now())`); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/pedir-acesso", strings.NewReader(`{"name":"Sem Sessão","email":"sem-sessao@x.com","message":"oi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(r, req)
+	var pedido struct{ ID string }
+	if r.Code != http.StatusCreated || json.Unmarshal(r.Body.Bytes(), &pedido) != nil || pedido.ID == "" {
+		t.Errorf("POST /pedir-acesso sem sessão = %d %s, esperava 201 com {\"id\"}", r.Code, r.Body)
 	}
 	for _, c := range webhooksPublicos() {
 		r := httptest.NewRecorder()
@@ -214,6 +229,12 @@ var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "G
 	// responde para nome registrado, cada um com o seu portão (sem registro: 404).
 	"POST /auth/trocar-senha": true, "GET /eu/perfil": true, "POST /invite-user": true,
 	"POST /entrar-como-usuario": true, "POST /conferir-senha": true, "POST /rpc/{nome}": true,
+	// Plano 5.12: leituras com a regra do catálogo (`true` para sessão); a matriz por papel é
+	// TestPaineisPelaMontagemReal.
+	"GET /noticias/rodadas": true, "GET /noticias/concorrentes": true, "GET /noticias/panorama": true,
+	"GET /status-ia/execucoes": true,
+	// quem não passa na regra das duas tabelas recebe 200 [] (TestSaudeDosRobosPelaMontagemReal).
+	"GET /status-ia/saude-dos-robos": true,
 }
 
 // Plano 5.1: as rotas do admin, de equipes, de avisos e de saúde. Portão = catálogo, provado pela matriz de
@@ -289,7 +310,13 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
 	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second,
 		// Plano 5.0: o grupo de domínio inteiro (e o /rpc) tem prazo; rota de domínio nova herda
-		"POST /rpc/{nome}": PrazoDominio}
+		"POST /rpc/{nome}": PrazoDominio,
+		// Plano 5.12: leituras do grupo de domínio
+		"GET /noticias/rodadas": PrazoDominio, "GET /noticias/concorrentes": PrazoDominio,
+		"GET /noticias/panorama": PrazoDominio, "GET /status-ia/execucoes": PrazoDominio,
+		"GET /status-ia/saude-dos-robos": PrazoDominio,
+		// Plano 5.12: fatura real das contas de IA (grupo autenticado, FORA do de domínio)
+		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second}
 	for _, c := range rotas51 { // Plano 5.1: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
