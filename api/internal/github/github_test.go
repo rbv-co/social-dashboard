@@ -161,6 +161,8 @@ func casos() []caso {
 		{"422", 422, nil, Recusado, 0, 0},
 		{"500", 500, nil, Indisponivel, 0, 0},
 		{"503", 503, nil, Indisponivel, 0, 0},
+		{"502 (gateway: pode ter sido aceito)", 502, nil, Incerto, 0, 0},
+		{"504 (gateway: pode ter sido aceito)", 504, nil, Incerto, 0, 0},
 	}
 }
 

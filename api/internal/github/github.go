@@ -63,8 +63,8 @@ const (
 	NaoEncontrado Classe = "nao_encontrado" // 404: workflow fora da ref, repositório errado, token sem acesso
 	Recusado      Classe = "recusado"       // 422: input que o workflow não declara, workflow sem workflow_dispatch
 	Limite        Classe = "limite"         // 429 ou 403 de limite
-	Indisponivel  Classe = "indisponivel"   // 5xx, DNS, conexão recusada: o pedido NÃO foi aceito
-	Incerto       Classe = "incerto"        // sem resposta depois de conectar: pode ter sido aceito
+	Indisponivel  Classe = "indisponivel"   // 5xx (menos 502/504), DNS, conexão recusada: o pedido NÃO foi aceito
+	Incerto       Classe = "incerto"        // sem resposta depois de conectar, 502 ou 504: pode ter sido aceito
 	Inesperado    Classe = "inesperado"     // 3xx (não seguimos) ou status fora da lista
 )
 
@@ -210,6 +210,9 @@ func classificar(resp *http.Response) error {
 		return &Erro{Classe: NaoEncontrado, Status: s}
 	case s == http.StatusUnprocessableEntity:
 		return &Erro{Classe: Recusado, Status: s}
+	case s == http.StatusBadGateway || s == http.StatusGatewayTimeout:
+		// o gateway pode estourar o prazo DEPOIS de o GitHub aceitar o disparo: incerto, nunca repetir sozinho
+		return &Erro{Classe: Incerto, Status: s}
 	case s >= 500:
 		return &Erro{Classe: Indisponivel, Status: s}
 	}
