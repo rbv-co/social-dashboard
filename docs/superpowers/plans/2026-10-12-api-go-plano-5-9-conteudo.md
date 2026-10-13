@@ -120,6 +120,416 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                  # seção do 5.9
 | 7 | As 6 RPCs: portões provados contra as funções, conferência da peça/ideia/conta | **opus** (aprovação, conta) | 1, 3 |
 | 8 | `POST /conteudo-trigger`: fila sem GitHub, validações e teto da edge, idempotente | **opus** (gasto de IA) | 3 |
 | 9 | Montagem, varreduras (conta, impersonado), `conferir` e notas | **opus** (fronteira) | 4–8 |
+---
+
+### Task 1: D0 — fatia 5.9 do esquema de produção nos testes
+
+**Revisor:** opus. **Depende de:** 5.1 Task 1 (carregador, `usuarios`, `profiles`), 5.6 Task 1 (`accounts`).
+
+**(a) Contrato**
+- `esquema/01-tabelas-5-09.sql` (abaixo): as 9 tabelas, cada bloco com a migration de origem. Todas têm DDL no repositório (`db/migrations/2026-07-29-conteudo-01` … `2026-08-01-conteudo-16`): nenhum presumido. FKs de `auth.users` viram `public.usuarios`; `responsavel` aponta para `profiles` (como em produção). `accounts` vem do 5.6 (carrega antes: ordem do nome) e NÃO é redeclarada.
+- `esquema/03-funcoes-5-09.sql`: a função do gatilho (`conteudo_guarda_aprovacao`), o gatilho `conteudo_pecas_guarda` (`create or replace trigger`, BEFORE UPDATE, sem OF nem WHEN: a migration 01:164-167) e as 6 RPCs, **verbatim** do levantamento (as frases SEM acento são as de produção: as migrations do repositório têm acento e estão atrás do banco). Gerado pelo script de uso único do Step 2 e conferido por hash: nada digitado à mão.
+- `conteudo_reivindicar_hora_h` (do worker, Plano 4) NÃO entra: os testes do worker usam o próprio banco (`conteudo_test.go`), e nenhuma rota do 5.9 a chama.
+- `TestEsquemaDeProducaoComOsGatilhosVerbatim` (5.1) ganha `"conteudo_pecas_guarda"` na lista exata (primeira posição: a lista é ordenada).
+- **Ensaiado** num Postgres 17 durante a escrita deste plano (worktree descartável sobre `feat/api-go-plano-5-7`): a fatia carrega, `TestFatiaDoConteudo` abaixo passa inteiro e o teste dos gatilhos passa com a lista nova.
+
+**(b) Testes de aceitação** (`TestFatiaDoConteudo`, `esquema_conteudo_test.go`, código abaixo)
+- As 9 tabelas existem; o único gatilho de `conteudo_pecas` é `conteudo_pecas_guarda`, BEFORE UPDATE.
+- Defaults: peça `rascunho|''|''`; ideia `nova|manual|[]`; job `ideias|enfileirado|{}`.
+- A guarda (com `banco.ComUsuario`): quem tem só `conteudo` não leva a peça `em_aprovacao` para `aprovada`, `reprovada` nem `agendada` (P0001 `Sem permissao para aprovar pecas de conteudo.`, linha intacta); edita a legenda e manda para aprovação; `updated_at` anda.
+- `conteudo_decidir` como aprovador: `aprovada`, `aprovado_por` = ele, 1 evento `aprovou`; a segunda decisão recebe `Esta peca nao esta esperando aprovacao (alguem ja decidiu?).`.
+- Restrições: formato `tiktok` → 23514; `agendada` sem `publicar_em` → 23514; duas linhas de arquivo na mesma `(peca_id, ordem)` → 23505. O INSERT de peça já `agendada` PASSA no banco (a guarda é BEFORE UPDATE): é a rota que barra (Ruling 5.9-6; o teste documenta o buraco que a Task 5 fecha).
+- Cascata: apagar a peça leva arquivos, eventos, métricas e casamentos; a ideia ligada fica com `peca_id` nulo.
+- Tipos: `account_id` é `uuid` nas 5 tabelas que o têm.
+- Mutações que têm de reprovar: tirar o `create or replace trigger` do `03` (a guarda some: os três casos negados gravam); declarar `accounts` de novo na fatia (`42P07` na carga); `on delete cascade` fora de `conteudo_arquivos.peca_id` (a cascata reprova); o gatilho fora da lista do teste do 5.1.
+
+**(c) Arquivos:** Create `api/internal/testebanco/esquema/01-tabelas-5-09.sql`, `api/internal/testebanco/esquema/03-funcoes-5-09.sql`, `api/internal/testebanco/esquema_conteudo_test.go`; Modify `api/internal/testebanco/esquema_test.go` (e `esquema/gerar-gatilhos.mjs` só no caso do Step 3).
+
+**(d) Dependências:** 5.1 Task 1; 5.6 Task 1 (`accounts` em `01-tabelas-5-06.sql`).
+
+- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-09.sql`:
+
+```sql
+-- FATIA 5.9 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1, 5.7-1 e 5.9-1). Carrega
+-- depois de 01-tabelas-5-01.sql (usuarios, profiles) e 01-tabelas-5-06.sql (accounts, com
+-- publicacao_automatica e conteudo_usa_portal: NÃO redeclarar). FKs de auth.users viram public.usuarios
+-- (ops/migracao/limpar-dump.mjs:64). Todas com DDL no repositório: sem presumido. O único gatilho de produção
+-- nestas tabelas (conteudo_pecas_guarda, levantamento/03-triggers.csv:5) e as 6 RPCs do painel vão VERBATIM
+-- em 03-funcoes-5-09.sql.
+
+-- db/migrations/2026-07-29-conteudo-01-fundacao.sql:14-58 (criado_por/aprovado_por: auth.users → usuarios)
+-- + 2026-08-01-conteudo-16-responsavel-e-aprovar-agendando.sql:15-16 (responsavel → profiles)
+create table public.conteudo_pecas (
+  id           uuid primary key default gen_random_uuid(),
+  account_id   uuid not null references public.accounts(id) on delete cascade,
+  titulo       text not null,
+  formato      text not null check (formato in ('feed', 'reels', 'stories', 'carrossel')),
+  status       text not null default 'rascunho'
+               check (status in ('rascunho', 'em_aprovacao', 'aprovada', 'reprovada',
+                                 'agendada', 'publicada', 'arquivada')),
+  legenda      text not null default '',
+  hashtags     text not null default '',
+  observacoes  text,
+  publicar_em  timestamptz,
+  publicado_em timestamptz,
+  avisado_em   timestamptz,
+  ig_media_id  text,
+  ig_permalink text,
+  criado_por        uuid references public.usuarios(id),
+  aprovado_por      uuid references public.usuarios(id),
+  aprovado_em       timestamptz,
+  motivo_reprovacao text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  responsavel  uuid references public.profiles(id) on delete set null,
+  constraint conteudo_agendada_tem_data
+    check (status <> 'agendada' or publicar_em is not null),
+  constraint conteudo_publicada_tem_data
+    check (status <> 'publicada' or publicado_em is not null)
+);
+-- 01-fundacao.sql:64-77 e 16:23-24
+create index conteudo_pecas_conta_idx on public.conteudo_pecas (account_id, publicar_em);
+create index conteudo_pecas_status_idx on public.conteudo_pecas (status, publicar_em);
+create index conteudo_pecas_horah_idx on public.conteudo_pecas (publicar_em)
+  where status = 'agendada' and avisado_em is null;
+create unique index conteudo_pecas_ig_media_uq on public.conteudo_pecas (ig_media_id)
+  where ig_media_id is not null;
+create index conteudo_pecas_responsavel_idx on public.conteudo_pecas (responsavel)
+  where responsavel is not null;
+
+-- 01-fundacao.sql:83-105
+create table public.conteudo_arquivos (
+  id        uuid primary key default gen_random_uuid(),
+  peca_id   uuid not null references public.conteudo_pecas(id) on delete cascade,
+  ordem     int  not null default 1,
+  bucket    text not null default 'conteudo',
+  caminho   text not null,
+  tipo      text not null check (tipo in ('imagem', 'video')),
+  mime      text,
+  bytes     bigint,
+  largura   int,
+  altura    int,
+  duracao_s numeric,
+  created_at timestamptz not null default now(),
+  unique (peca_id, ordem)
+);
+create index conteudo_arquivos_peca_idx on public.conteudo_arquivos (peca_id, ordem);
+
+-- 01-fundacao.sql:111-126
+create table public.conteudo_eventos (
+  id       bigserial primary key,
+  peca_id  uuid not null references public.conteudo_pecas(id) on delete cascade,
+  de       text,
+  para     text,
+  acao     text not null,
+  detalhe  text,
+  quem     uuid,
+  quando   timestamptz not null default now()
+);
+create index conteudo_eventos_peca_idx on public.conteudo_eventos (peca_id, quando desc);
+
+-- db/migrations/2026-07-31-conteudo-07-metricas.sql:13-27
+create table public.conteudo_metricas (
+  peca_id           uuid not null references public.conteudo_pecas(id) on delete cascade,
+  capturado_em      date not null,
+  curtidas          int,
+  comentarios       int,
+  alcance           int,
+  salvamentos       int,
+  compartilhamentos int,
+  visualizacoes     int,
+  bruto             jsonb,
+  primary key (peca_id, capturado_em)
+);
+
+-- 07-metricas.sql:38-65
+create table public.conteudo_casamentos (
+  id           uuid primary key default gen_random_uuid(),
+  peca_id      uuid not null references public.conteudo_pecas(id) on delete cascade,
+  ig_media_id  text not null,
+  ig_permalink text,
+  ig_timestamp timestamptz,
+  ig_caption   text,
+  ig_thumb     text,
+  pontuacao    numeric not null,
+  motivo       text,
+  situacao     text not null default 'sugerido'
+               check (situacao in ('sugerido', 'confirmado', 'recusado', 'automatico')),
+  decidido_por uuid,
+  decidido_em  timestamptz,
+  created_at   timestamptz not null default now(),
+  unique (peca_id, ig_media_id)
+);
+create index conteudo_casamentos_peca_idx on public.conteudo_casamentos (peca_id, created_at desc);
+create index conteudo_casamentos_pendentes_idx on public.conteudo_casamentos (situacao) where situacao = 'sugerido';
+
+-- db/migrations/2026-07-31-conteudo-10-ideias.sql:13-56 + 2026-08-01-conteudo-13-roteiro-completo.sql:20-27
+create table public.conteudo_ideias (
+  id         uuid primary key default gen_random_uuid(),
+  account_id uuid references public.accounts(id) on delete cascade,
+  titulo     text not null,
+  gancho     text,
+  formato    text check (formato in ('feed', 'reels', 'stories', 'carrossel')),
+  pilar      text,
+  roteiro    jsonb not null default '[]'::jsonb,
+  legenda_sugerida  text,
+  hashtags_sugeridas text,
+  por_que_agora text,
+  referencia    text,
+  origem     text not null default 'manual' check (origem in ('manual', 'ia')),
+  modelo     text,
+  job_id     uuid,
+  situacao   text not null default 'nova'
+             check (situacao in ('nova', 'favorita', 'usada', 'descartada')),
+  peca_id    uuid references public.conteudo_pecas(id) on delete set null,
+  criado_por uuid,
+  created_at timestamptz not null default now(),
+  cta            text,
+  producao       text,
+  porque_formato text
+);
+create index conteudo_ideias_conta_idx on public.conteudo_ideias (account_id, situacao, created_at desc);
+create index conteudo_ideias_novas_idx on public.conteudo_ideias (created_at desc) where situacao in ('nova', 'favorita');
+
+-- 10-ideias.sql:61-77
+create table public.conteudo_blocos (
+  id         uuid primary key default gen_random_uuid(),
+  account_id uuid references public.accounts(id) on delete cascade,
+  tipo       text not null check (tipo in ('legenda', 'hashtags', 'cta', 'assinatura')),
+  nome       text not null,
+  texto      text not null,
+  usos       int not null default 0,
+  ativo      boolean not null default true,
+  criado_por uuid,
+  created_at timestamptz not null default now()
+);
+create index conteudo_blocos_conta_idx on public.conteudo_blocos (account_id, tipo, ativo);
+
+-- 10-ideias.sql:83-98 (criado_por: auth.users → usuarios)
+create table public.conteudo_jobs (
+  id            uuid primary key default gen_random_uuid(),
+  tipo          text not null default 'ideias',
+  account_id    uuid references public.accounts(id) on delete cascade,
+  params        jsonb not null default '{}'::jsonb,
+  status        text not null default 'enfileirado'
+                check (status in ('enfileirado', 'rodando', 'concluido', 'erro')),
+  github_run_id text,
+  resultado     jsonb,
+  erro          text,
+  criado_por    uuid references public.usuarios(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index conteudo_jobs_status_idx on public.conteudo_jobs (status, created_at desc);
+
+-- db/migrations/2026-08-01-conteudo-12-concorrentes-por-marca.sql:12-30
+create table public.conteudo_concorrentes (
+  id          uuid primary key default gen_random_uuid(),
+  account_id  uuid not null references public.accounts(id) on delete cascade,
+  handle      text not null,
+  nome        text,
+  observacao  text,
+  ativo       boolean not null default true,
+  created_at  timestamptz not null default now(),
+  unique (account_id, handle)
+);
+create index conteudo_concorrentes_da_conta on public.conteudo_concorrentes (account_id) where ativo;
+```
+
+- [ ] **Step 2: As funções e o gatilho, verbatim.** Rode, da raiz da worktree, o gerador de uso único (fica fora do repositório):
+
+```bash
+cat > /tmp/fatia59.mjs <<'FIM'
+// Gera esquema/03-funcoes-5-09.sql VERBATIM do levantamento (uso único, Plano 5.9 Task 1).
+// node fatia59.mjs <levantamento>/02-funções.csv > api/internal/testebanco/esquema/03-funcoes-5-09.sql
+import { readFileSync } from 'node:fs';
+const t = readFileSync(process.argv[2], 'utf8');
+const linhas = []; let l = [], c = '', q = false;
+for (let i = 0; i < t.length; i++) {
+  const x = t[i];
+  if (q) { if (x === '"' && t[i + 1] === '"') { c += '"'; i++; } else if (x === '"') q = false; else c += x; }
+  else if (x === '"') q = true; else if (x === ',') { l.push(c); c = ''; }
+  else if (x === '\n') { l.push(c); linhas.push(l); l = []; c = ''; } else if (x !== '\r') c += x;
+}
+const corpo = new Map(linhas.map((r) => [r[0], r[3].trim() + ';\n']));
+const rpcs = ['conteudo_aprovar_e_agendar', 'conteudo_casar_na_mao', 'conteudo_decidir', 'conteudo_decidir_casamento',
+  'conteudo_ideia_virar_peca', 'conteudo_reavisar'];
+for (const n of ['conteudo_guarda_aprovacao', ...rpcs]) if (!corpo.has(n)) { console.error(`falta ${n} no CSV`); process.exit(1); }
+process.stdout.write(
+  '-- VERBATIM de levantamento/02-funções.csv (gerado por fatia59.mjs, Plano 5.9 Task 1): conteudo_guarda_aprovacao\n' +
+  '-- (:367-407), conteudo_aprovar_e_agendar (:178-223), conteudo_casar_na_mao (:224-289), conteudo_decidir (:290-321),\n' +
+  '-- conteudo_decidir_casamento (:322-366), conteudo_ideia_virar_peca (:408-448), conteudo_reavisar (:449-474).\n' +
+  '-- O gatilho de 03-triggers.csv:5 com a orientação da migration 2026-07-29-conteudo-01-fundacao.sql:164-167\n' +
+  '-- (BEFORE UPDATE … FOR EACH ROW, sem OF nem WHEN). `create or replace trigger`: se o gerador também o emitir\n' +
+  '-- em 02-gatilhos.sql (que carrega antes), a recriação aqui é a mesma (Rulings 5.7-1 e 5.9-1).\n' +
+  corpo.get('conteudo_guarda_aprovacao') + '\n' +
+  'create or replace trigger conteudo_pecas_guarda BEFORE UPDATE on public.conteudo_pecas\n' +
+  '  for each row EXECUTE FUNCTION conteudo_guarda_aprovacao();\n\n' +
+  rpcs.map((n) => corpo.get(n)).join('\n'));
+FIM
+node /tmp/fatia59.mjs /Users/gabrielgertrudes/Projetos/Trabalho/lavessel/social-dashboard/.claude/worktrees/levantamento-ro/docs/migracao-go/levantamento/02-funções.csv \
+  > api/internal/testebanco/esquema/03-funcoes-5-09.sql
+shasum -a 256 api/internal/testebanco/esquema/03-funcoes-5-09.sql
+# 85984df43d184a769955efb3b8cbad1ff6ca9d8027aa3d1115dafc5a441bb0f3 (o do ensaio). Hash diferente = o levantamento mudou: pare e reporte.
+grep -c 'CREATE OR REPLACE FUNCTION' api/internal/testebanco/esquema/03-funcoes-5-09.sql   # 7
+```
+
+- [ ] **Step 3: A lista de gatilhos.** Em `api/internal/testebanco/esquema_test.go`, `TestEsquemaDeProducaoComOsGatilhosVerbatim`: acrescente `"conteudo_pecas_guarda"` na lista `quer` (em ordem alfabética: é a primeira). Se o pré-voo achou `CONFERIDOS` em `gerar-gatilhos.mjs` (o 5.2 entrou), acrescente lá a entrada `'conteudo_pecas.conteudo_pecas_guarda': {}` com o comentário `// 2026-07-29-conteudo-01-fundacao.sql:164-167: BEFORE UPDATE, sem OF nem WHEN` (o gerador recusa gatilho não conferido quando for regerado) — sem regerar o `02-gatilhos.sql` aqui (quem o regera é o 5.3; o `create or replace` do `03` torna a dupla emissão idempotente).
+
+- [ ] **Step 4: O teste.** Crie `api/internal/testebanco/esquema_conteudo_test.go`:
+
+```go
+package testebanco
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+)
+
+// A fatia 5.9: as 9 tabelas das migrations, o gatilho conteudo_pecas_guarda e as 6 RPCs verbatim.
+func TestFatiaDoConteudo(t *testing.T) {
+	p := ComEsquemaDeProducao(t)
+	ctx := context.Background()
+	const (
+		conta    = "a5900000-0000-4000-a000-0000000000a1"
+		editor   = "a5910000-0000-4000-a000-000000000001" // features {conteudo}
+		aprova   = "a5910000-0000-4000-a000-000000000002" // features {conteudo, conteudo.aprovar}
+		pecaEm   = "a5930000-0000-4000-a000-0000000000c1" // em_aprovacao, com data
+		pecaRasc = "a5930000-0000-4000-a000-0000000000c2" // rascunho
+	)
+	um := func(sql string, args ...any) string {
+		t.Helper()
+		var v *string
+		if err := p.QueryRow(ctx, sql, args...).Scan(&v); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		if v == nil {
+			return "<nulo>"
+		}
+		return *v
+	}
+	codigo := func(err error) (string, string) {
+		var pe *pgconn.PgError
+		if errors.As(err, &pe) {
+			return pe.Code, pe.Message
+		}
+		return "", ""
+	}
+	if _, err := p.Exec(ctx, `
+		insert into usuarios (id, email) values ('`+editor+`', 'editor@x.com'), ('`+aprova+`', 'aprova@x.com');
+		insert into profiles (id, email, role, features) values ('`+editor+`', 'editor@x.com', 'viewer', '{conteudo}'),
+		  ('`+aprova+`', 'aprova@x.com', 'viewer', '{conteudo,conteudo.aprovar}');
+		insert into accounts (id, name) values ('`+conta+`', 'Vessel');
+		insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em) values
+		  ('`+pecaEm+`', '`+conta+`', 'Em aprovação', 'feed', 'em_aprovacao', '2026-10-20T15:00:00Z'),
+		  ('`+pecaRasc+`', '`+conta+`', 'Rascunho', 'reels', 'rascunho', null);`); err != nil {
+		t.Fatal(err)
+	}
+	for _, tab := range []string{"conteudo_pecas", "conteudo_ideias", "conteudo_blocos", "conteudo_arquivos", "conteudo_casamentos",
+		"conteudo_concorrentes", "conteudo_eventos", "conteudo_jobs", "conteudo_metricas"} {
+		if v := um(`select coalesce(to_regclass($1::text)::text, 'falta')`, "public."+tab); v == "falta" {
+			t.Errorf("tabela %s não existe", tab)
+		}
+	}
+	if v := um(`select string_agg(tgname::text || ':' || (tgtype::int & 2 = 2)::text || ':' || (tgtype::int & 16 = 16)::text, ',')
+		from pg_trigger where tgrelid = 'conteudo_pecas'::regclass and not tgisinternal`); v != "conteudo_pecas_guarda:true:true" {
+		t.Errorf("gatilho de conteudo_pecas = %s, esperava conteudo_pecas_guarda BEFORE UPDATE", v)
+	}
+	// defaults
+	if v := um(`select status || '|' || legenda || '|' || hashtags from conteudo_pecas where id = $1::uuid`, pecaRasc); v != "rascunho||" {
+		t.Errorf("defaults da peça = %s", v)
+	}
+	if v := um(`with n as (insert into conteudo_ideias (titulo) values ('x') returning *) select situacao || '|' || origem || '|' || roteiro::text from n`); v != "nova|manual|[]" {
+		t.Errorf("defaults da ideia = %s", v)
+	}
+	if v := um(`with n as (insert into conteudo_jobs (account_id) values ($1::uuid) returning *) select tipo || '|' || status || '|' || params::text from n`, conta); v != "ideias|enfileirado|{}" {
+		t.Errorf("defaults do job = %s", v)
+	}
+	como := func(id, sql string, args ...any) error {
+		return banco.ComUsuario(ctx, p, id, func(tx pgx.Tx) error { _, err := tx.Exec(ctx, sql, args...); return err })
+	}
+	// a guarda: sem conteudo.aprovar, nem aprovar nem agendar vindo de em_aprovacao; com identidade nula, passa
+	for _, s := range []string{"aprovada", "reprovada", "agendada"} {
+		err := como(editor, `update conteudo_pecas set status = $1::text where id = $2::uuid`, s, pecaEm)
+		if c, m := codigo(err); c != "P0001" || m != "Sem permissao para aprovar pecas de conteudo." {
+			t.Errorf("editor levou a %s: %v", s, err)
+		}
+	}
+	if v := um(`select status from conteudo_pecas where id = $1::uuid`, pecaEm); v != "em_aprovacao" {
+		t.Errorf("negado gravou: %s", v)
+	}
+	if err := como(editor, `update conteudo_pecas set legenda = 'nova' where id = $1::uuid`, pecaEm); err != nil {
+		t.Errorf("editar a legenda: %v", err)
+	}
+	if err := como(editor, `update conteudo_pecas set status = 'em_aprovacao' where id = $1::uuid`, pecaRasc); err != nil {
+		t.Errorf("mandar para aprovação: %v", err)
+	}
+	if v := um(`select (updated_at > created_at)::text from conteudo_pecas where id = $1::uuid`, pecaRasc); v != "true" {
+		t.Error("a guarda não tocou updated_at")
+	}
+	// a função de decidir: aprovador passa, grava quem aprovou e o evento; o segundo recebe a frase do trinco
+	err := banco.ComUsuario(ctx, p, aprova, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `select conteudo_decidir($1::uuid, 'aprovada', null)`, pecaEm)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("aprovador decidindo: %v", err)
+	}
+	if v := um(`select status || '|' || aprovado_por::text || '|' || (select count(*) from conteudo_eventos where peca_id = $1::uuid and acao = 'aprovou')::text
+		from conteudo_pecas where id = $1::uuid`, pecaEm); v != "aprovada|"+aprova+"|1" {
+		t.Errorf("depois de decidir: %s", v)
+	}
+	err = banco.ComUsuario(ctx, p, aprova, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `select conteudo_decidir($1::uuid, 'aprovada', null)`, pecaEm)
+		return err
+	})
+	if c, m := codigo(err); c != "P0001" || m != "Esta peca nao esta esperando aprovacao (alguem ja decidiu?)." {
+		t.Errorf("segunda decisão: %v", err)
+	}
+	// restrições
+	if c, _ := codigo(como(editor, `insert into conteudo_pecas (account_id, titulo, formato) values ($1::uuid, 'x', 'tiktok')`, conta)); c != "23514" {
+		t.Errorf("formato fora da lista: %s", c)
+	}
+	if c, _ := codigo(como(editor, `insert into conteudo_pecas (account_id, titulo, formato, status) values ($1::uuid, 'x', 'feed', 'agendada')`, conta)); c != "23514" {
+		t.Errorf("agendada sem data: %s", c)
+	}
+	// o INSERT não passa pela guarda (BEFORE UPDATE): por isso a rota de criar não aceita status (Ruling 5.9-6)
+	if err := como(editor, `insert into conteudo_pecas (account_id, titulo, formato, status, publicar_em) values ($1::uuid, 'pulou', 'feed', 'agendada', now())`, conta); err != nil {
+		t.Errorf("o insert direto de peça agendada devia passar no banco (é a rota que barra): %v", err)
+	}
+	// cascata e set null
+	if _, err := p.Exec(ctx, `insert into conteudo_arquivos (peca_id, caminho, tipo) values ('`+pecaRasc+`', 'a/b/1.png', 'imagem');
+		insert into conteudo_eventos (peca_id, acao) values ('`+pecaRasc+`', 'criou');
+		insert into conteudo_metricas (peca_id, capturado_em, curtidas) values ('`+pecaRasc+`', '2026-10-01', 3);
+		insert into conteudo_casamentos (peca_id, ig_media_id, pontuacao) values ('`+pecaRasc+`', 'IG9', 0.5);
+		insert into conteudo_ideias (titulo, peca_id) values ('ligada', '`+pecaRasc+`')`); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := codigo(como(editor, `insert into conteudo_arquivos (peca_id, caminho, tipo) values ($1::uuid, 'a/b/2.png', 'imagem')`, pecaRasc)); c != "23505" {
+		t.Errorf("duas capas na ordem 1: %s", c)
+	}
+	if _, err := p.Exec(ctx, `delete from conteudo_pecas where id = $1::uuid`, pecaRasc); err != nil {
+		t.Fatal(err)
+	}
+	if v := um(`select ((select count(*) from conteudo_arquivos) + (select count(*) from conteudo_metricas) + (select count(*) from conteudo_casamentos)
+		+ (select count(*) from conteudo_eventos where peca_id = $1::uuid))::text || '|' || coalesce((select peca_id::text from conteudo_ideias where titulo = 'ligada'), 'nulo')`, pecaRasc); v != "0|nulo" {
+		t.Errorf("cascata = %s", v)
+	}
+	// tipos que a restritiva e as rotas presumem
+	if v := um(`select string_agg(c.relname || '.' || format_type(a.atttypid, a.atttypmod), ',' order by c.relname) from pg_attribute a
+		join pg_class c on c.oid = a.attrelid where a.attname = 'account_id' and c.relkind = 'r' and c.relname like 'conteudo\_%'`); v != "conteudo_blocos.uuid,conteudo_concorrentes.uuid,conteudo_ideias.uuid,conteudo_jobs.uuid,conteudo_pecas.uuid" {
+		t.Errorf("account_id = %s", v)
+	}
+}
+```
+
+- [ ] **Step 5:** `cd api && gofmt -l ./internal && go test -count=1 -run 'TestFatia|TestEsquema|TestNomesDosArquivos' ./internal/testebanco/` PASS (inclui o teste de nomes de dois dígitos do 5.1); mutações de (b) reprovam, uma por vez.
+- [ ] **Step 6: Commit** `test(api): D0 — fatia 5.9 do esquema (as 9 tabelas do Conteúdo, o gatilho da aprovação e as 6 RPCs verbatim)` (+ `Co-Authored-By`).
 
 ---
 
