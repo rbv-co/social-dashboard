@@ -3299,8 +3299,38 @@ Na mesma área, de OUTROS planos (não trocar pelo 5.9): **5.6** — `accounts` 
 
 ## Achados para o dono
 
-(a preencher)
+1. **As filhas da peça não têm o recorte por conta em produção:** quem só vê a Vessel lê, pelo id da peça, os arquivos (caminhos no Storage), a trilha de aprovação, as métricas e as sugestões de casamento das peças de outra marca. A API fecha (só com a peça visível).
+2. **Uma peça podia nascer já "agendada" ou "aprovada" sem aprovador:** a guarda da aprovação só olha UPDATE; um INSERT direto pela API do Supabase pulava a aprovação. A API não aceita status na criação. Vale considerar a mesma guarda em BEFORE INSERT no banco (decisão sua).
+3. **O "Gerar ideias com IA" gastava IA sem conferir a marca e furava o teto:** a edge não olhava se a pessoa vê a conta, e `quantas: 3.7` virava 37 ideias de Opus (o workflow apagava o ponto). A API confere a conta e trunca para inteiro (máximo 20).
+4. **As 6 funções do Conteúdo ignoravam o recorte por conta:** um aprovador limitado à Vessel aprovava, reprovava, agendava ou reavisava peças de outra marca pelo id; uma ideia virava peça em conta que a pessoa não vê. A API confere a conta antes de chamar a função.
+5. **Concorrentes não têm recorte por conta:** todo conteudista lê e grava os concorrentes de todas as marcas. Mantido (paridade); fechar é uma policy em produção.
+6. **A trilha de aprovação era forjável:** qualquer conteudista gravava um evento "aprovou" em qualquer peça (assinado por ele mesmo). A API só aceita as ações que a tela grava.
+7. **Bloco de texto sem apelido falha hoje:** o campo "Apelido (opcional)" vai como vazio e o banco exige nome; a tela mostra erro. A API devolve 400 com a frase "nome (o apelido)…"; no Plano 7, ou o campo vira obrigatório ou a tela preenche com o tipo do bloco (decisão de tela).
+8. **O botão "Portal de Notícias" (Voz da marca) só grava para admin:** para conteudista não-admin o clique não salva nada, sem aviso (a policy de `accounts` é só de admin). Com a API vira 403 visível. Decisão sua: liberar essa coluna a conteudista ou esconder o botão.
+9. **O robô de pauta não roda desde 01/08/2026** (`gh run list --workflow conteudo-ideias.yml`: última execução 01/08 04:37) e a edge dispara com o mesmo `GITHUB_PAT_FABRICA` que o 5.8 achou respondendo 403 desde ~setembro: o botão "Gerar ideias com IA" provavelmente devolve "A chamada ao GitHub falhou (403)" hoje. Com a API e o vigia na VPS ele deixa de depender do GitHub.
+10. **As 7 funções do Conteúdo no repositório estão atrás do banco:** as migrations têm frases com acento; produção tem sem acento (o levantamento). A fatia de teste usa as de produção.
+11. **Quem tem a chave `conteudo` só em `permissions` pede IA mas não usa a Central** (as policies leem `features`): é a mistura dos dois modelos de permissão que a edge aceitava. Mantido.
 
 ## Cobertura da spec e o que vem depois
 
-(a preencher)
+**As 9 tabelas da linha 5.9 (25 policies, 4 restritivas):**
+
+| Tabela | Policies (restritiva?) | Destino |
+|---|---|---|
+| `conteudo_pecas` | `conteudo_pecas_leitura`, `conteudo_pecas_escrita` ALL (conteudista), `so_contas_permitidas` **select, restritiva**; gatilho `conteudo_pecas_guarda` | Task 1 (D0, guarda), Task 4 (leitura com os embutidos), Task 5 (escritas), Task 7 (RPCs) |
+| `conteudo_arquivos` | `conteudo_arquivos_leitura`, `conteudo_arquivos_escrita` ALL (sem conta) | Task 4 (pela peça), Task 5 (caminho preso à peça) |
+| `conteudo_eventos` | `conteudo_eventos_leitura`, `conteudo_eventos_insercao` INSERT (`quem = auth.uid()`) | Task 4 (pela peça), Task 5 (ações da tela), Task 7 (as funções gravam) |
+| `conteudo_metricas` | `conteudo_metricas_leitura`, `conteudo_metricas_srv` (serviço) | Task 4 (embutida na peça); o espelho do Plano 4 grava |
+| `conteudo_casamentos` | `conteudo_casamentos_leitura`, `conteudo_casamentos_srv` (serviço) | Task 4 (embutida), Task 7 (`decidir_casamento`, `casar_na_mao`) |
+| `conteudo_ideias` | `conteudo_ideias_leitura`, `conteudo_ideias_escrita` ALL, `conteudo_ideias_srv`, `so_contas_permitidas` **select, restritiva** | Task 4, Task 6, Task 7 (`ideia_virar_peca`); o robô da VPS grava (trilha C) |
+| `conteudo_blocos` | `conteudo_blocos_leitura`, `conteudo_blocos_escrita` ALL, `conteudo_blocos_srv`, `so_contas_permitidas` **select, restritiva** | Task 4, Task 6 |
+| `conteudo_jobs` | `conteudo_jobs_leitura`, `conteudo_jobs_srv` (serviço), `so_contas_permitidas` **select, restritiva** | Task 4 (`verJob`), Task 8 (a fila, SQL atrás do portão da edge); o vigia da VPS (trilha C) |
+| `conteudo_concorrentes` | `conteudo_concorrentes_leitura`, `conteudo_concorrentes_escrita` ALL, `conteudo_concorrentes_srv` (sem restritiva) | Task 4, Task 6 (paridade, Ruling 5.9-5) |
+
+RPC: as 6 (Task 7), que saem de `RPCPendentes` (Task 9). Edge: `conteudo-trigger` (Task 8, sem GitHub). Gatilho: `conteudo_guarda_aprovacao` (Task 1; pelas rotas na Task 5). Spec §5 (catálogo, escopo por conta, IDOR, ator × operação × recurso pela cadeia real), §6 (funções do banco: portão provado contra a função verbatim), §9 (workstreams 3, 4 e 7: rotas, robô na VPS, front no Plano 7), §11 (impersonação sem escrita; IA paga com teto e sem duplicata), §13 (escritas negadas sem efeito, varreduras de toda rota, concorrência).
+
+**O que vem depois:**
+- **Trilha C (Plano 7):** os 27 sítios de tabela, as 6 RPCs e a edge da tabela acima; o robô na VPS pela seção da trilha C (scripts em `pg`, vigia, papel `conteudo_robo`); aposentar `conteudo-ideias.yml` e a edge `conteudo-trigger`.
+- **Plano 6:** o Storage do bucket `conteudo` (upload, URL assinada, cópia e remoção); depois dele, apagar arquivo e peça pela API apaga também o objeto (hoje a tela apaga do Storage antes).
+- **5.10 e 5.11:** usam `dados.Tabela.Conferir` para as filhas de tabela com restritiva e a fixture de `web.FuncoesRPC` do `conferir`; tiram as SUAS de `RPCPendentes`.
+- **Antes do corte:** `api worker conferir` (NOTAS), os jobs órfãos em `erro`, o vigia ligado e provado; as decisões dos achados 2, 7 e 8.
