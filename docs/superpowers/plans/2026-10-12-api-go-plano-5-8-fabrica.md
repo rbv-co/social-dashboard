@@ -1843,7 +1843,7 @@ func manual(ctx context.Context, p *pgxpool.Pool, lojas []lojaDaFabrica, f filtr
 - Portão: `leitor`, `semModulo`, `roboSemFabrica` → 403; `impersonado` → 200 (só lê); `desativado` → 401.
 - 400: `fonte "x"` → `{"error":"fonte_invalida"}`; `lojas ["abc"]`, 21 lojas, `filtros "x"`, `filtros {"faixa": 1}` → `pedido_invalido`.
 - Mais de 1000 linhas: 1200 vendas de SKUs distintos no canal de T, cada um com estoque → `manual` devolve 1200 candidatos (a edge devolvia no máximo 1000).
-- Mutações que têm de reprovar: usar `c.Lojas` cru em `estoques` (o `"99999"` aparece); `sort.Slice` não estável com faturamentos iguais (S2/S3 empatados em outro caso de teste com faturamento igual trocam de lugar: inclua dois SKUs com o mesmo faturamento e confira a ordem); tirar o `created_at desc` da ordem do briefing não muda nada aqui — não é mutação (a `rodada` decide).
+- Mutações que têm de reprovar: usar `c.Lojas` cru em `estoques` (o `"99999"` aparece); trocar `p <= 0.8` por `p < 0.8` (S1 vira B e o `abc` com `faixa A` sai vazio); ler o briefing MAIS VELHO (`order by rodada asc`: a lista muda); `porLojaDoEstoque` sem o `n > 0` (S2 ganha T com estoque 0).
 
 **(c) Arquivos:** Create `api/internal/fabrica/candidatos.go`, `api/internal/fabrica/candidatos_test.go`.
 
@@ -1877,6 +1877,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -2151,7 +2152,7 @@ func (cu *Curadoria) Publicos(w http.ResponseWriter, r *http.Request) {
 			const valores = `(@nome::jsonb #>> '{}'), (@marca::jsonb #>> '{}')::uuid, @geo::jsonb,
 				(@idade_min::jsonb #>> '{}')::int, (@idade_max::jsonb #>> '{}')::int,
 				array(select jsonb_array_elements_text(@generos::jsonb)::int), @interesses::jsonb, @audiences::jsonb, @quem::uuid`
-			if nulo(json.RawMessage(ou(p.ID, "null"))) {
+			if len(p.ID) == 0 || nulo(p.ID) {
 				return tx.QueryRow(ctx, `insert into fabrica_publicos (nome, marca_id, geo, idade_min, idade_max, generos,
 					interesses, custom_audiences, criado_por) values (`+valores+`) returning id::text`, args).Scan(&id)
 			}
@@ -2174,7 +2175,6 @@ func (cu *Curadoria) Publicos(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-(`slices` entra nos imports do arquivo.)
 
 **(b) Testes de aceitação** (`curadoria_test.go`, `m.Rodar`; "intacto" = foto igual)
 - Looks, permitido (`fabricante`): `salvar {"look":{"chave":"promo-sage","nome":"Promo · Sálvia","objetivos":["engajamento"],"ativo":false}}` → 200 `{"ok":true}`; efeito: a linha com o nome, `{engajamento}` e `ativo false`; `salvar` só com `ativo:true` → só `ativo` muda (nome continua "Promo · Sálvia"); `salvar` de chave inexistente → 200 e nada muda; `ordenar {"ordem":[{"chave":"promo-sage","ordem":1},{"chave":"produto-heroi","ordem":2},{"ordem":9}]}` → 200, ordens 1 e 2 (o item sem chave pulado); `excluir {"chave":"marca-velha","excluido":false}` → `{"ok":true,"excluido":false}`; `excluir {"chave":"produto-heroi"}` → `excluido true`.
