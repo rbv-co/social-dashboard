@@ -284,8 +284,22 @@ var rotas58 = []string{
 	"POST /fabrica/criativos/escolher",
 }
 
+// Plano 5.9: as 20 rotas de tabela de conteudo.Montar (7 leituras, 13 escritas), no grupo de DOMÍNIO. Portão =
+// catálogo, provado pela matriz de cada rota em `internal/conteudo`; vazamento e impersonado por
+// `TestNadaVazaEntreContas` e `TestEscritasRecusamImpersonado`. O `POST /conteudo-trigger` NÃO entra: tem o
+// portão da edge (PedeIA: sessão sem módulo = 403, TestNenhumaRotaNovaFicaAberta).
+var rotas59 = []string{
+	"GET /conteudo/pecas", "POST /conteudo/pecas", "PATCH /conteudo/pecas/{id}", "DELETE /conteudo/pecas/{id}",
+	"GET /conteudo/arquivos", "POST /conteudo/arquivos", "PATCH /conteudo/arquivos/{id}", "DELETE /conteudo/arquivos/{id}",
+	"GET /conteudo/eventos", "POST /conteudo/eventos",
+	"GET /conteudo/ideias", "POST /conteudo/ideias", "PATCH /conteudo/ideias/{id}",
+	"GET /conteudo/blocos", "POST /conteudo/blocos", "PATCH /conteudo/blocos/{id}",
+	"GET /conteudo/concorrentes", "POST /conteudo/concorrentes", "PATCH /conteudo/concorrentes/{id}",
+	"GET /conteudo/jobs",
+}
+
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas58) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas58, rotas59) {
 		soSessao[c] = true
 	}
 }
@@ -444,7 +458,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
-	for _, c := range append(slices.Clone(rotas51), rotas57...) { // Planos 5.1 e 5.7: no grupo de domínio, com o prazo dele
+	for _, c := range slices.Concat(rotas51, rotas57, rotas59, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7 e 5.9: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -979,5 +993,79 @@ func TestFabricaPelaMontagemReal(t *testing.T) {
 	var jobs int
 	if err := p.QueryRow(ctx, `select count(*) from fabrica_jobs`).Scan(&jobs); err != nil || jobs != 0 {
 		t.Errorf("jobs = %d (%v): sem token nada deveria nascer", jobs, err)
+	}
+}
+
+// Plano 5.9 pela montagem real: as rotas do Conteúdo no grupo de domínio (sessão, escopo, conta), as 6 RPCs na
+// lista branca e o /conteudo-trigger com o portão da edge. A matriz de cada rota está em internal/conteudo;
+// aqui vale a MONTAGEM (grupo, cadeia, posição, FuncoesRPC).
+func TestConteudoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const a1, a2 = "a5900000-0000-4000-a000-0000000000a1", "a5900000-0000-4000-a000-0000000000a2"
+	const p1, p2 = "a5930000-0000-4000-a000-0000000000c1", "a5930000-0000-4000-a000-0000000000c2"
+	quem := map[string]string{}
+	for i, u := range []struct{ nome, papel, features, contas string }{
+		{"editor-a1", "viewer", "{conteudo}", "{" + a1 + "}"}, {"aprovador-a1", "viewer", "{conteudo,conteudo.aprovar}", "{" + a1 + "}"},
+		{"admin", "admin", "{}", ""}, {"nenhum", "viewer", "{}", ""},
+	} {
+		id := fmt.Sprintf("a5910000-0000-4000-a000-00000000020%d", i)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, u.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe, allowed_accounts)
+			values ($1::uuid, $2::text, $2::text, $3::text, $4::text[], false, nullif($5::text, '')::uuid[])`,
+			id, u.nome+"@x.com", u.papel, u.features, u.contas); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if quem[u.nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.Exec(ctx, `insert into accounts (id, name) values ($1::uuid, 'Vessel'), ($2::uuid, 'Mantova')`, a1, a2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em) values
+		($1::uuid, $2::uuid, 'Da A1', 'feed', 'em_aprovacao', now() + interval '1 day'),
+		($3::uuid, $4::uuid, 'Da A2', 'feed', 'em_aprovacao', now() + interval '1 day')`, p1, a1, p2, a2); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(nome, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if nome != "" {
+			r.Header.Set("Authorization", "Bearer "+quem[nome])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem, naoTem                        string
+	}{
+		{"leitura sem sessão", "", "GET", "/conteudo/pecas", "", 401, "nao_autenticado", ""},
+		{"editor com lista só vê a própria conta", "editor-a1", "GET", "/conteudo/pecas", "", 200, a1, a2},
+		{"admin vê as duas", "admin", "GET", "/conteudo/pecas", "", 200, a2, ""},
+		{"sem módulo lê lista vazia (catálogo)", "nenhum", "GET", "/conteudo/pecas", "", 200, "[]", ""},
+		{"RPC com peça de conta que não se vê", "aprovador-a1", "POST", "/rpc/conteudo_decidir", `{"p_peca":"` + p2 + `","p_decisao":"aprovada"}`, 403, "sem_permissao", ""},
+		{"RPC na própria conta", "aprovador-a1", "POST", "/rpc/conteudo_decidir", `{"p_peca":"` + p1 + `","p_decisao":"aprovada"}`, 200, `"status":"aprovada"`, ""},
+		{"RPC sem o portão da função", "editor-a1", "POST", "/rpc/conteudo_aprovar_e_agendar", `{"p_peca":"` + p1 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA sem o módulo", "nenhum", "POST", "/conteudo-trigger", `{"account_id":"` + a1 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA para conta que não se vê", "editor-a1", "POST", "/conteudo-trigger", `{"account_id":"` + a2 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA na própria conta: o job na fila", "editor-a1", "POST", "/conteudo-trigger", `{"account_id":"` + a1 + `","quantas":5}`, 200, `"quantas":5`, ""},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
+		}
+	}
+	var fila string
+	if err := p.QueryRow(ctx, `select count(*)::text || '|' || min(status) from conteudo_jobs`).Scan(&fila); err != nil || fila != "1|enfileirado" {
+		t.Errorf("a fila = %q %v, esperava 1|enfileirado", fila, err)
 	}
 }

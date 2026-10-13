@@ -13,7 +13,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
+	"github.com/rbv-co/social-dashboard/api/internal/web"
 	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
 
@@ -76,6 +78,16 @@ func esquemaCompleto(t *testing.T, p *pgxpool.Pool, tudoTexto bool) {
 			retorno, corpo = "returns table("+strings.Join(cs, ", ")+")", "begin return; end"
 		}
 		ddl = append(ddl, fmt.Sprintf("create function %s(%s) %s language plpgsql as $f$ %s $f$", nome, strings.Join(args, ", "), retorno, corpo))
+	}
+	// as funções de web.FuncoesRPC (que conferirRPC confere) pela PRÓPRIA declaração: Opcional = DEFAULT (Plano 5.9)
+	for _, f := range web.FuncoesRPC {
+		var args []string
+		for _, pr := range f.Params {
+			args = append(args, pr.Nome+" "+pr.Tipo+map[bool]string{true: " default null"}[pr.Opcional])
+		}
+		retorno := map[rpc.Retorno]string{rpc.Valor: "integer", rpc.Conjunto: "setof integer", rpc.Nada: "void"}[f.Retorno]
+		ddl = append(ddl, fmt.Sprintf("create or replace function %s(%s) returns %s language sql as $f$ select null::integer $f$",
+			f.Nome, strings.Join(args, ", "), retorno))
 	}
 	ddl = append(ddl, `create function trg_vazio() returns trigger language plpgsql as $f$ begin return new; end $f$`)
 	for _, g := range gatilhosDoWorker {
@@ -590,5 +602,21 @@ func TestConferirNaFatiaD0NaoAcusaOPlano58(t *testing.T) {
 		if strings.Contains(f, " fabrica_") || strings.Contains(f, " ia_execucoes.") {
 			t.Errorf("a fatia D0 devia satisfazer o 5.8, mas o conferir acusa %q", f)
 		}
+	}
+}
+
+// Plano 5.9: contra a fatia D0 (as 9 conteudo_*, o gatilho da aprovação e as 6 RPCs verbatim), o conferir não
+// acusa nada do 5.9 — pega erro de digitação nas listas. conteudo_reivindicar_hora_h é do Plano 4 (o robô da
+// hora H tem banco próprio nos testes) e não está na fatia.
+func TestConferirNaFatiaD0NaoAcusaOPlano59(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	faltam := faltamDe(t, p)
+	for _, f := range faltam {
+		if strings.Contains(f, " conteudo_") && !strings.Contains(f, "conteudo_reivindicar_hora_h") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.9, mas o conferir acusa %q", f)
+		}
+	}
+	if !slices.ContainsFunc(faltam, func(f string) bool { return strings.Contains(f, "conteudo_reivindicar_hora_h") }) {
+		t.Error("conteudo_reivindicar_hora_h não está na fatia: o conferir devia acusá-la (o filtro acima não provaria nada)")
 	}
 }

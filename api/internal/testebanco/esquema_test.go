@@ -47,7 +47,7 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quer := []string{"equipes_atualizado", "gt_rascunho_updated_at", "trg_espelhar_grupo_do_canal", "trg_espelhar_rename_do_grupo",
+	if quer := []string{"conteudo_pecas_guarda", "equipes_atualizado", "gt_rascunho_updated_at", "trg_espelhar_grupo_do_canal", "trg_espelhar_rename_do_grupo",
 		"trg_guard_profiles", "trg_impedir_autopromocao"}; !reflect.DeepEqual(gat, quer) {
 		t.Fatalf("gatilhos = %v, esperava %v", gat, quer)
 	}

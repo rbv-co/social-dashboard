@@ -61,9 +61,9 @@ var colunasDoWorker = map[string]string{
 	"frota_checklist":             "veiculo_id,feita_em,cadencias",
 	"frota_uso":                   "id,veiculo_id,pessoa_id,tipo,saida_em,volta_em",
 	"frota_requisicoes":           "id,veiculo_id,situacao,retirada_prevista,destino,motivo_decisao,encerrada_motivo,pessoa_id,pessoa_nome,criada_por",
-	"conteudo_pecas":              "id,account_id,titulo,formato,status,legenda,hashtags,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel",
-	"conteudo_eventos":            "peca_id,acao,detalhe",
-	"conteudo_casamentos":         "peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo",
+	"conteudo_pecas":              "id,account_id,titulo,formato,status,legenda,hashtags,observacoes,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel,criado_por,aprovado_por,aprovado_em,motivo_reprovacao,created_at,updated_at", // + Plano 5.9
+	"conteudo_eventos":            "id,peca_id,de,para,acao,detalhe,quem,quando",                                                                                                                                                                           // + Plano 5.9
+	"conteudo_casamentos":         "id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo,decidido_por,decidido_em,created_at",                                                                                    // + Plano 5.9
 	"conteudo_metricas":           "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
 	"checkout_abandono":           "token,status",
 	"contatos_sem_mensagem":       "telefone,motivo",
@@ -96,6 +96,13 @@ var colunasDoWorker = map[string]string{
 	"gt_problemas_meta":       "ad_id,codigo,account_id,titulo,grave,primeira_vez,ultima_vez,resolvido_em",
 	"fabrica_marcas":          "id,nome,caption_template,ad_account,page_id,ig_id,account_id,ativo,segmento,termos_produto,created_at", // + Plano 5.8: GET /fabrica/marcas
 	"interesses_sugeridos":    "id,marca_id,objetivo,itens,propostos,validos,gerado_em",
+	// Plano 5.9 (conteúdo): o que as rotas, as RPCs e o /conteudo-trigger presumem; conteudo_jobs é a fila do vigia
+	// da VPS. Todas com DDL no repositório.
+	"conteudo_arquivos":     "id,peca_id,ordem,bucket,caminho,tipo,mime,bytes,created_at",
+	"conteudo_ideias":       "id,account_id,titulo,gancho,formato,pilar,roteiro,legenda_sugerida,hashtags_sugeridas,por_que_agora,referencia,origem,modelo,job_id,situacao,peca_id,criado_por,created_at,cta,producao,porque_formato",
+	"conteudo_blocos":       "id,account_id,tipo,nome,texto,usos,ativo,criado_por,created_at",
+	"conteudo_jobs":         "id,tipo,account_id,params,status,github_run_id,resultado,erro,criado_por,created_at,updated_at",
+	"conteudo_concorrentes": "id,account_id,handle,nome,observacao,ativo,created_at",
 	// Plano 5.8 (Fábrica): leituras, edges e rotas de robô. Todas com DDL em db/migrations (014-030): o conferir
 	// pega o que foi acrescentado em produção sem migration. fabrica_campanhas, fabrica_criativos, fabrica_marcas e
 	// ia_execucoes são AMPLIADAS acima. gc_vendas_item, gc_estoque_item e gestao_comercial_briefings entram com a
@@ -154,6 +161,12 @@ var tiposDoWorker = map[string]string{
 	"gt_objetivo_interacao.conta_id": "uuid", "gt_campanhas_rascunho.criado_por": "uuid", "gt_fila_decisoes.decidido_por": "uuid",
 	"gt_ponderada_config.metas_por_conta": "jsonb", "gt_ponderada_config.limiares_resultado": "jsonb",
 	"gt_config_metricas.metricas": "jsonb", "gt_budget_analises.impactos": "jsonb", "gt_campanhas_rascunho.estado": "jsonb",
+	// Plano 5.9: os casts das rotas, das RPCs e do /conteudo-trigger (account_id das conteudo_* é uuid: o init completa)
+	"conteudo_pecas.criado_por": "uuid", "conteudo_pecas.responsavel": "uuid", "conteudo_arquivos.id": "uuid",
+	"conteudo_arquivos.peca_id": "uuid", "conteudo_arquivos.ordem": "integer", "conteudo_eventos.quem": "uuid",
+	"conteudo_casamentos.id": "uuid", "conteudo_ideias.id": "uuid", "conteudo_ideias.peca_id": "uuid", "conteudo_ideias.roteiro": "jsonb",
+	"conteudo_ideias.criado_por": "uuid", "conteudo_blocos.criado_por": "uuid", "conteudo_jobs.id": "uuid", "conteudo_jobs.params": "jsonb",
+	"conteudo_jobs.resultado": "jsonb", "conteudo_jobs.criado_por": "uuid", "conteudo_jobs.created_at": "timestamp with time zone",
 	// Plano 5.8: os casts e as conversões de que as rotas da Fábrica dependem. deposito_id da loja é TEXTO (a
 	// Task 7 compara texto com texto e converte para bigint só no parâmetro de gc_estoque_item.deposito_id).
 	"fabrica_lojas.deposito_id": "text", "fabrica_lojas.canal_loja_id": "text", "fabrica_lojas.geo_cities": "jsonb",
@@ -204,6 +217,7 @@ var funcoesDoWorker = []string{
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
 	"pode_ver_conta(text)",               // Plano 5.6
 	"gt_registrar_problemas(text,jsonb)", // Plano 5.7
+	"conteudo_guarda_aprovacao()",        // Plano 5.9: a função do gatilho (as 6 RPCs, conferirRPC confere por web.FuncoesRPC)
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
 	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
 }
@@ -213,6 +227,7 @@ var funcoesDoWorker = []string{
 var gatilhosDoWorker = [][2]string{
 	{"equipes_atualizado", "equipes"}, {"trg_espelhar_grupo_do_canal", "bling_lojas"}, {"trg_espelhar_rename_do_grupo", "canais_grupos"},
 	{"trg_guard_profiles", "profiles"}, {"trg_impedir_autopromocao", "profiles"},
+	{"conteudo_pecas_guarda", "conteudo_pecas"}, // Plano 5.9: sem ele, quem não aprova aprova pelo PATCH
 }
 
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há
