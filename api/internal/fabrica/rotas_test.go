@@ -19,6 +19,7 @@ var escritas = map[string]struct{ caminho, corpo string }{
 	"POST /fabrica/criativos/escolher":          {"/fabrica/criativos/escolher", `{"ids":["` + K1 + `"],"escolhido":false}`},
 	"POST /fabrica-trigger":                     {"/fabrica-trigger", `{"tipo":"preview","params":{}}`},
 	"POST /fabrica-apagar":                      {"/fabrica-apagar", `{"campanhaId":"` + C2 + `"}`},
+	"POST /fabrica-candidatos":                  {"/fabrica-candidatos", `{"lojas":["14888726315"],"fonte":"manual","filtros":{}}`},
 	"POST /fabrica-looks":                       {"/fabrica-looks", `{"acao":"excluir","chave":"promo-sage"}`},
 	"POST /fabrica-publicos":                    {"/fabrica-publicos", `{"acao":"apagar","id":"` + P2 + `"}`},
 	"PATCH /fabrica/robo/jobs/{id}":             {"/fabrica/robo/jobs/" + J1, `{"status":"concluido"}`},
@@ -30,6 +31,9 @@ var escritas = map[string]struct{ caminho, corpo string }{
 	"POST /fabrica/robo/meta-jobs":      {"/fabrica/robo/meta-jobs", `{"tipo":"estudio","payload":{"campanhaId":"` + C3 + `"},"status":"criado"}`},
 	"POST /fabrica/robo/execucoes":      {"/fabrica/robo/execucoes", `{"robo":"fabrica-gerar","acao":"gerar criativos","status":"ok"}`},
 }
+
+// soLeitura: POST que só lê (o "entrar como" passa).
+const soLeitura = "POST /fabrica-candidatos"
 
 // mundoMontado: o mundo com Montar inteiro, um GitHub de mentira que conta os pedidos e a pasta de arquivos.
 func mundoMontado(t *testing.T) (*mundoteste.Mundo, *atomic.Int64) {
@@ -96,12 +100,12 @@ func TestNadaVazaEntreContas(t *testing.T) {
 			t.Errorf("adminA1 não viu A2 em %s (a rota projeta account_id?): %s", rota, b)
 		}
 	})
-	if l != 9 || g != 12 || varridas != 1 {
-		t.Errorf("rotas = %d leituras (%d varridas) e %d escritas, esperava 9 (1) e 12", l, varridas, g)
+	if l != 9 || g != 13 || varridas != 1 {
+		t.Errorf("rotas = %d leituras (%d varridas) e %d escritas, esperava 9 (1) e 13", l, varridas, g)
 	}
 }
 
-// Toda escrita recusa a sessão de "entrar como", sem tocar no banco nem no GitHub.
+// Toda escrita recusa a sessão de "entrar como", sem tocar no banco nem no GitHub (o candidatos só lê).
 func TestEscritasRecusamImpersonado(t *testing.T) {
 	m, pedidos := mundoMontado(t)
 	antes := m.Um(t, fotoDaFabrica)
@@ -110,19 +114,23 @@ func TestEscritasRecusamImpersonado(t *testing.T) {
 			return
 		}
 		st, b := m.Pedir(t, "impersonado", metodo, caminho, corpo)
-		switch {
+		switch chave := metodo + " " + rota; {
+		case chave == soLeitura:
+			if st != http.StatusOK {
+				t.Errorf("%s como impersonado = %d %s (só lê: deveria passar)", chave, st, b)
+			}
 		case strings.HasPrefix(rota, "/fabrica/robo/"):
 			if st != http.StatusForbidden {
-				t.Errorf("%s %s como impersonado = %d %s", metodo, rota, st, b)
+				t.Errorf("%s como impersonado = %d %s", chave, st, b)
 			}
 		default:
 			if st != http.StatusForbidden || !strings.Contains(b, "Quem entrou como outra pessoa") {
-				t.Errorf("%s %s como impersonado = %d %s", metodo, rota, st, b)
+				t.Errorf("%s como impersonado = %d %s", chave, st, b)
 			}
 		}
 	})
-	if n != 12 {
-		t.Errorf("escritas = %d, esperava 12 (rota nova? ponha soSessaoPropria e um caso em `escritas`)", n)
+	if n != 13 {
+		t.Errorf("escritas = %d, esperava 13 (rota nova? ponha soSessaoPropria e um caso em `escritas`)", n)
 	}
 	if m.Um(t, fotoDaFabrica) != antes || pedidos.Load() != 0 {
 		t.Errorf("o impersonado mudou o banco ou chamou o GitHub (%d pedidos)", pedidos.Load())
@@ -177,8 +185,8 @@ func TestEscritasDoPainelRecusamServico(t *testing.T) {
 			}
 		}
 	})
-	if n != 12 {
-		t.Errorf("escritas = %d, esperava 12", n)
+	if n != 13 {
+		t.Errorf("escritas = %d, esperava 13", n)
 	}
 	if m.Um(t, fotoDaFabrica) != antes || pedidos.Load() != 0 {
 		t.Errorf("conta de serviço mudou o banco ou chamou o GitHub (%d pedidos)", pedidos.Load())
