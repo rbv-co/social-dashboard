@@ -45,4 +45,5 @@ test('fim do job: resultado como JSON e erro cortado em 500', async () => {
   await falharJob(db, 'j', 'x'.repeat(900));
   assert.equal(consultas[0][1][1], '{"gravadas":2}');
   assert.equal(consultas[1][1][1].length, 500);
+  assert.ok(consultas.every(([sql]) => sql.includes("and status = 'rodando'")));
 });

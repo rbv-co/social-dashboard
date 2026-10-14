@@ -80,12 +80,13 @@ export async function gravarIdeias(db, accountId, ideias, { modelo, jobId }) {
   } catch (e) { await db.rodar('rollback').catch(() => {}); throw e; }
 }
 
+// `and status = 'rodando'`: job que o vigia já expirou (ou outro fechou) não é reaberto nem sobrescrito.
 export const concluirJob = (db, id, resultado) =>
-  db.rodar(`update conteudo_jobs set status = 'concluido', resultado = $2::jsonb, updated_at = now() where id = $1`,
+  db.rodar(`update conteudo_jobs set status = 'concluido', resultado = $2::jsonb, updated_at = now() where id = $1 and status = 'rodando'`,
     [id, JSON.stringify(resultado)]);
 
 export const falharJob = (db, id, erro) =>
-  db.rodar(`update conteudo_jobs set status = 'erro', erro = $2, updated_at = now() where id = $1`,
+  db.rodar(`update conteudo_jobs set status = 'erro', erro = $2, updated_at = now() where id = $1 and status = 'rodando'`,
     [id, String(erro).slice(0, 500)]);
 
 // Telemetria (ia_execucoes) pelo mesmo papel; o `body` é o de registrar-execucao.mjs.

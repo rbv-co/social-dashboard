@@ -5,6 +5,8 @@
 //                                                 (nada impresso = fila vazia)
 //   node coletor/conteudo-fila.mjs falhou <id>  → marca erro se o robô saiu com falha sem fechar o job
 // Contrato e prazos: docs/superpowers/plans/2026-10-12-api-go-plano-5-9-conteudo.md, "Robô de Conteúdo na VPS".
+import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
 import { abrirBanco } from './lib/conteudo-banco.mjs';
 
 export const TIPOS = ['ideias', 'semana']; // lista fechada: o tipo vira nome de arquivo executado pelo vigia
@@ -41,7 +43,8 @@ export async function pegarProximo(db) {
 export const falhou = (db, id, erro = 'A rodada falhou antes de terminar; detalhes no log da VPS.') =>
   db.rodar(`update conteudo_jobs set status = 'erro', erro = $2, updated_at = now() where id = $1 and status = 'rodando'`, [id, erro]);
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL + realpath: com `file://${argv}` um caminho com espaço ou link simbólico nunca casa e o vigia leria "fila vazia" para sempre.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const [cmd, id] = process.argv.slice(2);
   const db = await abrirBanco(process.env.CONTEUDO_DATABASE_URL);
   try {
