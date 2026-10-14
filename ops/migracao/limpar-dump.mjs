@@ -62,7 +62,7 @@ const REGRAS = [
   // A disparar_robo de produção chama net.http_post (pg_net não vai para o Postgres novo). A substituta (fila
   // disparos_pendentes) vem da migração 00007 da API, que o restaurar.sh roda ANTES do schema: sem tirar esta,
   // o CREATE FUNCTION do dump colide (ON_ERROR_STOP). Quem a CHAMA fica. Plano 5.10, Ruling 5.10-1.
-  ['substituidas', /^(create(\s+or\s+replace)?|comment\s+on)\s+function\s+(public\.)?"?disparar_robo"?\s*\(/i],
+  ['substituidas', /^(create(\s+or\s+replace)?|comment\s+on)\s+function\s+(public\.)?"?(disparar_robo|vessel_convite_marcar)"?\s*\(/i],
 ]
 
 // 21 FKs de 16 tabelas apontam para auth.users(id); no banco novo a identidade é public.usuarios.

@@ -86,6 +86,8 @@ func esquemaCompleto(t *testing.T, p *pgxpool.Pool, tudoTexto bool) {
 	for _, item := range append(slices.Clone(funcoesDoWorker), funcoesPorNomeDoWorker...) {
 		criadas[nomeDaFuncao(item)] = true
 	}
+	// a migração 00009 já criou esta no schema do teste; o stub abaixo a substitui pela forma que a conferência espera
+	ddl = append(ddl, "drop function if exists vessel_convite_marcar(bigint, text)")
 	for _, f := range web.FuncoesRPC {
 		if criadas[f.Nome] {
 			continue
@@ -459,7 +461,7 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 		"conteudo-espelho": "conteudo-espelho", "enviar-relatorio-hora": "enviar-relatorio-hora", "enviar-mensagem-abandono": "enviar-mensagem-abandono",
 		// fichas que a migration 00004 do goose cadastra (antes só existiam por acaso no banco real)
 		"enviar-push-frota": "enviar-push-frota", "conferir-robos": "conferir-robos", "faxina-da-api": "faxina-da-api",
-		"abandono-de-checkout": "abandono-de-checkout", "vessel-espelhar-lista": "vessel-espelhar-lista", "fabrica-purga": "fabrica-purga",
+		"abandono-de-checkout": "abandono-de-checkout", "fabrica-purga": "fabrica-purga",
 		"coletar-dados-07h": "coletar-dados", "coletar-dados-12h": "coletar-dados", "coletar-dados-18h": "coletar-dados", "coletar-dados-2359": "coletar-dados",
 	}
 	p := testebanco.Novo(t)
