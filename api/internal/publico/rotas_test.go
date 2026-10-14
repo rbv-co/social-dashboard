@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -218,5 +219,84 @@ func TestCorpoVazioEVary(t *testing.T) {
 	}
 	if st, _, _ := m.pedido(t, "/rest/v1/rpc/vessel_entrar_na_lista", ``); st != 400 {
 		t.Errorf("corpo vazio com parâmetros obrigatórios = %d, esperava 400", st)
+	}
+}
+
+// Cadastro duplicado é idempotente: o mesmo e-mail cadastrado de novo (e 8 vezes ao mesmo tempo, pelo Core) dá UMA linha;
+// a resposta diz `na_lista` para a primeira e `ja_na_lista` para as outras, sem erro e sem 5xx.
+func TestCadastroDuplicadoEIdempotente(t *testing.T) {
+	m := novoMundo(t)
+	if st, r, _ := m.pedido(t, "/rest/v1/rpc/vessel_entrar_na_lista", entrar, comCore); st != 200 || !strings.Contains(r, `"na_lista"`) {
+		t.Fatalf("primeiro = %d %s", st, r)
+	}
+	if st, r, _ := m.pedido(t, "/rest/v1/rpc/vessel_entrar_na_lista", entrar, comCore); st != 200 || !strings.Contains(r, `"ja_na_lista"`) {
+		t.Errorf("repetido = %d %s, esperava ja_na_lista", st, r)
+	}
+	corpo := strings.Replace(entrar, "ana@x.com", "corrida@x.com", 1)
+	var wg sync.WaitGroup
+	codigos := make([]int, 8)
+	for i := range codigos {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codigos[i], _, _ = m.pedido(t, "/rest/v1/rpc/vessel_entrar_na_lista", corpo, comCore)
+		}()
+	}
+	wg.Wait()
+	for i, st := range codigos {
+		if st != 200 {
+			t.Errorf("pedido simultâneo %d = %d", i, st)
+		}
+	}
+	if got := m.um(t, `select count(*)::text from vessel_lista_espera where email in ('ana@x.com', 'corrida@x.com')`); got != "2" {
+		t.Errorf("linhas na lista = %s, esperava 2 (uma por e-mail)", got)
+	}
+	// e o gatilho do espelho juntou tudo num pedido só
+	if got := m.um(t, `select count(*)::text from disparos_pendentes where robo = 'vessel-espelhar-lista' and situacao = 'pendente'`); got != "1" {
+		t.Errorf("pedidos do espelho pendentes = %s, esperava 1", got)
+	}
+}
+
+// O pedido que o Core de verdade faz (vessel-cor-x/services/core/internal/cadastro/cadastro.go, `repassar`): base + "/" +
+// caminho, `apikey` e `Authorization: Bearer <chave>`, Content-Type, X-Forwarded-For (o IP do visitante) e o User-Agent
+// dele, por uma conexão HTTP de verdade. É o que a virada exige que continue funcionando só com a base e a chave trocadas.
+func TestPedidoNoFormatoDoCore(t *testing.T) {
+	m := novoMundo(t, func(s *Servico) { s.Edges = map[string]Edge{"vessel-conta": s.Conta(&falsoEmail{})} })
+	srv := httptest.NewServer(m.H)
+	defer srv.Close()
+	repassar := func(caminho, corpo string) (int, string) {
+		req, _ := http.NewRequestWithContext(t.Context(), "POST", srv.URL+"/"+caminho, strings.NewReader(corpo))
+		req.Header.Set("apikey", segredoDoCore)
+		req.Header.Set("Authorization", "Bearer "+segredoDoCore)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "203.0.113.77")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (visitante pelo Core)")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var b strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := resp.Body.Read(buf)
+			b.Write(buf[:n])
+			if err != nil {
+				break
+			}
+		}
+		return resp.StatusCode, b.String()
+	}
+	if st, r := repassar("rest/v1/rpc/vessel_entrar_na_lista", entrar); st != 200 || !strings.Contains(r, `"ok" : true`) {
+		t.Fatalf("rpc = %d %s", st, r)
+	}
+	if got := m.um(t, `select ip_hash from vessel_lista_espera limit 1`); got != hashDoIP("203.0.113.77") {
+		t.Errorf("o IP que o Core mandou não chegou à função: %s", got)
+	}
+	if st, r := repassar("functions/v1/vessel-conta", criarConta("Ana Souza", cpfAna, "ana@x.com")); st != 200 || !strings.Contains(r, `"ok":true`) {
+		t.Errorf("edge = %d %s", st, r)
+	}
+	if st, _ := repassar("rest/v1/rpc/funcao_que_nao_existe", `{}`); st != 404 {
+		t.Errorf("função desconhecida = %d, esperava 404", st)
 	}
 }

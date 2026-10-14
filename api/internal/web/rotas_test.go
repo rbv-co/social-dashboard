@@ -1497,3 +1497,38 @@ func TestSeloPelaMontagemReal(t *testing.T) {
 		}
 	}
 }
+
+// Plano 6, pela montagem real: o envio de currículo do Core (chave certa, um IP só, nomes UUID como o Core gera) não toma o
+// teto por IP do anônimo, e o anônimo toma; a rota de arquivo e a de edge usam a MESMA regra de "quem é o Core".
+func TestCurriculoPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{VesselInterno: "chave-do-core-com-mais-de-24-caracteres", ArquivosDir: t.TempDir()})
+	envia := func(i int, cab ...string) int {
+		r := httptest.NewRequest("POST", fmt.Sprintf("/storage/v1/object/vessel-curriculos/consultor-tivoli/%08x-0000-4000-a000-000000000000.pdf", i), strings.NewReader("%PDF-1.4\nconteudo\n"))
+		r.RemoteAddr = "127.0.0.1:4000"
+		r.Header.Set("Content-Type", "application/pdf")
+		for _, c := range cab {
+			k, v, _ := strings.Cut(c, ": ")
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for i := 0; i < 15; i++ { // o Core: o mesmo IP 15 vezes, todas passam
+		if st := envia(i, "Authorization: Bearer chave-do-core-com-mais-de-24-caracteres", "X-Forwarded-For: 203.0.113.5"); st != 200 {
+			t.Fatalf("Core, envio %d = %d", i+1, st)
+		}
+	}
+	var visto429 bool
+	for i := 100; i < 115; i++ { // o anônimo (a anon do navegador não vale como chave): 10 por IP por hora
+		if st := envia(i, "Authorization: Bearer chave-anon-publica", "X-Real-IP: 198.51.100.9"); st == 429 {
+			visto429 = true
+		} else if st != 200 {
+			t.Fatalf("anônimo, envio %d = %d", i, st)
+		}
+	}
+	if !visto429 {
+		t.Error("o anônimo mandou 15 currículos do mesmo IP sem tomar 429")
+	}
+}
