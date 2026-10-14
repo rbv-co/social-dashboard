@@ -440,10 +440,13 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 	esperados := robosEsperadosDasMigracoes(t)
 	for _, deve := range []string{"coletar-dados", "meta-hora", "meta-hora-retentativa-00h", "enviar-push-vendas", "enviar-push-saldo", "guardar-copia-do-banco",
 		"enviar-mensagem-abandono", "vessel-triagem-da-vaga",
-		"enviar-push-frota", "fabrica-purga", "vessel-rd-station", "abandono-de-checkout", "conferir-robos", "faxina-da-api"} {
+		"enviar-push-frota", "fabrica-purga", "vessel-espelhar-lista", "abandono-de-checkout", "conferir-robos", "faxina-da-api"} {
 		if !slices.Contains(esperados, deve) {
 			t.Fatalf("o leitor das migrations não achou %q (achou %v)", deve, esperados)
 		}
+	}
+	if slices.Contains(esperados, "vessel-rd-station") { // a RD saiu do worker: a migration 00008 apaga a ficha
+		t.Fatal("vessel-rd-station não pode mais ter ficha (a migration 00008 a apaga)")
 	}
 	if slices.Contains(esperados, "estoque-do-site") { // o Core é o único escritor: a ficha crítica ficaria vermelha para sempre
 		t.Fatal("estoque-do-site não pode ter ficha (a migration 00004 a apaga)")
@@ -456,7 +459,7 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 		"conteudo-espelho": "conteudo-espelho", "enviar-relatorio-hora": "enviar-relatorio-hora", "enviar-mensagem-abandono": "enviar-mensagem-abandono",
 		// fichas que a migration 00004 do goose cadastra (antes só existiam por acaso no banco real)
 		"enviar-push-frota": "enviar-push-frota", "conferir-robos": "conferir-robos", "faxina-da-api": "faxina-da-api",
-		"abandono-de-checkout": "abandono-de-checkout", "vessel-rd-station": "vessel-rd-station", "fabrica-purga": "fabrica-purga",
+		"abandono-de-checkout": "abandono-de-checkout", "vessel-espelhar-lista": "vessel-espelhar-lista", "fabrica-purga": "fabrica-purga",
 		"coletar-dados-07h": "coletar-dados", "coletar-dados-12h": "coletar-dados", "coletar-dados-18h": "coletar-dados", "coletar-dados-2359": "coletar-dados",
 	}
 	p := testebanco.Novo(t)

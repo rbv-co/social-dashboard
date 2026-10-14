@@ -32,13 +32,12 @@ type Config struct {
 	TarefasDesligadas []string
 
 	// Plano 4 (worker).
-	WorkerAddr     string // WORKER_ADDR: endereço do GET /saude e /metricas do worker; vazio = sem HTTP
-	RDStationToken string // RD_STATION_TOKEN: token público da RD Station (vessel-rd-station)
-	ArquivosDir    string // ARQUIVOS_DIR: raiz dos buckets no disco (spec §7); padrão /var/lib/api/arquivos
-	AlertaWebhook  string // ALERT_WEBHOOK_URL: recados de coleta zerada e da auditoria (opcional; é segredo)
-	ZAPIInstancia  string // ZAPI_INSTANCE_ID (vai no caminho da URL da Z-API)
-	ZAPIToken      string // ZAPI_INSTANCE_TOKEN (vai no caminho da URL da Z-API)
-	ZAPICliente    string // ZAPI_TOKEN (cabeçalho Client-Token)
+	WorkerAddr    string // WORKER_ADDR: endereço do GET /saude e /metricas do worker; vazio = sem HTTP
+	ArquivosDir   string // ARQUIVOS_DIR: raiz dos buckets no disco (spec §7); padrão /var/lib/api/arquivos
+	AlertaWebhook string // ALERT_WEBHOOK_URL: recados de coleta zerada e da auditoria (opcional; é segredo)
+	ZAPIInstancia string // ZAPI_INSTANCE_ID (vai no caminho da URL da Z-API)
+	ZAPIToken     string // ZAPI_INSTANCE_TOKEN (vai no caminho da URL da Z-API)
+	ZAPICliente   string // ZAPI_TOKEN (cabeçalho Client-Token)
 
 	// Plano 5.0 (conta: convite e troca de senha por e-mail).
 	ZeptoToken     string   // ZEPTOMAIL_TOKEN (vazio = convite e "esqueci a senha" não mandam e-mail; é segredo)
@@ -56,13 +55,25 @@ type Config struct {
 
 	// Plano 5.8 (fábrica de anúncios).
 	GitHubPAT string // GITHUB_PAT: token do GitHub para disparar workflows (fabrica-trigger; 5.10; Plano 6); é segredo
+
+	// Plano 6 (Vessel pública e Storage).
+	VesselInterno   string // VESSEL_INTERNO_SEGREDO: a chave que o Core manda no lugar da anon (é o que o torna "o Core"); é segredo
+	VesselSoCore    bool   // VESSEL_SO_CORE: as 14 funções de escrita da Vessel só com a chave do Core (liga quando o site passar pelo Core)
+	ArquivosSegredo string // ARQUIVOS_SEGREDO: HMAC das URLs assinadas dos arquivos; é segredo (vazio = assinar responde 503)
 }
 
 // Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
 // (worker.Limpar troca cada um por ***).
 func (c Config) Segredos() []string {
-	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.RDStationToken, c.AlertaWebhook,
-		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente, c.ZeptoToken, c.AnthropicAdmin, c.OpenAIAdmin, c.IATrafego, c.GitHubPAT}, c.ShopifySegredos...)
+	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.AlertaWebhook,
+		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente, c.ZeptoToken, c.AnthropicAdmin, c.OpenAIAdmin, c.IATrafego, c.GitHubPAT,
+		c.VesselInterno, c.ArquivosSegredo}, c.ShopifySegredos...)
+}
+
+// ligado: "true" ou "1" (qualquer caixa); o resto, inclusive vazio, é desligado.
+func ligado(v string) bool {
+	v = strings.TrimSpace(v)
+	return strings.EqualFold(v, "true") || v == "1"
 }
 
 // lista lê uma variável separada por vírgulas, sem itens vazios.
@@ -116,7 +127,6 @@ func Carregar() (Config, error) {
 
 		TarefasDesligadas: lista("WORKER_TAREFAS_DESLIGADAS"),
 		WorkerAddr:        strings.TrimSpace(os.Getenv("WORKER_ADDR")),
-		RDStationToken:    strings.TrimSpace(os.Getenv("RD_STATION_TOKEN")),
 		ArquivosDir:       strings.TrimSpace(os.Getenv("ARQUIVOS_DIR")),
 		AlertaWebhook:     strings.TrimSpace(os.Getenv("ALERT_WEBHOOK_URL")),
 		ZAPIInstancia:     strings.TrimSpace(os.Getenv("ZAPI_INSTANCE_ID")),
@@ -131,6 +141,15 @@ func Carregar() (Config, error) {
 		EnderecosDoApp:    lista("ENDERECOS_DO_APP"),
 		EnderecoPadrao:    strings.TrimSpace(os.Getenv("ENDERECO_PADRAO")),
 		GitHubPAT:         strings.TrimSpace(os.Getenv("GITHUB_PAT")),
+		VesselInterno:     strings.TrimSpace(os.Getenv("VESSEL_INTERNO_SEGREDO")),
+		VesselSoCore:      ligado(os.Getenv("VESSEL_SO_CORE")),
+		ArquivosSegredo:   strings.TrimSpace(os.Getenv("ARQUIVOS_SEGREDO")),
+	}
+	// segredo curto é a chave anon (pública) ou "teste" colado por engano: quem a tem vira "o Core" ou assina URL
+	for nome, v := range map[string]string{"VESSEL_INTERNO_SEGREDO": c.VesselInterno, "ARQUIVOS_SEGREDO": c.ArquivosSegredo} {
+		if v != "" && len(v) < 24 {
+			return c, fmt.Errorf("%s: o segredo tem de ter ao menos 24 caracteres (ex.: openssl rand -hex 32)", nome)
+		}
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"

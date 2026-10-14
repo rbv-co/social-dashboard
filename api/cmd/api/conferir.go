@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/publico"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 	"github.com/rbv-co/social-dashboard/api/internal/web"
 )
 
@@ -88,7 +90,6 @@ var colunasDoWorker = map[string]string{
 	"chatwoot_eventos":             "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
 	"shopify_pedidos":              "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
 	"carrinho_eventos":             "tipo,cart_token,evento_shopify_id",
-	"vessel_rd_envios":             "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
 	"vessel_pessoas":               "id,email",
 	"fabrica_campanhas":            "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
 	"fabrica_criativos":            "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
@@ -197,7 +198,6 @@ var tiposDoWorker = map[string]string{
 	"followers_leituras.lido_em": "timestamp with time zone", "checkout_abandono.token": "text", "contatos_sem_mensagem.telefone": "text",
 	"shopify_pedidos.bruto": "jsonb", "robos_execucoes.disparado_em": "timestamp with time zone", "robos_execucoes.conferido_em": "timestamp with time zone",
 	"robos_execucoes.robo": "text", "robos_execucoes.resposta": "text", "robos_execucoes.ok": "boolean",
-	"vessel_rd_envios.atualizado_em": "timestamp with time zone",
 	// Plano 5.6: os filtros fazem ::uuid/::date/::timestamptz; as escritas presumem estes tipos
 	"account_insights.captured_at": "date", "social_metas.account_id": "text", "social_metas.periodo": "text",
 	"social_metas.indicador": "text", "social_metas.valor": "numeric", "campaign_filters.account_id": "uuid",
@@ -298,7 +298,7 @@ var funcoesDoWorker = []string{
 	"pegar_da_fila(text,integer,integer,boolean,text[])", "marcar_mensagem(text,text,text,bigint)",
 	"marcar_da_fila(text,text,text,text,bigint)", "devolver_mensagem(text,boolean)", "devolver_da_fila(text,text,boolean)",
 	"liberar_mensagens_travadas()", "liberar_travadas_da_fila()", "agendar_followups(integer,integer)",
-	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
+	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()",
 	"pode_ver_conta(text)",               // Plano 5.6
 	"gt_registrar_problemas(text,jsonb)", // Plano 5.7
 	"conteudo_guarda_aprovacao()",        // Plano 5.9: a função do gatilho (as 6 RPCs, conferirRPC confere por web.FuncoesRPC)
@@ -349,9 +349,21 @@ var gatilhosDoWorker = [][2]string{
 
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há
 // sobrecargas, ex.: marcar_checkout_comprou(text) e (text,text,text)): basta UMA sobrecarga com os parâmetros.
-var funcoesPorNomeDoWorker = []string{
+var funcoesPorNomeDoWorker = append([]string{
 	"registrar_checkout_abandono", "marcar_checkout_comprou", "marcar_checkout_pagamento_pendente", "reabrir_checkout_abandono",
 	"registrar_pedido_para_mensagem", "cancelar_mensagem_pedido",
+}, funcoesDoPlano6()...)
+
+// funcoesDoPlano6: as funções que as rotas públicas da Vessel e as edges vessel-conta e vessel-registrar-garantia chamam,
+// menos as que já são RPC do painel (essas, com a assinatura declarada, o conferirRPC cobre por web.FuncoesRPC).
+func funcoesDoPlano6() []string {
+	var nomes []string
+	for _, n := range publico.Funcoes() {
+		if !slices.ContainsFunc(web.FuncoesRPC, func(f rpc.Funcao) bool { return f.Nome == n }) {
+			nomes = append(nomes, n)
+		}
+	}
+	return nomes
 }
 
 // parametrosDasFuncoes: os parâmetros NOMEADOS que o código passa (`p_x => $1`); nome diferente = erro de
