@@ -77,7 +77,9 @@ func LerPagina(q url.Values) (Pagina, error) {
 	return p, nil
 }
 
-var reDesempate = regexp.MustCompile(`^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$`)
+// Uma coluna única ("u.id") ou, na chave composta, a expressão de linha com as colunas que juntas são únicas
+// ("(t.deposito_id, t.sku)"). Lista solta ("id, nome") continua recusada: não garante unicidade.
+var reDesempate = regexp.MustCompile(`^([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?|\(\s*[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?(?:,\s*[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?)+\s*\))$`)
 
 // ValidarOrdem confere a declaração de ordem da rota (chamado na montagem: erro = a API não
 // sobe). `desempate` é uma coluna ÚNICA por linha (ex.: "u.id"), sempre a última chave do

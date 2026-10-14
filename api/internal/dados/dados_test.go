@@ -412,6 +412,15 @@ func TestLerOrdemSoComCamposPermitidos(t *testing.T) {
 			t.Errorf("ValidarOrdem aceitou desempate %q", d)
 		}
 	}
+	if err := ValidarOrdem(perm, "x", "(t.deposito_id, t.sku)"); err != nil {
+		t.Errorf("chave composta em expressão de linha recusada: %v", err)
+	}
+	if got, err := LerOrdem(url.Values{}, perm, "x", "(t.a, t.b)"); err != nil || got != "x, (t.a, t.b)" {
+		t.Errorf("chave composta = %q %v", got, err)
+	}
+	if err := ValidarOrdem(perm, "x", "(t.a)"); !errors.Is(err, ErrDeclaracao) {
+		t.Error("expressão de linha de uma coluna só aceita")
+	}
 	if err := ValidarOrdem(perm, "", "u.id"); err == nil {
 		t.Error("ValidarOrdem aceitou padrão vazio")
 	}

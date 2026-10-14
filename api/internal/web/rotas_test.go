@@ -338,8 +338,21 @@ var rotas53 = []string{
 	"POST /frota/manutencoes", "GET /frota/abastecimentos", "POST /frota/abastecimentos",
 }
 
+// Plano 5.5: as 18 rotas de vendas.Montar (14 leituras, 4 escritas), no grupo de DOMÍNIO. Portão = catálogo,
+// provado pela matriz de `internal/vendas`; vazamento por `TestNadaVazaEntreLojas`/`TestTodaLeituraTemEscopoDeclarado`,
+// impersonado por `TestEscritasRecusamImpersonado`.
+var rotas55 = []string{
+	"GET /comercial/lojas", "PATCH /comercial/lojas/{id}", "GET /comercial/depositos",
+	"GET /comercial/metas-lojas", "GET /comercial/metas-vendedoras", "POST /comercial/metas/salvar",
+	"GET /comercial/vendedoras", "POST /comercial/vendedoras/gravar",
+	"GET /comercial/pedidos-vendedor", "POST /comercial/pedidos-vendedor/gravar",
+	"GET /comercial/notas", "GET /comercial/ajustes-de-valor", "GET /comercial/ajustes-de-vendedor",
+	"GET /comercial/formas-de-pagamento", "GET /comercial/estoque", "GET /comercial/vendas-por-item",
+	"GET /comercial/briefings", "GET /comercial/pedidos-shopify",
+}
+
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas54, rotas53) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas53, rotas55, rotas54) {
 		soSessao[c] = true
 	}
 }
@@ -520,7 +533,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas54, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3 e 5.4: no grupo de domínio, com o prazo dele
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, rotas54, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3, 5.5 e 5.4: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -1351,5 +1364,59 @@ func TestFrotaPelaMontagemReal(t *testing.T) {
 		if v := obs(); v != c.veiculos {
 			t.Errorf("%s: frota_veiculos = %q depois, esperava %q", c.nome, v, c.veiculos)
 		}
+	}
+}
+
+// Pela montagem real: o escopo de canal chega ao handler (cadeia auth.Exigir → autz.ComEscopo) e o
+// portão de escrita é o do catálogo (Plano 5.5).
+func TestComercialPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{CoreURL: coreFalso(t), CoreToken: "t"})
+	ctx := context.Background()
+	const vend, viewer = "a5550000-0000-4000-a000-000000000001", "a5550000-0000-4000-a000-000000000002"
+	const eq = "e5550000-0000-4000-a000-000000000001"
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := p.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`insert into usuarios (id, email) values ($1::uuid, 'vend@x.com'), ($2::uuid, 'viewer@x.com')`, vend, viewer)
+	exec(`insert into profiles (id, email, role, features, escopo_por_equipe) values
+		($1::uuid, 'vend@x.com', 'viewer', '{sales}', true), ($2::uuid, 'viewer@x.com', 'viewer', '{}', true)`, vend, viewer)
+	exec(`insert into bling_lojas (loja_id, nome) values (1, 'Loja 1'), (2, 'Loja 2')`)
+	exec(`insert into equipes (id, nome, canal_loja_id) values ($1::uuid, 'T1', 1)`, eq)
+	exec(`insert into equipes_membros (equipe_id, profile_id, papel) values ($1::uuid, $2::uuid, 'vendedora')`, eq, vend)
+	exec(`insert into bling_pedido_nota (pedido_id, loja_id, data_pedido, total) values (1, 1, '2026-10-01', 10), (2, 2, '2026-10-01', 20)`)
+	tokV, _ := s.Criar(ctx, vend, "painel", nil)
+	tokW, _ := s.Criar(ctx, viewer, "painel", nil)
+	pedir := func(metodo, caminho, corpo, tok string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		if tok != "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	if st, b := pedir("GET", "/comercial/notas", "", ""); st != 401 {
+		t.Errorf("sem sessão = %d %s", st, b)
+	}
+	if st, b := pedir("GET", "/comercial/notas", "", tokV); st != 200 || !strings.Contains(b, `"pedido_id":1,`) || strings.Contains(b, `"pedido_id":2,`) {
+		t.Errorf("vendedora = %d %s (esperava só o pedido do canal 1)", st, b)
+	}
+	if st, b := pedir("GET", "/comercial/notas", "", tokW); st != 200 || strings.TrimSpace(b) != "[]" {
+		t.Errorf("viewer = %d %s (esperava [])", st, b)
+	}
+	if st, b := pedir("PATCH", "/comercial/lojas/1", `{"fechado_em":"2026-08-31"}`, tokW); st != 403 {
+		t.Errorf("viewer fechando canal = %d %s, esperava 403", st, b)
+	}
+	if st, b := pedir("POST", "/comercial/pedidos-vendedor/gravar", `{"linhas":[{"pedido_id":1,"vendor_id":7}]}`, tokW); st != 403 {
+		t.Errorf("viewer gravando o cache = %d %s, esperava 403", st, b)
+	}
+	var fechado *string
+	if err := p.QueryRow(ctx, `select fechado_em::text from bling_lojas where loja_id = 1`).Scan(&fechado); err != nil || fechado != nil {
+		t.Errorf("a loja 1 mudou: %v %v", fechado, err)
 	}
 }
