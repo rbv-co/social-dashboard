@@ -13,6 +13,10 @@ import (
 // (is_patrimonio_admin) E a restritiva patrimonio_posse_segue_o_bem (o bem é visível por pode_ver_bem).
 // Posse de bem que a pessoa não vê não aparece, não se fecha (404) e não se cria (403, igual ao bem que
 // nem existe).
+//
+// pessoa_id aponta para acessos_pessoas, cuja regra de Ler quem tem só patrimônio não satisfaz: pessoa
+// existente = 201 e inexistente = 403 do POST (Ruling 5.2-17). Não se valida contra a regra de Ler porque
+// quem tem patrimônio já lista todas as pessoas com id por pessoas_para_escolher() e a posse perderia o dono.
 
 const colunasPosse = `t.id, t.bem_id, t.pessoa_id, t.pessoa_nome, t.de, t.ate, t.motivo, t.criado_em`
 

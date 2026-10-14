@@ -47,7 +47,7 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quer := []string{"equipes_atualizado", "gt_rascunho_updated_at", "trg_bem_de_veiculo_segue_a_frota", "trg_espelhar_grupo_do_canal",
+	if quer := []string{"conteudo_pecas_guarda", "equipes_atualizado", "gt_rascunho_updated_at", "trg_bem_de_veiculo_segue_a_frota", "trg_espelhar_grupo_do_canal",
 		"trg_espelhar_rename_do_grupo", "trg_frota_aceite_imutavel", "trg_frota_checar_arquivamento",
 		"trg_frota_checar_decisao", "trg_frota_checklist_enfileirar_pdf", "trg_frota_checklist_imutavel",
 		"trg_frota_espelha_responsavel", "trg_frota_espelha_situacao", "trg_frota_espelha_situacao_no_bem",

@@ -1,4 +1,3 @@
-// Package conteudo: os robôs da Central de Conteúdo (hora H e espelho com o Instagram).
 package conteudo
 
 import (

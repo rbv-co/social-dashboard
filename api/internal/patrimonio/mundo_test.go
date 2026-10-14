@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
 )
 
@@ -114,14 +115,29 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundote
 		Impersonadas: map[string][2]string{"impersonado": {idPatGeral, idSuperFicha}}}, montar...)
 }
 
+// semPerfil: uma conta em usuarios sem linha em profiles, com sessão (mundoteste.Pessoa não a expressa);
+// m.Pedir(t, "semPerfil", ...) passa a valer.
+func semPerfil(t *testing.T, m *mundoteste.Mundo) {
+	t.Helper()
+	const id = "5e200000-0000-4000-a000-000000000098"
+	if _, err := m.P.Exec(t.Context(), `insert into usuarios (id, email) values ($1::uuid, 'semperfil@x.com')`, id); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := auth.NovoStore(m.P).Criar(t.Context(), id, "painel", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Tok["semPerfil"] = tok
+}
+
 func contar(tabela string) string { return "select count(*)::text from " + tabela }
 
 func col(tabela, coluna, id string) string {
 	return "select " + coluna + "::text from " + tabela + " where id = '" + id + "'"
 }
 
-// ids: os "id" de uma lista JSON, em ordem.
-func ids(t *testing.T, corpo string) []string {
+// idsNaOrdem: os "id" de uma lista JSON, na ordem em que vieram.
+func idsNaOrdem(t *testing.T, corpo string) []string {
 	t.Helper()
 	var l []struct {
 		ID string `json:"id"`
@@ -133,6 +149,13 @@ func ids(t *testing.T, corpo string) []string {
 	for i, x := range l {
 		out[i] = x.ID
 	}
+	return out
+}
+
+// ids: os "id" de uma lista JSON, ORDENADOS (para comparar conjuntos).
+func ids(t *testing.T, corpo string) []string {
+	t.Helper()
+	out := idsNaOrdem(t, corpo)
 	slices.Sort(out)
 	return out
 }

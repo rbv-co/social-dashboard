@@ -31,7 +31,26 @@ type Tabela struct {
 	// pessoa grava ela tem de conseguir ver; Ruling 5.2-2). Senão — e também quando uma referência
 	// (FK) não existe, para não denunciar o que existe fora do alcance dela — ErrNegado (403) e a
 	// transação é desfeita.
+	//
+	// LIMITE: "FK inexistente = invisível" só vale para a FK cujo alvo a regra de Ler restringe (ela
+	// decide a visibilidade da linha nova: existente-mas-invisível e inexistente dão o mesmo 403). Uma
+	// SEGUNDA FK fora da regra de Ler (ex.: patrimonio_bens.pessoa_id → acessos_pessoas, Ruling 5.2-17)
+	// responde 201 se o alvo existe e 403 se não existe: quem cria descobre se um uuid existe. Aceito
+	// onde o uuid já é visível por outro caminho (pessoas_para_escolher()); senão, valide a FK à parte.
+	//
+	// LIMITE 2: a conferência (e o `devolver`) roda sobre o RETURNING do INSERT, isto é, depois dos
+	// gatilhos BEFORE e ANTES dos AFTER. Um gatilho AFTER INSERT que tire a linha do alcance de quem criou
+	// passa (201 com a linha como gravada pelo INSERT). Nenhuma tabela do 5.2 tem AFTER INSERT; tabela
+	// que tiver tem de conferir de novo depois do comando (releia a linha na mesma transação).
 	CriarSoLegivel bool
+
+	// Conferir (opcional): a regra que o catálogo NÃO enxerga — a linha-mãe visível, a linha nova legível, um
+	// caminho preso à mãe. Roda na MESMA transação, DEPOIS do PodeCriar/PodeEditar/PodeApagar (a linha já
+	// está travada e sabidamente visível: id invisível responde 404 antes, sem oráculo) e ANTES do SQL que
+	// grava. id = "" na criação; campos = nil no apagar; na criação os campos já trazem a coluna Autor.
+	// autz.ErrNegado = 403, autz.ErrNaoEncontrado = 404; outro erro segue ErroDeEscrita. campos é SÓ LEITURA: o gancho não deve alterar o mapa (o que ele mudasse
+	// iria ao SQL sem o PodeX). Plano 5.9 (Ruling 5.9-4).
+	Conferir func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error
 }
 
 var reColuna = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
@@ -130,6 +149,9 @@ func (t Tabela) Criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *aut
 	if err := cat.PodeCriar(ctx, tx, e, t.Nome, campos); err != nil {
 		return nil, err
 	}
+	if err := t.conferir(ctx, tx, e, "", campos); err != nil {
+		return nil, err
+	}
 	j, err := json.Marshal(campos)
 	if err != nil {
 		return nil, err
@@ -161,6 +183,9 @@ func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	if err := cat.PodeEditar(ctx, tx, e, t.Nome, id, campos); err != nil {
 		return nil, err
 	}
+	if err := t.conferir(ctx, tx, e, id, campos); err != nil {
+		return nil, err
+	}
 	j, err := json.Marshal(campos)
 	if err != nil {
 		return nil, err
@@ -184,9 +209,20 @@ func (t Tabela) Apagar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	if err := cat.PodeApagar(ctx, tx, e, t.Nome, id); err != nil {
 		return err
 	}
+	if err := t.conferir(ctx, tx, e, id, nil); err != nil {
+		return err
+	}
 	_, err := tx.Exec(ctx, `delete from `+pgx.Identifier{t.Nome}.Sanitize()+` where id = @dados_id`,
 		pgx.NamedArgs{"dados_id": id})
 	return err
+}
+
+// conferir roda Tabela.Conferir, se houver.
+func (t Tabela) conferir(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+	if t.Conferir == nil {
+		return nil
+	}
+	return t.Conferir(ctx, tx, e, id, campos)
 }
 
 // devolver roda a escrita como CTE e responde a linha pela lista Resposta se quem pede a lê DEPOIS

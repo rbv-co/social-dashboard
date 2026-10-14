@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `fabrica` (Plano 7): as edges da Fábrica (5.8) pela API.
+import { invocarNaArea } from '../../compartilhado/api.js'
 // O aviso do canto da tela, o mesmo do resto da central. Não trava a página
 // como o `alert()` nativo, que aqui aparecia no meio de um arrasto de ordem.
 import { adminToast } from '../../compartilhado/avisos.js'
@@ -20,7 +22,7 @@ async function carregar() {
   looks.value = await sb('fabrica_looks?select=*&order=ordem')
 }
 async function salvar(l) {
-  const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'salvar', look: { chave: l.chave, nome: l.nome, objetivos: l.objetivos, ativo: l.ativo } } })
+  const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-looks', { body: { acao: 'salvar', look: { chave: l.chave, nome: l.nome, objetivos: l.objetivos, ativo: l.ativo } } })
   if (error) { adminToast('Não consegui salvar o look: ' + error.message, false); carregar() }
 }
 function toggleObjetivo(l, o) { const i = l.objetivos.indexOf(o); i > -1 ? l.objetivos.splice(i, 1) : l.objetivos.push(o); salvar(l) }
@@ -35,7 +37,7 @@ async function mover(l, dir) {
   // gravação não fosse aceita a ordem certa só voltava num recarregar inteiro
   // — até lá a tela mostrava uma ordem que não existe no servidor. Desfaz a
   // troca e diz o que houve, do mesmo jeito que `salvar()` aqui do lado.
-  const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'ordenar', ordem } })
+  const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-looks', { body: { acao: 'ordenar', ordem } })
   if (error) {
     adminToast('Não consegui mudar a ordem. A lista voltou para como estava.', false)
     carregar()
@@ -45,17 +47,17 @@ async function renomear(l) { const nome = prompt('Nome do look:', l.nome); if (n
 async function excluir(l) {
   if (!confirm(`Excluir o look "${l.nome}" da galeria? Ele some daqui e não gera mais criativos. Dá pra restaurar em "Mostrar excluídos".`)) return
   l.excluido = true // otimista
-  const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'excluir', chave: l.chave, excluido: true } })
+  const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-looks', { body: { acao: 'excluir', chave: l.chave, excluido: true } })
   if (error) { l.excluido = false; adminToast('Não consegui excluir o look: ' + error.message, false) }
 }
 async function restaurar(l) {
   l.excluido = false // otimista
-  const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'excluir', chave: l.chave, excluido: false } })
+  const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-looks', { body: { acao: 'excluir', chave: l.chave, excluido: false } })
   if (error) { l.excluido = true; adminToast('Não consegui restaurar o look: ' + error.message, false) }
 }
 async function gerarPreviews() {
   gerandoPreview.value = true
-  const { error } = await sbClient.functions.invoke('fabrica-trigger', { body: { tipo: 'preview', params: {} } })
+  const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-trigger', { body: { tipo: 'preview', params: {} } })
   gerandoPreview.value = false
   alert(error ? 'Falha: ' + error.message : 'Gerando previews — recarregue em ~1 min pra ver as imagens.')
 }

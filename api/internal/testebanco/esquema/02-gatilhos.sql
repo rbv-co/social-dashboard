@@ -1,7 +1,7 @@
 -- GERADO por gerar-gatilhos.mjs a partir do levantamento de produção (02-funções.csv, 03-triggers.csv).
 -- NÃO EDITE À MÃO: rode o script de novo. Corpos verbatim de produção; orientação dos gatilhos das migrations.
--- Tabelas: access_requests, account_insights, accounts, acessos_perfis, acessos_pessoas, acessos_setores, ad_insights_hora, ads, audit_log, bling_lojas, campaign_adsets, campaign_filters, campaign_insights, campaign_insights_hora, campaigns, canais_grupos, canais_grupos_membros, content_snapshots, daily_snapshots, data_integrity_checks, engagement_snapshots, equipes, equipes_membros, equipes_permissoes, fabrica_marcas, followers_leituras, frota_abastecimentos, frota_checklist, frota_checklist_config, frota_checklist_itens, frota_checklist_pdf, frota_checklist_respostas, frota_manutencoes, frota_plano_revisao, frota_requisicoes, frota_requisicoes_historico, frota_revisoes, frota_uso, frota_uso_pdf, frota_veiculos, gt_ad_analises, gt_budget_analises, gt_campanhas_rascunho, gt_config_metricas, gt_fila_decisoes, gt_objetivo_interacao, gt_ponderada_config, gt_ponderada_config_log, gt_problemas_meta, ia_execucoes, interesses_sugeridos, patrimonio_bens, patrimonio_categorias, patrimonio_comodos, patrimonio_config, patrimonio_empresas, patrimonio_locais, patrimonio_log, patrimonio_posse, patrimonio_tipos, perfil_visitas_hora, profiles, push_preferencias, push_subs, social_metas, visitas_perfil_dia
--- Funções (36): bem_de_veiculo_segue_a_frota, conta_ativa, criar_pessoa_rapida, criar_setor_rapido, equipes_toca_atualizado, espelhar_grupo_do_canal, espelhar_rename_do_grupo, etiqueta_quem_e, frota_aceite_imutavel, frota_checar_arquivamento, frota_checar_decisao, frota_checklist_enfileirar_pdf, frota_checklist_imutavel, frota_corrente_do_veiculo, frota_espelha_responsavel_no_bem, frota_espelha_situacao_no_bem, frota_fechar_posse_orfa, frota_gravar_historico, frota_resposta_imutavel, frota_uso_enfileirar_pdf, gt_rascunho_toca_updated_at, guard_profiles, impedir_autopromocao, is_acessos_admin, is_frota_admin, is_patrimonio_admin, is_superadmin, patrimonio_espelha_responsavel_no_veiculo, patrimonio_espelha_situacao_no_veiculo, patrimonio_traduz_situacao_para_frota, pessoas_para_escolher, pode_aprovar_frota, pode_cadastrar_pessoa_rapida, setores_para_escolher, sincronizar_carro_e_bem, situacao_do_bem_pelo_veiculo
+-- Tabelas: access_requests, account_insights, accounts, acessos_perfis, acessos_pessoas, acessos_setores, ad_insights_hora, ads, audit_log, bling_lojas, campaign_adsets, campaign_filters, campaign_insights, campaign_insights_hora, campaigns, canais_grupos, canais_grupos_membros, content_snapshots, conteudo_arquivos, conteudo_blocos, conteudo_casamentos, conteudo_concorrentes, conteudo_eventos, conteudo_ideias, conteudo_jobs, conteudo_metricas, conteudo_pecas, daily_snapshots, data_integrity_checks, engagement_snapshots, equipes, equipes_membros, equipes_permissoes, fabrica_campanhas, fabrica_criativos, fabrica_jobs, fabrica_lojas, fabrica_looks, fabrica_marcas, fabrica_meta_jobs, fabrica_objetivos, fabrica_publicos, followers_leituras, frota_abastecimentos, frota_checklist, frota_checklist_config, frota_checklist_itens, frota_checklist_pdf, frota_checklist_respostas, frota_manutencoes, frota_plano_revisao, frota_requisicoes, frota_requisicoes_historico, frota_revisoes, frota_uso, frota_uso_pdf, frota_veiculos, gt_ad_analises, gt_budget_analises, gt_campanhas_rascunho, gt_config_metricas, gt_fila_decisoes, gt_objetivo_interacao, gt_ponderada_config, gt_ponderada_config_log, gt_problemas_meta, ia_execucoes, interesses_sugeridos, patrimonio_bens, patrimonio_categorias, patrimonio_comodos, patrimonio_config, patrimonio_empresas, patrimonio_locais, patrimonio_log, patrimonio_posse, patrimonio_tipos, perfil_visitas_hora, profiles, push_preferencias, push_subs, social_metas, visitas_perfil_dia
+-- Funções (37): bem_de_veiculo_segue_a_frota, conta_ativa, conteudo_guarda_aprovacao, criar_pessoa_rapida, criar_setor_rapido, equipes_toca_atualizado, espelhar_grupo_do_canal, espelhar_rename_do_grupo, etiqueta_quem_e, frota_aceite_imutavel, frota_checar_arquivamento, frota_checar_decisao, frota_checklist_enfileirar_pdf, frota_checklist_imutavel, frota_corrente_do_veiculo, frota_espelha_responsavel_no_bem, frota_espelha_situacao_no_bem, frota_fechar_posse_orfa, frota_gravar_historico, frota_resposta_imutavel, frota_uso_enfileirar_pdf, gt_rascunho_toca_updated_at, guard_profiles, impedir_autopromocao, is_acessos_admin, is_frota_admin, is_patrimonio_admin, is_superadmin, patrimonio_espelha_responsavel_no_veiculo, patrimonio_espelha_situacao_no_veiculo, patrimonio_traduz_situacao_para_frota, pessoas_para_escolher, pode_aprovar_frota, pode_cadastrar_pessoa_rapida, setores_para_escolher, sincronizar_carro_e_bem, situacao_do_bem_pelo_veiculo
 set check_function_bodies = off;
 
 CREATE OR REPLACE FUNCTION public.bem_de_veiculo_segue_a_frota()
@@ -39,6 +39,47 @@ AS $function$
     (select not coalesce(p.disabled, false) from public.profiles p where p.id = auth.uid()),
     true);
 $function$;
+
+CREATE OR REPLACE FUNCTION public.conteudo_guarda_aprovacao()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  new.updated_at := now();
+
+  -- Sem usuario (service_role, cron, robo) a guarda nao se aplica: quem chega
+  -- por ali ja passou por outra porta.
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  -- A guarda cobre TRES entradas, nao duas:
+  --   aprovada / reprovada  — a decisao em si;
+  --   agendada VINDO DE em_aprovacao — que e aprovar sem dizer que aprovou.
+  --
+  -- A terceira faltava. A anon key esta no bundle publico, entao qualquer
+  -- pessoa com acesso a ferramenta podia mandar um PATCH direto levando a peca
+  -- de 'em_aprovacao' para 'agendada' e pular a aprovacao inteira — sem erro,
+  -- sem trilha, sem ninguem ler o conteudo.
+  --
+  -- Agendar vindo de 'aprovada' continua livre: ali a aprovacao ja aconteceu.
+  if (
+    (new.status in ('aprovada', 'reprovada') and old.status is distinct from new.status)
+    or (new.status = 'agendada' and old.status = 'em_aprovacao')
+  ) then
+    if not exists (
+      select 1 from public.profiles p
+       where p.id = auth.uid()
+         and (p.role = 'admin' or p.is_superadmin or 'conteudo.aprovar' = any (p.features))
+    ) then
+      raise exception 'Sem permissao para aprovar pecas de conteudo.';
+    end if;
+  end if;
+
+  return new;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.criar_pessoa_rapida(p_nome text, p_cargo text DEFAULT NULL::text, p_marca_id uuid DEFAULT NULL::uuid, p_setor_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(id uuid, nome text, status text, cargo text, profile_id uuid, ja_existia boolean)
@@ -976,6 +1017,7 @@ $function$;
 
 create trigger trg_espelhar_grupo_do_canal BEFORE UPDATE OF grupo_id, grupo or INSERT on public.bling_lojas for each row EXECUTE FUNCTION espelhar_grupo_do_canal();
 create trigger trg_espelhar_rename_do_grupo AFTER UPDATE on public.canais_grupos for each row EXECUTE FUNCTION espelhar_rename_do_grupo();
+create trigger conteudo_pecas_guarda BEFORE UPDATE on public.conteudo_pecas for each row EXECUTE FUNCTION conteudo_guarda_aprovacao();
 create trigger equipes_atualizado BEFORE UPDATE on public.equipes for each row EXECUTE FUNCTION equipes_toca_atualizado();
 create trigger trg_frota_resposta_imutavel BEFORE INSERT or UPDATE or DELETE on public.frota_checklist_respostas for each row EXECUTE FUNCTION frota_resposta_imutavel();
 create trigger trg_frota_checklist_enfileirar_pdf AFTER INSERT or UPDATE OF assinada_em on public.frota_checklist for each row EXECUTE FUNCTION frota_checklist_enfileirar_pdf();

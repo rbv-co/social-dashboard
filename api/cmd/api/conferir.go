@@ -54,16 +54,16 @@ var colunasDoWorker = map[string]string{
 	"bling_pedido_nota":           "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
 	"bling_pedido_ajuste_valor":   "pedido_id,total_corrigido",
 	"bling_pedido_vendedor":       "pedido_id,qtd_itens",
-	"acessos_pessoas":             "id,nome,profile_id,email_corporativo",
-	"frota_veiculos":              "id,nome,pessoa_id,situacao",
+	"acessos_pessoas":             "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id",       // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
+	"frota_veiculos":              "id,placa,nome,marca,fipe_centavos,situacao,pessoa_id,bem_id,atualizado_em", // + Plano 5.2 (sincronizar_carro_e_bem); o 5.3 amplia
 	"frota_checklist_itens":       "cadencia,ordem,ativo",
 	"frota_checklist_config":      "dia_semanal,semana_mensal,dia_mensal",
 	"frota_checklist":             "veiculo_id,feita_em,cadencias",
 	"frota_uso":                   "id,veiculo_id,pessoa_id,tipo,saida_em,volta_em",
 	"frota_requisicoes":           "id,veiculo_id,situacao,retirada_prevista,destino,motivo_decisao,encerrada_motivo,pessoa_id,pessoa_nome,criada_por",
-	"conteudo_pecas":              "id,account_id,titulo,formato,status,legenda,hashtags,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel",
-	"conteudo_eventos":            "peca_id,acao,detalhe",
-	"conteudo_casamentos":         "peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo",
+	"conteudo_pecas":              "id,account_id,titulo,formato,status,legenda,hashtags,observacoes,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel,criado_por,aprovado_por,aprovado_em,motivo_reprovacao,created_at,updated_at", // + Plano 5.9
+	"conteudo_eventos":            "id,peca_id,de,para,acao,detalhe,quem,quando",                                                                                                                                                                           // + Plano 5.9
+	"conteudo_casamentos":         "id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo,decidido_por,decidido_em,created_at",                                                                                    // + Plano 5.9
 	"conteudo_metricas":           "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
 	"checkout_abandono":           "token,status",
 	"contatos_sem_mensagem":       "telefone,motivo",
@@ -72,8 +72,8 @@ var colunasDoWorker = map[string]string{
 	"carrinho_eventos":            "tipo,cart_token,evento_shopify_id",
 	"vessel_rd_envios":            "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
 	"vessel_pessoas":              "id,email",
-	"fabrica_campanhas":           "id,created_at,fechada_em,purgado_em",
-	"fabrica_criativos":           "campanha_id,storage_path,purgado_em",
+	"fabrica_campanhas":           "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
+	"fabrica_criativos":           "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
 	"robos_execucoes":             "robo,disparado_em,status_code,ok,resposta,conferido_em",
 	// Plano 5.6 (rotas /redes): os presumidos (sem DDL no repositório) são conferidos aqui no banco restaurado
 	"account_insights":      "account_id,captured_at,period_days,spend,impressions,clicks,reach,frequency",
@@ -81,8 +81,8 @@ var colunasDoWorker = map[string]string{
 	"campaign_filters":      "account_id,selected_ids,updated_at",
 	"noticias_concorrentes": "id,rodada,destaque,created_at", // Plano 5.12: filtro e ordem das leituras
 	"noticias_panorama":     "rodada,conteudo_md,modelo,created_at",
-	"ia_execucoes":          "id,run_at",
-	"robos_saude":           "robo,critico", // visão (relkind 'v'): ordem da leitura
+	"ia_execucoes":          "id,robo,acao,modelo,input_tokens,output_tokens,chamadas,usd,duracao_ms,itens,unidade,status,detalhe,github_run_id,run_at", // + Plano 5.8: o robô da Fábrica grava
+	"robos_saude":           "robo,critico",                                                                                                             // visão (relkind 'v'): ordem da leitura
 	// Plano 5.7 (gestão de tráfego): o que as rotas e a RPC presumem. Presumidos sem DDL no repositório:
 	// gt_budget_analises.impactos e gt_ponderada_config.limiares_resultado.
 	"gt_config_metricas":      "balde,metricas,updated_at",
@@ -94,8 +94,37 @@ var colunasDoWorker = map[string]string{
 	"gt_fila_decisoes":        "id,campaign_id,account_id,escopo,veredito,budget_atual_centavos,budget_sugerido_centavos,analise_gerada_em,decisao,decidido_em,decidido_por,silenciar_ate,aplicado,erro",
 	"gt_campanhas_rascunho":   "id,account_id,criado_por,estado,passo,nome,tipo,status,resultado,created_at,updated_at",
 	"gt_problemas_meta":       "ad_id,codigo,account_id,titulo,grave,primeira_vez,ultima_vez,resolvido_em",
-	"fabrica_marcas":          "id,account_id",
+	"fabrica_marcas":          "id,nome,caption_template,ad_account,page_id,ig_id,account_id,ativo,segmento,termos_produto,created_at", // + Plano 5.8: GET /fabrica/marcas
 	"interesses_sugeridos":    "id,marca_id,objetivo,itens,propostos,validos,gerado_em",
+	// Plano 5.2 (patrimônio e cadastros): o que as rotas, as RPCs e os gatilhos do bem presumem. Tabelas sem DDL
+	// no repositório (a D0 as reproduz das migrations): o conferir pega a divergência no banco restaurado.
+	"patrimonio_bens":       "id,numero,nome,valor_centavos,data_compra,empresa_id,local_id,comodo_id,categoria_id,tipo_id,marca,numero_serie,pessoa_id,dono_texto,etiquetado,situacao,observacao,detalhes,criado_em,atualizado_em",
+	"patrimonio_posse":      "id,bem_id,pessoa_id,pessoa_nome,de,ate,motivo,criado_em",
+	"patrimonio_empresas":   "id,nome,ordem,criado_em",
+	"patrimonio_locais":     "id,nome,ordem,criado_em,empresa_id",
+	"patrimonio_comodos":    "id,nome,ordem,criado_em,local_id",
+	"patrimonio_categorias": "id,nome,vida_util_anos,ordem,criado_em",
+	"patrimonio_tipos":      "id,categoria_id,nome,ordem,criado_em",
+	"patrimonio_config":     "chave,valor,atualizado_em",
+	"patrimonio_log":        "id,quem,acao,alvo,resultado,detalhe,quando",
+	"acessos_setores":       "id,nome,ordem",
+	// Plano 5.9 (conteúdo): o que as rotas, as RPCs e o /conteudo-trigger presumem; conteudo_jobs é a fila do vigia
+	// da VPS. Todas com DDL no repositório.
+	"conteudo_arquivos":     "id,peca_id,ordem,bucket,caminho,tipo,mime,bytes,created_at",
+	"conteudo_ideias":       "id,account_id,titulo,gancho,formato,pilar,roteiro,legenda_sugerida,hashtags_sugeridas,por_que_agora,referencia,origem,modelo,job_id,situacao,peca_id,criado_por,created_at,cta,producao,porque_formato",
+	"conteudo_blocos":       "id,account_id,tipo,nome,texto,usos,ativo,criado_por,created_at",
+	"conteudo_jobs":         "id,tipo,account_id,params,status,github_run_id,resultado,erro,criado_por,created_at,updated_at",
+	"conteudo_concorrentes": "id,account_id,handle,nome,observacao,ativo,created_at",
+	// Plano 5.8 (Fábrica): leituras, edges e rotas de robô. Todas com DDL em db/migrations (014-030): o conferir
+	// pega o que foi acrescentado em produção sem migration. fabrica_campanhas, fabrica_criativos, fabrica_marcas e
+	// ia_execucoes são AMPLIADAS acima. gc_vendas_item, gc_estoque_item e gestao_comercial_briefings entram com a
+	// Task 7 (fabrica-candidatos), que espera o 5.5.
+	"fabrica_jobs":      "id,tipo,params,status,github_run_id,resultado,erro,criado_por,created_at,updated_at",
+	"fabrica_lojas":     "deposito_id,nome,ativo,ordem,marca_id,whatsapp,geo_cities,canal_loja_id",
+	"fabrica_objetivos": "chave,rotulo,descricao,meta_objective,optimization_goal,billing_event,destination_type,promoted_object_tipo,cta_type,looks,pede_desconto,ativo,ordem",
+	"fabrica_looks":     "chave,nome,arquetipo,objetivos,ativo,excluido,ordem,preview_url,tipo,canva_formato_map,campo_map,created_at",
+	"fabrica_publicos":  "id,nome,marca_id,geo,idade_min,idade_max,generos,interesses,custom_audiences,ativo,criado_por,created_at",
+	"fabrica_meta_jobs": "id,tipo,loja,ad_account_id,meta_campaign_id,adset_ids,ad_ids,payload,status,erro,created_at",
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
@@ -144,6 +173,24 @@ var tiposDoWorker = map[string]string{
 	"gt_objetivo_interacao.conta_id": "uuid", "gt_campanhas_rascunho.criado_por": "uuid", "gt_fila_decisoes.decidido_por": "uuid",
 	"gt_ponderada_config.metas_por_conta": "jsonb", "gt_ponderada_config.limiares_resultado": "jsonb",
 	"gt_config_metricas.metricas": "jsonb", "gt_budget_analises.impactos": "jsonb", "gt_campanhas_rascunho.estado": "jsonb",
+	// Plano 5.2: os filtros fazem ::uuid/::date nestas colunas e os embutidos de bens casam por uuid
+	"patrimonio_bens.pessoa_id": "uuid", "patrimonio_bens.local_id": "uuid", "patrimonio_bens.categoria_id": "uuid",
+	"patrimonio_bens.comodo_id": "uuid", "patrimonio_posse.bem_id": "uuid", "patrimonio_posse.de": "date",
+	"patrimonio_posse.ate": "date", "patrimonio_config.valor": "text", "equipes.local_id": "uuid", "acessos_pessoas.profile_id": "uuid",
+	// Plano 5.9: os casts das rotas, das RPCs e do /conteudo-trigger (account_id das conteudo_* é uuid: o init completa)
+	"conteudo_pecas.criado_por": "uuid", "conteudo_pecas.responsavel": "uuid", "conteudo_arquivos.id": "uuid",
+	"conteudo_arquivos.peca_id": "uuid", "conteudo_arquivos.ordem": "integer", "conteudo_eventos.quem": "uuid",
+	"conteudo_casamentos.id": "uuid", "conteudo_ideias.id": "uuid", "conteudo_ideias.peca_id": "uuid", "conteudo_ideias.roteiro": "jsonb",
+	"conteudo_ideias.criado_por": "uuid", "conteudo_blocos.criado_por": "uuid", "conteudo_jobs.id": "uuid", "conteudo_jobs.params": "jsonb",
+	"conteudo_jobs.resultado": "jsonb", "conteudo_jobs.criado_por": "uuid", "conteudo_jobs.created_at": "timestamp with time zone",
+	// Plano 5.8: os casts e as conversões de que as rotas da Fábrica dependem. deposito_id da loja é TEXTO (a
+	// Task 7 compara texto com texto e converte para bigint só no parâmetro de gc_estoque_item.deposito_id).
+	"fabrica_lojas.deposito_id": "text", "fabrica_lojas.canal_loja_id": "text", "fabrica_lojas.geo_cities": "jsonb",
+	"fabrica_campanhas.job_id": "uuid", "fabrica_campanhas.criado_por": "uuid", "fabrica_jobs.id": "uuid",
+	"fabrica_jobs.params": "jsonb", "fabrica_jobs.resultado": "jsonb", "fabrica_jobs.criado_por": "uuid",
+	"fabrica_meta_jobs.payload": "jsonb", "fabrica_meta_jobs.adset_ids": "jsonb", "fabrica_meta_jobs.ad_ids": "jsonb",
+	"fabrica_looks.objetivos": "text[]", "fabrica_publicos.id": "uuid", "fabrica_publicos.generos": "integer[]",
+	"fabrica_publicos.geo": "jsonb", "fabrica_publicos.idade_min": "integer", "fabrica_publicos.idade_max": "integer",
 }
 
 // anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).
@@ -170,7 +217,8 @@ var unicosDoWorker = []string{
 	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
 	// Plano 5.7: alvos de ON CONFLICT (tela, RPC e robô sugerir-interesses)
 	"gt_config_metricas(balde)", "gt_objetivo_interacao(alvo_id)", "gt_problemas_meta(ad_id,codigo)", "interesses_sugeridos(marca_id,objetivo)",
-	"acessos_perfis(nome)", // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
+	"acessos_perfis(nome)",     // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
+	"patrimonio_config(chave)", // Plano 5.2: PUT /patrimonio/config/{chave} é upsert por este único
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
@@ -186,8 +234,11 @@ var funcoesDoWorker = []string{
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
 	"pode_ver_conta(text)",               // Plano 5.6
 	"gt_registrar_problemas(text,jsonb)", // Plano 5.7
+	"conteudo_guarda_aprovacao()",        // Plano 5.9: a função do gatilho (as 6 RPCs, conferirRPC confere por web.FuncoesRPC)
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
 	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
+	// Plano 5.2: os gatilhos do bem que as escritas do Patrimônio presumem (os 5 do carro, que a cadeia alcança, são do 5.3)
+	"bem_de_veiculo_segue_a_frota()", "patrimonio_espelha_responsavel_no_veiculo()", "patrimonio_espelha_situacao_no_veiculo()",
 }
 
 // gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados
@@ -195,6 +246,10 @@ var funcoesDoWorker = []string{
 var gatilhosDoWorker = [][2]string{
 	{"equipes_atualizado", "equipes"}, {"trg_espelhar_grupo_do_canal", "bling_lojas"}, {"trg_espelhar_rename_do_grupo", "canais_grupos"},
 	{"trg_guard_profiles", "profiles"}, {"trg_impedir_autopromocao", "profiles"},
+	// Plano 5.2: a situação e o responsável do bem andam com o carro ligado a ele
+	{"trg_bem_de_veiculo_segue_a_frota", "patrimonio_bens"}, {"trg_patrimonio_espelha_responsavel", "patrimonio_bens"},
+	{"trg_patrimonio_espelha_situacao", "patrimonio_bens"},
+	{"conteudo_pecas_guarda", "conteudo_pecas"}, // Plano 5.9: sem ele, quem não aprova aprova pelo PATCH
 }
 
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há

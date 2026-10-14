@@ -6,6 +6,8 @@
 // gerar-criativos.mjs (Task 5) e alimentado pela Edge fabrica-candidatos (Task 6).
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `fabrica` (Plano 7): as edges da Fábrica (5.8) pela API.
+import { invocarNaArea } from '../../compartilhado/api.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { useCandidatos } from './use-candidatos.js'
 import AjudaTooltip from './ajuda-tooltip.vue'
@@ -92,7 +94,7 @@ async function gerar() {
   const itens = itensEscolhidos()
   if (!itens.length) return alert('Marque ao menos um produto (com estoque numa loja selecionada) antes de gerar.')
   const nome = 'Rodada · ' + FONTES.find(f => f.v === sel.fonte)?.l + ' · ' + new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-  const { data, error } = await sbClient.functions.invoke('fabrica-trigger', { body: { tipo: 'gerar', params: { itens, nome, objetivo: sel.objetivo } } })
+  const { data, error } = await invocarNaArea('fabrica', sbClient, 'fabrica-trigger', { body: { tipo: 'gerar', params: { itens, nome, objetivo: sel.objetivo } } })
   if (error) return alert('Falha ao disparar: ' + error.message)
   if (!data?.campanha_id) return alert('Sem campanha na resposta')
   emit('gerado', data.campanha_id)

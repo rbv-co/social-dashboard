@@ -1,6 +1,7 @@
 package patrimonio
 
 import (
+	"encoding/json"
 	"net/http"
 	"slices"
 	"strings"
@@ -38,6 +39,9 @@ func TestPosses(t *testing.T) {
 		{"patGeral, só as fechadas", "patGeral", "?aberta=false", []string{PO3}},
 		{"patGeral, o período pela data de início", "patGeral", "?de_desde=2026-01-01&de_ate=2026-12-31&ordem=de.desc", []string{PO1, PO2}},
 		{"patGeral, de_ate corta pelo início", "patGeral", "?de_ate=2025-12-31", []string{PO3}},
+		// a PO3 vai de 2025-01-01 a 2025-12-31: o corte é pelo INÍCIO (de), não pelo fim (ate)
+		{"patGeral, de_ate no meio da PO3: ainda entra (o início é anterior)", "patGeral", "?de_ate=2025-06-30", []string{PO3}},
+		{"patGeral, de_desde no meio da PO3: não entra (o início é anterior)", "patGeral", "?de_desde=2025-06-30", []string{PO1, PO2}},
 		{"frota não lê posse", "frota", "", []string{}},
 		{"acessos não lê posse", "acessos", "", []string{}},
 		{"viewer não lê posse", "viewer", "", []string{}},
@@ -115,6 +119,15 @@ func TestPosses(t *testing.T) {
 		{Nome: "posse que não existe: 404 igual", Quem: "patT1", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + bemInexistente, Corpo: `{"ate":"2026-10-12"}`, Status: http.StatusNotFound},
 		{Nome: "não troca o bem da posse", Quem: "patT1", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO3, Corpo: `{"bem_id":"` + B2 + `"}`,
 			Status: http.StatusBadRequest, Tem: "corpo_invalido", Efeito: col("patrimonio_posse", "bem_id", PO3), Quer: B3},
+		// o PATCH só FECHA: reescrever quem, o nome congelado, o início ou o motivo apagaria o histórico
+		{Nome: "não troca a pessoa da posse", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO3, Corpo: `{"pessoa_id":"` + P2 + `"}`,
+			Status: http.StatusBadRequest, Tem: "corpo_invalido", Efeito: col("patrimonio_posse", "pessoa_id", PO3), Quer: P1},
+		{Nome: "não troca o nome congelado", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO3, Corpo: `{"pessoa_nome":"Outro"}`,
+			Status: http.StatusBadRequest, Tem: "corpo_invalido", Efeito: col("patrimonio_posse", "pessoa_nome", PO3), Quer: "Pessoa da T1"},
+		{Nome: "não muda o início", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO3, Corpo: `{"de":"2020-01-01"}`,
+			Status: http.StatusBadRequest, Tem: "corpo_invalido", Efeito: col("patrimonio_posse", "de", PO3), Quer: "2025-01-01"},
+		{Nome: "não muda o motivo", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO3, Corpo: `{"ate":"2025-12-31","motivo":"x"}`,
+			Status: http.StatusBadRequest, Tem: "corpo_invalido", Efeito: col("patrimonio_posse", "motivo", PO3), Quer: "<nulo>"},
 		{Nome: "data inválida", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO2, Corpo: `{"ate":"ontem"}`,
 			Status: http.StatusBadRequest, Efeito: col("patrimonio_posse", "ate", PO2), Quer: "<nulo>"},
 		{Nome: "corpo vazio", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO2, Corpo: `{}`, Status: http.StatusBadRequest},
@@ -172,12 +185,19 @@ func TestPossesEOsGatilhosDaFrota(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	st, corpo := m.Pedir(t, "patGeral", "POST", "/patrimonio/posses", `{"bem_id":"`+BV+`","pessoa_id":"`+P2+`","pessoa_nome":"Motorista","de":"2026-10-12"}`)
+	var nova struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(corpo), &nova); st != http.StatusCreated || err != nil || nova.ID == "" {
+		t.Fatalf("abrir a posse do Kwid: %d %s (%v)", st, corpo, err)
+	}
 	m.Rodar(t, []caso{
-		{Nome: "abre a posse do Kwid no Patrimônio", Quem: "patGeral", Metodo: "POST", Caminho: "/patrimonio/posses",
-			Corpo:  `{"bem_id":"` + BV + `","pessoa_id":"` + P2 + `","pessoa_nome":"Motorista","de":"2026-10-12"}`,
-			Status: http.StatusCreated, Efeito: usoAberto, Quer: "true"},
-		{Nome: "fechá-la no Patrimônio não fecha a da frota", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + PO1, Corpo: `{"ate":"2026-10-12"}`,
-			Status: http.StatusOK, Efeito: usoAberto, Quer: "true"},
+		{Nome: "a posse do Kwid no Patrimônio abriu e a da frota segue aberta", Efeito: usoAberto, Quer: "true"},
+		// a posse do KWID (a do 201), não a PO1 (do B1)
+		{Nome: "fechá-la no Patrimônio não fecha a da frota", Quem: "patGeral", Metodo: "PATCH", Caminho: "/patrimonio/posses/" + nova.ID, Corpo: `{"ate":"2026-10-12"}`,
+			Status: http.StatusOK, Efeito: col("patrimonio_posse", "ate", nova.ID), Quer: "2026-10-12"},
+		{Nome: "e a posse da frota segue aberta", Efeito: usoAberto, Quer: "true"},
 	})
 	// o bem passa a ter outro responsável (o que a Task 4 faz pelo PATCH do bem): o carro acompanha e a
 	// posse do carro CONTINUA aberta (o WHEN new.pessoa_id is null do gatilho)
@@ -193,4 +213,30 @@ func TestPossesEOsGatilhosDaFrota(t *testing.T) {
 		{Nome: "e a posse do carro fecha", Efeito: usoAberto, Quer: "false"},
 		{Nome: "as posses do Patrimônio ficam como estão (3 do mundo + 1 aberta agora)", Efeito: contar("patrimonio_posse"), Quer: "4"},
 	})
+}
+
+// Ruling 5.2-17: o pessoa_id da posse aponta para acessos_pessoas, cuja regra de Ler quem tem só
+// patrimônio não satisfaz; pessoas_para_escolher() já lhe mostra todas as pessoas com id. Logo: pessoa
+// existente de outro time = 201 (não se valida contra a regra de Ler: seria regressão); inexistente = 403
+// do POST, com o MESMO corpo do bem alheio e do bem inexistente (a rota não ganha frase própria).
+func TestPossesPessoaForaDaRegraDeLer(t *testing.T) {
+	m := novoMundo(t, montarPosses)
+	const caminho = "/patrimonio/posses"
+	m.Rodar(t, []caso{
+		{Nome: "patT1 põe na posse do bem dela uma pessoa que não lê (a P2 não é de time nenhum)", Quem: "patT1", Metodo: "POST", Caminho: caminho,
+			Corpo:  `{"bem_id":"` + B1 + `","pessoa_id":"` + P2 + `","pessoa_nome":"Motorista","de":"2026-10-12"}`,
+			Status: http.StatusCreated, Tem: `"pessoa_id":"` + P2 + `"`, Efeito: contar("patrimonio_posse"), Quer: "4"},
+	})
+	_, semPessoa := m.Pedir(t, "patT1", "POST", caminho, `{"bem_id":"`+B1+`","pessoa_id":"`+bemInexistente+`","de":"2026-10-12"}`)
+	_, bemAlheio := m.Pedir(t, "patT1", "POST", caminho, `{"bem_id":"`+B2+`","de":"2026-10-12"}`)
+	_, semBem := m.Pedir(t, "patT1", "POST", caminho, `{"bem_id":"`+bemInexistente+`","de":"2026-10-12"}`)
+	if st, _ := m.Pedir(t, "patT1", "POST", caminho, `{"bem_id":"`+B1+`","pessoa_id":"`+bemInexistente+`","de":"2026-10-12"}`); st != http.StatusForbidden {
+		t.Errorf("pessoa inexistente = %d, esperava 403", st)
+	}
+	if semPessoa != bemAlheio || semPessoa != semBem {
+		t.Errorf("os 403 diferem: pessoa inexistente %s, bem alheio %s, bem inexistente %s", semPessoa, bemAlheio, semBem)
+	}
+	if got := m.Um(t, contar("patrimonio_posse")); got != "4" {
+		t.Errorf("as recusas gravaram: %s posses", got)
+	}
 }

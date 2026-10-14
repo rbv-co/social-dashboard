@@ -23,14 +23,13 @@ import { montarPedido, montarEscolha, MAXIMO_POR_OBJETIVO, termosDaMarca, juntar
 // Login da conta de serviço (mesma usada por subir-estudio.mjs, ativar-estudio.mjs
 // etc.) — o meta-proxy chama auth.getUser() sobre o Authorization recebido, e uma
 // service key não é sessão de usuário: ela sempre daria 401 "nao autenticado" ali.
-import { loginServico } from './lib/bling-comercial.mjs';
+import { loginServico, urlDaEdge, cabecalhosDaEdge } from './lib/bling-comercial.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 // Mesma anon key hardcoded (com override por env) que os outros scripts de
 // coletor/ usam para chamar o meta-proxy — não é segredo, é a chave pública
 // do projeto.
-const ANON = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM';
 const REST = SUPABASE_URL + '/rest/v1';
 const MODEL = process.env.INTERESSES_MODEL || SONNET;
 const DRY = process.argv.includes('--dry');
@@ -84,9 +83,9 @@ async function sbPost(path, body, prefer) {
 // meta-proxy resolve o chamador via auth.getUser(), que só reconhece sessão de
 // usuário de verdade. `token` vem de run(), obtido uma única vez antes do laço.
 async function buscarNaMeta(accountId, termo, token) {
-  const r = await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
+  const r = await fetch(urlDaEdge('meta-proxy', token), {
     method: 'POST',
-    headers: { apikey: ANON, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    headers: cabecalhosDaEdge(token),
     body: JSON.stringify({
       accountId,
       path: '/search',
@@ -122,9 +121,9 @@ async function resolverNomesDeCidade(chaves, token, accountId) {
     .filter((k) => k.length > 0);
   if (!unicas.length || !accountId) return {};
   try {
-    const r = await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
+    const r = await fetch(urlDaEdge('meta-proxy', token), {
       method: 'POST',
-      headers: { apikey: ANON, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      headers: cabecalhosDaEdge(token),
       body: JSON.stringify({
         accountId,
         path: '/search',
@@ -208,7 +207,7 @@ export async function run() {
   // com uma mensagem clara do que rodar todas as marcas colecionando o mesmo
   // 401 repetido. O erro sobe direto pro catch de run() lá embaixo, que já
   // grava em ia_execucoes com status 'erro'.
-  const token = await loginServico();
+  const token = await loginServico({ naApi: true });
 
   // `segmento` (o que a marca vende) é o campo mais importante do pedido — ver
   // montarPedido. Esquecer de pedir a coluna aqui NÃO daria erro: ela chegaria

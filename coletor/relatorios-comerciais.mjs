@@ -161,7 +161,7 @@ async function main() {
   const meses = mesesRange(bf);
   console.log(`→ Relatórios comerciais: ${meses.length} mês(es) [${meses[0].mes}..${meses.at(-1).mes}]`);
 
-  const token = await loginServico();
+  const token = await loginServico({ naApi: true });
   // Marca desta rodada: o que ficar com carimbo anterior a isto é sobra.
   const carimbo = new Date().toISOString();
 

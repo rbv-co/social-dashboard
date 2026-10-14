@@ -62,6 +62,8 @@ const (
 	uSemTime  = "aaaaaaaa-0000-0000-0000-000000000003" // sales, limitada, só num time sem canal
 	uAutent   = "aaaaaaaa-0000-0000-0000-000000000004" // só autenticidade
 	uNada     = "aaaaaaaa-0000-0000-0000-000000000005" // só banco
+	uFabrica  = "aaaaaaaa-0000-0000-0000-000000000006" // só a chave meta.fabrica em permissions (o robô da Fábrica)
+	uOutraCh  = "aaaaaaaa-0000-0000-0000-000000000007" // permissions com outra chave (meta), nenhuma de vendas
 )
 
 type ambiente struct {
@@ -85,6 +87,7 @@ func montar(t *testing.T, resp func(core.PedidoBling, int) (int, string, map[str
 	}{
 		{uVendas, "{banco,sales}", false}, {uLimitada, "{sales}", true}, {uSemTime, "{sales}", true},
 		{uAutent, "{autenticidade}", false}, {uNada, "{banco}", false},
+		{uFabrica, "{meta}", false}, {uOutraCh, "{meta}", false},
 	}
 	s := auth.NovoStore(p)
 	tokens := map[string]string{}
@@ -99,6 +102,11 @@ func montar(t *testing.T, resp func(core.PedidoBling, int) (int, string, map[str
 		tokens[pf.id], _ = s.Criar(ctx, pf.id, "painel", nil)
 	}
 	tokens["servico"], _ = s.Criar(ctx, uLimitada, "servico", nil) // mesma pessoa limitada, sessão de serviço
+	if _, err := p.Exec(ctx, `update profiles set permissions = case id when $1::uuid then '{"meta.fabrica": ["ver"]}'::jsonb
+		else '{"meta": ["ver"]}'::jsonb end where id in ($1::uuid, $2::uuid)`, uFabrica, uOutraCh); err != nil {
+		t.Fatal(err)
+	}
+	tokens["fabricaServico"], _ = s.Criar(ctx, uFabrica, "servico", nil)
 	if _, err := p.Exec(ctx, `insert into equipes_membros values ('bbbbbbbb-0000-0000-0000-000000000001', $1, 'vendedora'),
 		('bbbbbbbb-0000-0000-0000-000000000002', $2, 'vendedora')`, uLimitada, uSemTime); err != nil {
 		t.Fatal(err)
@@ -169,6 +177,14 @@ func TestBlingProxyAutorizacao(t *testing.T) {
 		{"autenticidade só produto: produtos", a.tokens[uAutent], `{"endpoint":"produtos/1"}`, 200, ""},
 		{"autenticidade só produto: pedidos", a.tokens[uAutent], `{"endpoint":"pedidos/vendas"}`, 403, "sem permissao"},
 		{"vendas pode pedidos", a.tokens[uVendas], `{"endpoint":"pedidos/vendas"}`, 200, ""},
+		// Ruling 5.8-17: meta.fabrica (chave de permissions) abre SÓ os produtos, sem o módulo sales.
+		{"meta.fabrica: produtos", a.tokens[uFabrica], `{"endpoint":"produtos"}`, 200, ""},
+		{"meta.fabrica: produtos/id", a.tokens[uFabrica], `{"endpoint":"produtos/1"}`, 200, ""},
+		{"meta.fabrica: robô de serviço", a.tokens["fabricaServico"], `{"endpoint":"produtos/1"}`, 200, ""},
+		{"meta.fabrica: pedidos", a.tokens[uFabrica], `{"endpoint":"pedidos/vendas"}`, 403, "sem permissao"},
+		{"meta.fabrica: pedidos (serviço)", a.tokens["fabricaServico"], `{"endpoint":"pedidos/vendas"}`, 403, "sem permissao"},
+		{"meta.fabrica: estoques", a.tokens[uFabrica], `{"endpoint":"estoques/saldos"}`, 403, "sem permissao"},
+		{"outra chave de permissions: produtos", a.tokens[uOutraCh], `{"endpoint":"produtos"}`, 403, "sem permissao"},
 	}
 	for _, c := range casos {
 		if w := a.post(c.token, c.corpo); w.Code != c.quer {
@@ -177,8 +193,8 @@ func TestBlingProxyAutorizacao(t *testing.T) {
 			t.Errorf("%s: corpo %s, esperava erro %q", c.nome, w.Body, c.texto)
 		}
 	}
-	if a.core.n() != 2 {
-		t.Fatalf("o core só podia ser chamado pelos 2 casos permitidos; foi %d", a.core.n())
+	if a.core.n() != 5 {
+		t.Fatalf("o core só podia ser chamado pelos 5 casos permitidos; foi %d", a.core.n())
 	}
 }
 
