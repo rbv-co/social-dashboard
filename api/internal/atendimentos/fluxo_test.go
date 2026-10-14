@@ -34,6 +34,11 @@ func deu(t *testing.T, m *mundoteste.Mundo, quem, fn, corpo, quer string) map[st
 	return o
 }
 
+func asList(v any) []any {
+	l, _ := v.([]any)
+	return l
+}
+
 func lista(t *testing.T, m *mundoteste.Mundo, quem, fn, corpo string) []any {
 	t.Helper()
 	l, ok := passo(t, m, quem, fn, corpo).([]any)
@@ -145,8 +150,9 @@ func TestPrivateEditEConvites(t *testing.T) {
 		t.Errorf("stylist fora de etapa liberada = %v, esperava recusa stylist_nao_liberada", r)
 	}
 	// o mesmo horário e lugar da semente: pede confirmação
-	if so := passo(t, m, q, "vessel_private_edit_sobreposicoes", `{"p_quando":"2027-03-01T18:00:00Z","p_loja":"iguatemi"}`); so == nil {
-		t.Error("sobreposições devolveu null")
+	// o mesmo horário e loja do encontro da semente: a leitura aponta o encontro que sobrepõe
+	if so, _ := passo(t, m, q, "vessel_private_edit_sobreposicoes", `{"p_quando":"2027-03-01T18:00:00Z","p_loja":"iguatemi"}`).(map[string]any); so["ok"] != true || len(asList(so["sobrepoe"])) != 1 {
+		t.Errorf("sobreposições = %v, esperava o encontro da semente", so)
 	}
 	c := deu(t, m, q, "vessel_criar_private_edit", `{"p_stylist":"STY-0001","p_quando":"2027-05-01T18:00:00Z","p_local":"Sítio","p_praca":"CPS","p_loja":"iguatemi","p_vagas":8,"p_teste":false}`, "")
 	cod, _ := c["codigo"].(string)
@@ -165,8 +171,8 @@ func TestPrivateEditEConvites(t *testing.T) {
 		t.Errorf("convidadas = %d, esperava 1", len(cv))
 	}
 	deu(t, m, q, "vessel_situacao_do_atendimento", `{"p_id":`+id+`,"p_situacao":"realizado"}`, "")
-	if ch := passo(t, m, q, "vessel_chave_da_convidada", `{"p_id":`+id+`}`); ch == nil {
-		t.Error("chave da convidada vazia")
+	if ch, _ := passo(t, m, q, "vessel_chave_da_convidada", `{"p_id":`+id+`}`).(map[string]any); ch["ok"] != true || fmt.Sprint(ch["chave"]) == "" || ch["chave"] == nil {
+		t.Errorf("chave da convidada = %v", ch)
 	}
 	deu(t, m, q, "vessel_private_edit_situacao", `{"p_codigo":"`+cod+`","p_status":"cancelado","p_motivo":"chuva","p_observacoes":"remarcar"}`, "")
 	deu(t, m, q, "vessel_private_edit_encerrar", `{"p_codigo":"`+cod+`","p_ativa":false}`, "")
@@ -229,8 +235,8 @@ func TestBeautyPracasEEdicoes(t *testing.T) {
 	if tu := lista(t, m, e, "vessel_edicao_turma", `{"p_edicao_id":`+eid+`}`); len(tu) != 1 {
 		t.Errorf("turma = %d, esperava 1", len(tu))
 	}
-	if pl := passo(t, m, "ver:"+circle, "vessel_placar_da_edicao", `{"p_edicao_id":`+eid+`}`); pl == nil {
-		t.Error("placar vazio")
+	if pl, _ := passo(t, m, "ver:"+circle, "vessel_placar_da_edicao", `{"p_edicao_id":`+eid+`}`).(map[string]any); len(pl) == 0 {
+		t.Errorf("placar = %v, esperava um objeto", pl)
 	}
 	deu(t, m, e, "vessel_edicao_tirar_stylist", `{"p_codigo":"STY-0001","p_edicao_id":`+eid+`}`, "")
 	deu(t, m, e, "vessel_edicao_encerrar", `{"p_id":`+eid+`,"p_levar_para":null}`, "")
@@ -256,4 +262,27 @@ func TestBeautyPracasEEdicoes(t *testing.T) {
 		t.Error("eventos de origem: nem lista")
 	}
 	_ = strings.TrimSpace
+}
+
+// Paridade com produção, documentada: DUAS funções que gravam usam portão de "ver" do Private Edit
+// (vessel_convite_marcar e vessel_chave_da_convidada; o comentário da primeira diz "a mesma trava de
+// vessel_situacao_do_atendimento", que exige editar). Quem só VÊ marca o convite e faz nascer a chave. Se o dono
+// apertar a regra (portão e função), este teste é o que muda.
+func TestPortaoDeVerQueGrava(t *testing.T) {
+	m := novoMundo(t)
+	const soVe = "ver:" + privateEdit
+	id := m.Um(t, `select id::text from vessel_atendimentos where evento_codigo = 'PE-20270301-CPS-01'`)
+	m.P.Exec(t.Context(), `update vessel_atendimentos set chave_convite = null where id = $1::bigint`, id)
+	deu(t, m, soVe, "vessel_chave_da_convidada", `{"p_id":`+id+`}`, "ok")
+	if m.Um(t, `select (coalesce(chave_convite, '') <> '')::text from vessel_atendimentos where id = $1::bigint`, id) != "true" {
+		t.Error("quem só vê não fez a chave nascer: o portão de vessel_chave_da_convidada mudou")
+	}
+	deu(t, m, soVe, "vessel_convite_marcar", `{"p_id":`+id+`,"p_marca":"enviado"}`, "ok")
+	if m.Um(t, `select (convite_enviado_em is not null)::text from vessel_atendimentos where id = $1::bigint`, id) != "true" {
+		t.Error("quem só vê não marcou o convite: o portão de vessel_convite_marcar mudou")
+	}
+	// e as que exigem editar continuam fechadas para quem só vê
+	if st, _ := m.Pedir(t, soVe, "POST", "/rpc/vessel_situacao_do_atendimento", `{"p_id":`+id+`,"p_situacao":"realizado"}`); st != 403 {
+		t.Errorf("situacao do atendimento como quem só vê = %d, esperava 403", st)
+	}
 }

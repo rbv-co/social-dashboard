@@ -224,7 +224,8 @@ func TestEntrarComoNaoGrava(t *testing.T) {
 }
 
 // Quem não pode: 403 sem a função rodar e o mundo igual, em TODAS as 62 como quem não tem nenhuma permissão e como
-// quem tem só "ver" da ferramenta (nenhuma função de gravar passa com ver). As três de lista vazia respondem 200 [].
+// quem tem só "ver" da ferramenta (as de gravar com portão de editar não passam; as duas que gravam com portão de
+// "ver" estão em TestPortaoDeVerQueGrava). As três de lista vazia respondem 200 [].
 // Varredura de vazamento: nenhuma resposta a quem não pode contém nome, WhatsApp, e-mail ou chave do mundo; como
 // super, ao menos uma contém (senão a varredura não enxergaria nada).
 func TestNegadoNaoGravaNemVaza(t *testing.T) {
