@@ -10,6 +10,7 @@
 // Reexportado para quem já importava daqui não quebrar.
 export { PRECO, calcularUsd, ehModeloAnthropic, custoDaExecucao } from './lib/custo-da-execucao.mjs';
 import { custoDaExecucao } from './lib/custo-da-execucao.mjs';
+import { gravarExecucao } from './lib/conteudo-banco.mjs';
 import { fabricaNaApi, ROBOS_DA_FABRICA, registrarExecucaoNaApi } from './lib/fabrica-banco.mjs';
 
 // Registra uma execução. `usd` é opcional: se vier undefined, calcula de modelo+tokens.
@@ -18,14 +19,15 @@ export async function registrarExecucao({
   inputTokens = 0, outputTokens = 0, chamadas = 0,
   usd, duracaoMs = null, itens = null, unidade = null,
   status = 'ok', detalhe = null,
+  db = null, // robôs da VPS (Conteúdo): grava pelo papel de banco deles, sem Supabase
 }) {
   try {
     // Lê o env na hora da chamada (scripts como panorama populam o .env em runtime).
     const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
     const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
     // Plano 7 (5.8): os robôs da Fábrica gravam pela rota do robô quando a API está ligada.
-    const pelaApi = fabricaNaApi() && ROBOS_DA_FABRICA.includes(robo);
-    if (!pelaApi && !SERVICE_KEY) { console.error('aviso ia_execucoes: falta SUPABASE_SERVICE_KEY'); return; }
+    const pelaApi = !db && fabricaNaApi() && ROBOS_DA_FABRICA.includes(robo);
+    if (!db && !pelaApi && !SERVICE_KEY) { console.error('aviso ia_execucoes: falta SUPABASE_SERVICE_KEY'); return; }
     // NULO quando ninguém sabe (motor pago de fora), 0 só quando é zero mesmo.
     const custo = custoDaExecucao({ modelo, inputTokens, outputTokens, usd });
     const body = {
@@ -35,6 +37,7 @@ export async function registrarExecucao({
       duracao_ms: duracaoMs, itens, unidade, status, detalhe,
       github_run_id: process.env.GITHUB_RUN_ID || null,
     };
+    if (db) { await gravarExecucao(db, body); return; }
     if (pelaApi) { await registrarExecucaoNaApi(body); return; }
     const r = await fetch(SUPABASE_URL + '/rest/v1/ia_execucoes', {
       method: 'POST',

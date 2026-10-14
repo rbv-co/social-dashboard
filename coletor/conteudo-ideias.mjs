@@ -26,10 +26,13 @@
 //   node --env-file=.env conteudo-ideias.mjs --conta <uuid>
 import { OPUS, structured, usageSummary } from './lib-llm.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
+import {
+  abrirBanco, lerJob, lerMarca, metricasDasPecas, concorrentesDoPortal, gravarIdeias, concluirJob, falharJob,
+} from './lib/conteudo-banco.mjs';
 import { ESQUEMA, SISTEMA, montarContextoDaMarca, ehRepetida } from './conteudo-contexto.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const DB_URL = process.env.CONTEUDO_DATABASE_URL;
+let db = null;
 
 const arg = (nome, padrao = null) => {
   const i = process.argv.indexOf(`--${nome}`);
@@ -37,54 +40,23 @@ const arg = (nome, padrao = null) => {
 };
 const SECO = process.argv.includes('--seco');
 
-async function sb(caminho, opcoes = {}) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${caminho}`, {
-    ...opcoes,
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      'Content-Type': 'application/json',
-      ...(opcoes.headers || {}),
-    },
-  });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 200)}`);
-
-  // CORPO VAZIO NÃO É ERRO. Testar só `status === 204` não basta: com
-  // `Prefer: return=minimal` o PostgREST responde **201 com corpo vazio** no
-  // insert, e `r.json()` estoura com "Unexpected end of JSON input".
-  //
-  // Isso derrubou uma rodada que tinha dado certo — as 12 ideias já estavam
-  // gravadas, e o script morreu na linha seguinte e marcou o pedido como
-  // 'erro'. O pior tipo de defeito: o trabalho foi feito e o sistema disse que
-  // não foi. Por isso a checagem é pelo conteúdo, não pelo código de status.
-  const texto = await r.text();
-  return texto ? JSON.parse(texto) : null;
-}
-
 async function carregarDadosDaMarca(accountId) {
-  const [contas, blocos, pecas, ideiasExistentes, doNicho] = await Promise.all([
-    sb(`accounts?id=eq.${accountId}&select=id,name,username,conteudo_usa_portal`),
-    sb(`conteudo_blocos?account_id=eq.${accountId}&ativo=eq.true&select=tipo,nome,texto`),
-    sb(`conteudo_pecas?account_id=eq.${accountId}&select=id,titulo,formato,status,publicado_em&order=publicado_em.desc&limit=60`),
-    sb(`conteudo_ideias?or=(account_id.eq.${accountId},account_id.is.null)&situacao=in.(nova,favorita)&select=titulo`),
-    sb(`conteudo_concorrentes?account_id=eq.${accountId}&ativo=eq.true&select=handle,nome,observacao`),
-  ]);
+  const { conta: contaDaMarca, blocos, pecas, ideias: ideiasExistentes, doNicho } = await lerMarca(db, accountId, {
+    pecasColunas: 'id, titulo, formato, status, publicado_em',
+    ideiasSql: `select titulo from conteudo_ideias where (account_id = $1 or account_id is null) and situacao in ('nova','favorita')`,
+    ideiasValores: [accountId],
+  });
 
   const publicadas = (pecas || []).filter(p => p.status === 'publicada');
   let publicados = publicadas;
 
   // As métricas de quem já publicou — o insumo que só existe por causa da Fase 3.
   if (publicadas.length) {
-    const ids = publicadas.map(p => `"${p.id}"`).join(',');
-    const metricas = await sb(
-      `conteudo_metricas?peca_id=in.(${ids})&select=peca_id,capturado_em,alcance,curtidas&order=capturado_em.desc`,
-    );
-    const ultima = {};
-    for (const m of metricas || []) if (!ultima[m.peca_id]) ultima[m.peca_id] = m;
+    const ultima = await metricasDasPecas(db, publicadas.map(p => p.id));
     publicados = publicadas.map(p => ({ ...p, metrica: ultima[p.id] || null }));
   }
 
-  const conta = (contas || [])[0] || {};
+  const conta = contaDaMarca;
 
   // Concorrentes da rodada mais recente do Portal de Notícias.
   //
@@ -104,9 +76,7 @@ async function carregarDadosDaMarca(accountId) {
   let concorrentes = [];
   if (conta.conteudo_usa_portal) {
     try {
-      const linhas = await sb(
-        'noticias_concorrentes?select=marca,titulo,resumo,categoria&order=rodada.desc&limit=8',
-      ) || [];
+      const linhas = await concorrentesDoPortal(db);
       concorrentes = linhas.map(l => ({
         handle: l.marca,
         legenda: [l.titulo, l.resumo].filter(Boolean).join(' — '),
@@ -129,25 +99,17 @@ async function carregarDadosDaMarca(accountId) {
 async function main() {
   const jobId = arg('job');
   let accountId = arg('conta');
-  const quantas = Number(arg('quantas', 12));
+  let quantas = Number(arg('quantas', 12));
   const comecou = Date.now();
 
-  if (!SERVICE_KEY) throw new Error('falta SUPABASE_SERVICE_KEY');
+  db = await abrirBanco(DB_URL);
 
-  // Veio pela fila: pega a conta do job e marca como rodando.
+  // Veio pela fila: o vigia já marcou `rodando`; aqui só se lê a conta e o pedido.
   if (jobId) {
-    const jobs = await sb(`conteudo_jobs?id=eq.${jobId}&select=id,account_id,params`);
-    const job = (jobs || [])[0];
-    if (!job) throw new Error(`job ${jobId} não encontrado`);
+    const job = await lerJob(db, jobId);
     accountId = job.account_id;
-    await sb(`conteudo_jobs?id=eq.${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        status: 'rodando',
-        github_run_id: process.env.GITHUB_RUN_ID || null,
-        updated_at: new Date().toISOString(),
-      }),
-    });
+    // Defesa: a API só enfileira 1 a 20, mas o valor vem do banco.
+    if (job.params?.quantas) quantas = Math.max(1, Math.min(20, Math.trunc(Number(job.params.quantas)) || 12));
   }
   if (!accountId) throw new Error('informe --conta <uuid> ou --job <uuid>');
 
@@ -202,41 +164,14 @@ async function main() {
   if (SECO) {
     console.log(JSON.stringify(novas, null, 2));
   } else if (novas.length) {
-    await sb('conteudo_ideias', {
-      method: 'POST',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify(novas.map(i => ({
-        account_id: accountId,
-        titulo: i.titulo,
-        gancho: i.gancho || null,
-        formato: i.formato || null,
-        pilar: i.pilar || null,
-        roteiro: Array.isArray(i.roteiro) ? i.roteiro : [],
-        producao: i.producao || null,
-        porque_formato: i.porque_formato || null,
-        cta: i.cta || null,
-        legenda_sugerida: i.legenda_sugerida || null,
-        hashtags_sugeridas: i.hashtags_sugeridas || null,
-        por_que_agora: i.por_que_agora || null,
-        origem: 'ia',
-        modelo: OPUS,
-        job_id: jobId || null,
-      }))),
-    });
+    await gravarIdeias(db, accountId, novas, { modelo: OPUS, jobId });
   }
 
   const uso = usageSummary();
   console.log(uso.text);
 
   if (jobId && !SECO) {
-    await sb(`conteudo_jobs?id=eq.${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        status: 'concluido',
-        resultado: { sugeridas: brutas.length, gravadas: novas.length, repetidas, usd: uso.usd },
-        updated_at: new Date().toISOString(),
-      }),
-    });
+    await concluirJob(db, jobId, { sugeridas: brutas.length, gravadas: novas.length, repetidas, usd: uso.usd });
   }
 
   // Telemetria: aparece sozinha no Painel de Status do Claude, sem tocar naquela tela.
@@ -249,21 +184,19 @@ async function main() {
     itens: novas.length, unidade: 'ideias',
     status: 'ok',
     detalhe: repetidas ? `${repetidas} repetidas descartadas` : null,
+    db,
   });
+  await db.fechar();
 }
 
 main().catch(async (e) => {
   console.error('ERRO:', e.message);
   const jobId = arg('job');
-  if (jobId && SERVICE_KEY) {
-    await sb(`conteudo_jobs?id=eq.${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'erro', erro: String(e.message).slice(0, 500), updated_at: new Date().toISOString() }),
-    }).catch(() => {});
-  }
+  if (jobId && db) await falharJob(db, jobId, e.message).catch(() => {});
   await registrarExecucao({
     robo: 'conteudo-ideias', acao: 'gerar ideias de conteúdo',
-    status: 'erro', detalhe: String(e.message).slice(0, 300),
+    status: 'erro', detalhe: String(e.message).slice(0, 300), db,
   }).catch(() => {});
+  await db?.fechar();
   process.exit(1);
 });

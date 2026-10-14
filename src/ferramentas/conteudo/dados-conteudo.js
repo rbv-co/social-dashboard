@@ -10,7 +10,10 @@
 
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 // Chave `admin` (Plano 7): `profiles` pela API (5.1).
+// Chave `conteudo` (Plano 7): as tabelas `conteudo_*`, as 6 funções e o pedido à
+// IA pela API (5.9). O Storage do bucket segue no Supabase até o Plano 6.
 import { deOnde } from '../../compartilhado/banco-pela-api.js'
+import { areaNaApi, invocarNaArea, rpc } from '../../compartilhado/api.js'
 import { estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { deCampoDeDataHora } from './grade-do-calendario.js'
 
@@ -78,22 +81,45 @@ export async function listarContas() {
   return (data || []).filter(c => permitidas.includes(c.id))
 }
 
+const _naApi = () => areaNaApi('conteudo')
+
+// Pela API, a peça já vem com `capa`, `metrica` e `sugestao` (5.9: some a lista
+// de ids na URL). Ficam guardadas aqui por peça, e as três funções abaixo leem
+// daqui — as telas continuam pedindo como antes.
+const _embutidos = new Map()
+function _guardarEmbutidos(pecas) {
+  for (const p of pecas) _embutidos.set(p.id, { capa: p.capa, metrica: p.metrica, sugestao: p.sugestao })
+}
+
 export async function listarPecas(accountId) {
-  let q = sbClient.from('conteudo_pecas').select(CAMPOS_PECA)
+  // pela API o select fica inteiro: os embutidos não estão em CAMPOS_PECA
+  let q = deOnde(sbClient).from('conteudo_pecas').select(_naApi() ? '*' : CAMPOS_PECA)
   if (accountId) q = q.eq('account_id', accountId)
-  const { data, error } = await q.order('publicar_em', { ascending: true, nullsFirst: false })
+  // a rota ordena `publicar_em` asc com os nulos por último, como o `nullsFirst: false`
+  const { data, error } = await q.order('publicar_em', _naApi() ? { ascending: true } : { ascending: true, nullsFirst: false })
   if (error) throw new Error(`Não consegui carregar as peças: ${error.message}`)
+  if (_naApi()) _guardarEmbutidos(data || [])
   return data || []
 }
 
 export async function carregarPeca(id) {
-  const { data, error } = await sbClient.from('conteudo_pecas').select(CAMPOS_PECA).eq('id', id).maybeSingle()
+  const { data, error } = await deOnde(sbClient).from('conteudo_pecas').select(_naApi() ? '*' : CAMPOS_PECA).eq('id', id).maybeSingle()
   if (error) throw new Error(`Não consegui carregar a peça: ${error.message}`)
+  if (_naApi() && data) _guardarEmbutidos([data])
   return data
 }
 
+// Os embutidos destas peças. Uma peça só (o painel aberto) vem sempre fresca:
+// a sugestão muda quando alguém decide o casamento.
+async function _embutidosDe(pecaIds) {
+  for (const id of pecaIds) {
+    if (pecaIds.length === 1 || !_embutidos.has(id)) await carregarPeca(id)
+  }
+  return pecaIds.map(id => [id, _embutidos.get(id) || {}])
+}
+
 export async function listarArquivos(pecaId) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_arquivos')
     .select('id,peca_id,ordem,bucket,caminho,tipo,mime,bytes')
     .eq('peca_id', pecaId)
@@ -107,7 +133,12 @@ export async function listarArquivos(pecaId) {
 // Devolve { peca_id: url }; peça sem imagem simplesmente não aparece no objeto.
 export async function miniaturasDasPecas(pecaIds) {
   if (!pecaIds?.length) return {}
-  const { data, error } = await sbClient
+  if (_naApi()) {
+    const capas = (await _embutidosDe(pecaIds)).filter(([, e]) => e.capa).map(([id, e]) => ({ peca_id: id, ...e.capa }))
+    const urls = await urlsAssinadas(capas.map(a => a.caminho))
+    return Object.fromEntries(capas.map(a => [a.peca_id, urls[a.caminho]]).filter(([, u]) => u))
+  }
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_arquivos')
     .select('peca_id,caminho,tipo')
     .in('peca_id', pecaIds)
@@ -125,7 +156,8 @@ export async function miniaturasDasPecas(pecaIds) {
 // para a lista toda — não uma por cartão.
 export async function metricasDasPecas(pecaIds) {
   if (!pecaIds?.length) return {}
-  const { data, error } = await sbClient
+  if (_naApi()) return Object.fromEntries((await _embutidosDe(pecaIds)).filter(([, e]) => e.metrica).map(([id, e]) => [id, e.metrica]))
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_metricas')
     .select('peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes')
     .in('peca_id', pecaIds)
@@ -143,7 +175,8 @@ export async function metricasDasPecas(pecaIds) {
 // foi confirmado virou vínculo na peça, e o recusado não volta.
 export async function sugestoesDeCasamento(pecaIds) {
   if (!pecaIds?.length) return {}
-  const { data, error } = await sbClient
+  if (_naApi()) return Object.fromEntries((await _embutidosDe(pecaIds)).filter(([, e]) => e.sugestao).map(([id, e]) => [id, e.sugestao]))
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_casamentos')
     .select('id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,motivo')
     .in('peca_id', pecaIds)
@@ -156,8 +189,20 @@ export async function sugestoesDeCasamento(pecaIds) {
   return saida
 }
 
+// As 6 funções do banco. Pela API (5.9) a frase de negócio da função chega em
+// `mensagem` (400 regra_de_negocio); o 403 vem sem frase — a tela diz qual é.
+const SEM_ACESSO_A_PECA = 'Você não tem acesso a esta peça.'
+const SO_QUEM_APROVA = 'Só quem aprova conteúdo pode aprovar, reprovar ou agendar esta peça.'
+async function _funcao(nome, args, fraseDo403 = SEM_ACESSO_A_PECA) {
+  if (!_naApi()) return sbClient.rpc(nome, args)
+  const r = await rpc(nome, args)
+  if (!r.error) return { data: r.data, error: null }
+  const message = r.status === 403 ? (r.data?.mensagem || fraseDo403) : (r.data?.mensagem || r.error.message)
+  return { data: null, error: { message } }
+}
+
 export async function decidirCasamento(casamentoId, confirma) {
-  const { data, error } = await sbClient.rpc('conteudo_decidir_casamento', {
+  const { data, error } = await _funcao('conteudo_decidir_casamento', {
     p_casamento: casamentoId, p_confirma: confirma,
   })
   if (error) throw new Error(error.message.replace(/^.*?:\s*/, ''))
@@ -165,7 +210,7 @@ export async function decidirCasamento(casamentoId, confirma) {
 }
 
 export async function listarEventos(pecaId) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_eventos')
     .select('id,de,para,acao,detalhe,quem,quando')
     .eq('peca_id', pecaId)
@@ -179,14 +224,14 @@ export async function listarEventos(pecaId) {
 export async function registrarEvento(pecaId, { de = null, para = null, acao, detalhe = null }) {
   // A trilha não pode derrubar a ação principal: se o evento falhar, a peça já
   // mudou de estado e reverter seria pior. Registra o problema e segue.
-  const { error } = await sbClient.from('conteudo_eventos').insert({
+  const { error } = await deOnde(sbClient).from('conteudo_eventos').insert({
     peca_id: pecaId, de, para, acao, detalhe, quem: _uid(),
   })
   if (error) console.warn('[conteudo] não consegui registrar o evento:', error.message)
 }
 
 export async function criarPeca(dados) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_pecas')
     .insert({ ...dados, criado_por: _uid() })
     .select(CAMPOS_PECA)
@@ -197,7 +242,7 @@ export async function criarPeca(dados) {
 }
 
 export async function atualizarPeca(id, campos) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_pecas')
     .update(campos)
     .eq('id', id)
@@ -263,15 +308,15 @@ export async function listarPessoas() {
 // em_aprovacao → agendada seria um UPDATE simples e pularia o guardião — ou
 // seja, qualquer pessoa com acesso poria conteúdo na fila sem ninguém aprovar.
 export async function aprovarEAgendar(pecaId) {
-  const { data, error } = await sbClient.rpc('conteudo_aprovar_e_agendar', { p_peca: pecaId })
+  const { data, error } = await _funcao('conteudo_aprovar_e_agendar', { p_peca: pecaId }, SO_QUEM_APROVA)
   if (error) throw new Error(error.message)
   return data
 }
 
 export async function decidir(pecaId, decisao, motivo = null) {
-  const { data, error } = await sbClient.rpc('conteudo_decidir', {
+  const { data, error } = await _funcao('conteudo_decidir', {
     p_peca: pecaId, p_decisao: decisao, p_motivo: motivo,
-  })
+  }, SO_QUEM_APROVA)
   if (error) throw new Error(error.message.replace(/^.*?:\s*/, ''))
   return Array.isArray(data) ? data[0] : data
 }
@@ -280,7 +325,7 @@ export async function decidir(pecaId, decisao, motivo = null) {
 
 // Ideias da marca + as que valem para todas (account_id nulo).
 export async function listarIdeias(accountId) {
-  const { data, error } = await sbClient
+  const q = deOnde(sbClient)
     .from('conteudo_ideias')
     // As colunas do roteiro completo (producao/cta/porque_formato) entram aqui.
     // Esquecer uma não dá erro nenhum: o campo chega `undefined` e o painel
@@ -290,15 +335,16 @@ export async function listarIdeias(accountId) {
       'id,account_id,titulo,gancho,formato,pilar,roteiro,producao,porque_formato,cta,'
       + 'legenda_sugerida,hashtags_sugeridas,por_que_agora,origem,situacao,peca_id,created_at',
     )
-    .or(`account_id.eq.${_idDeConta(accountId)},account_id.is.null`)
-    .neq('situacao', 'descartada')
+  const { data, error } = await (_naApi()
+    ? q.eq('da_marca', _idDeConta(accountId)).eq('descartada', false)
+    : q.or(`account_id.eq.${_idDeConta(accountId)},account_id.is.null`).neq('situacao', 'descartada'))
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Não consegui carregar as ideias: ${error.message}`)
   return data || []
 }
 
 export async function criarIdeia(dados) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_ideias')
     .insert({ ...dados, origem: 'manual', criado_por: _uid() })
     .select('*').single()
@@ -319,7 +365,7 @@ export async function criarIdeia(dados) {
 // reescrita, story (que a Meta não devolve de forma confiável) — a peça ficava
 // sem métrica para sempre e não havia o que fazer na tela.
 export async function casarNaMao(pecaId, linkOuCodigo) {
-  const { data, error } = await sbClient.rpc('conteudo_casar_na_mao', {
+  const { data, error } = await _funcao('conteudo_casar_na_mao', {
     p_peca: pecaId,
     p_media: linkOuCodigo,
   })
@@ -328,7 +374,7 @@ export async function casarNaMao(pecaId, linkOuCodigo) {
 }
 
 export async function atualizarIdeia(id, campos) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_ideias')
     .update(campos)
     .eq('id', id)
@@ -338,14 +384,14 @@ export async function atualizarIdeia(id, campos) {
 }
 
 export async function mudarSituacaoDaIdeia(id, situacao) {
-  const { error } = await sbClient.from('conteudo_ideias').update({ situacao }).eq('id', id)
+  const { error } = await deOnde(sbClient).from('conteudo_ideias').update({ situacao }).eq('id', id)
   if (error) throw new Error(`Não consegui atualizar: ${error.message}`)
 }
 
 // A ideia vira rascunho. Passa por função do banco para que criar a peça,
 // marcar a ideia como usada e ligar as duas aconteça de uma vez só.
 export async function ideiaViraPeca(ideiaId, accountId, publicarEm = null) {
-  const { data, error } = await sbClient.rpc('conteudo_ideia_virar_peca', {
+  const { data, error } = await _funcao('conteudo_ideia_virar_peca', {
     p_ideia: ideiaId, p_account: accountId, p_publicar_em: publicarEm,
   })
   if (error) throw new Error(error.message.replace(/^.*?:\s*/, ''))
@@ -363,13 +409,14 @@ export async function pedirSemanaParaIA(accountId, segunda) {
 }
 
 async function _pedirAIA(corpo) {
-  const { data, error } = await sbClient.functions.invoke('conteudo-trigger', {
+  const { data, error } = await invocarNaArea('conteudo', sbClient, 'conteudo-trigger', {
     body: corpo,
   })
   if (error) {
     // O corpo do erro traz o motivo real (ex.: já tem rodada em andamento).
     const detalhe = await error.context?.json?.().catch(() => null)
     if (detalhe?.error === 'ja_rodando') throw new Error('Já tem uma rodada em andamento para esta marca. Espere ela terminar.')
+    if (detalhe?.mensagem) throw new Error(detalhe.mensagem)   // pela API: "entrar como"
     if (detalhe?.error === 'sem_permissao') throw new Error('Você não tem permissão para pedir isso à IA.')
     throw new Error(detalhe?.detail || error.message || 'Não consegui falar com a IA.')
   }
@@ -408,7 +455,7 @@ export async function planoViraPecas(accountId, slots) {
     if (ideia?.id) {
       // Não usa `ideiaViraPeca` porque a peça já foi criada aqui, com os campos
       // do plano; aquela função cria uma peça vazia por conta própria.
-      await sbClient.from('conteudo_ideias')
+      await deOnde(sbClient).from('conteudo_ideias')
         .update({ situacao: 'usada', peca_id: peca.id })
         .eq('id', ideia.id)
     }
@@ -425,7 +472,7 @@ function _instanteDoSlot(slot) {
 }
 
 export async function verJob(jobId) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_jobs').select('id,status,resultado,erro').eq('id', jobId).maybeSingle()
   if (error) return null
   return data
@@ -434,10 +481,12 @@ export async function verJob(jobId) {
 // ── Blocos de texto ─────────────────────────────────────────────────────────
 
 export async function listarBlocos(accountId) {
-  const { data, error } = await sbClient
+  const q = deOnde(sbClient)
     .from('conteudo_blocos')
     .select('id,account_id,tipo,nome,texto,usos,ativo')
-    .or(`account_id.eq.${_idDeConta(accountId)},account_id.is.null`)
+  const { data, error } = await (_naApi()
+    ? q.eq('da_marca', _idDeConta(accountId))
+    : q.or(`account_id.eq.${_idDeConta(accountId)},account_id.is.null`))
     .eq('ativo', true)
     .order('tipo')
   if (error) return []
@@ -445,16 +494,16 @@ export async function listarBlocos(accountId) {
 }
 
 export async function salvarBloco(bloco) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_blocos')
-    .upsert({ ...bloco, criado_por: bloco.id ? undefined : _uid() })
+    .insert({ ...bloco, criado_por: _uid() })
     .select('*').single()
   if (error) throw new Error(`Não consegui salvar o bloco: ${error.message}`)
   return data
 }
 
 export async function apagarBloco(id) {
-  const { error } = await sbClient.from('conteudo_blocos').update({ ativo: false }).eq('id', id)
+  const { error } = await deOnde(sbClient).from('conteudo_blocos').update({ ativo: false }).eq('id', id)
   if (error) throw new Error(`Não consegui remover: ${error.message}`)
 }
 
@@ -465,7 +514,7 @@ export async function apagarBloco(id) {
 // saiu citando @Isla e @Santa Lolla como concorrentes dele.
 
 export async function listarConcorrentes(accountId) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_concorrentes')
     .select('id,account_id,handle,nome,observacao,ativo')
     .eq('account_id', _idDeConta(accountId))
@@ -476,21 +525,22 @@ export async function listarConcorrentes(accountId) {
 }
 
 export async function salvarConcorrente(concorrente) {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_concorrentes')
-    .upsert(concorrente)
+    .insert(concorrente)
     .select('*').single()
   if (error) {
     // 23505 = o mesmo @ já está cadastrado nesta marca. O aviso genérico do
     // Postgres não diz nada a quem está preenchendo o formulário.
-    if (error.code === '23505') throw new Error('Esse @ já está na lista desta marca.')
+    // pela API, 409 `conflito` com "Já existe…"
+    if (error.code === '23505' || (error.code === 'conflito' && /já existe/i.test(error.message))) throw new Error('Esse @ já está na lista desta marca.')
     throw new Error(`Não consegui salvar o concorrente: ${error.message}`)
   }
   return data
 }
 
 export async function apagarConcorrente(id) {
-  const { error } = await sbClient.from('conteudo_concorrentes').update({ ativo: false }).eq('id', id)
+  const { error } = await deOnde(sbClient).from('conteudo_concorrentes').update({ ativo: false }).eq('id', id)
   if (error) throw new Error(`Não consegui remover: ${error.message}`)
 }
 
@@ -501,6 +551,7 @@ export async function mudarUsoDoPortal(accountId, usa) {
     .from('accounts')
     .update({ conteudo_usa_portal: !!usa })
     .eq('id', _idDeConta(accountId))
+  if (error?.status === 403) throw new Error(error.details || 'Só administradores ligam ou desligam o Portal de Notícias.')
   if (error) throw new Error(`Não consegui mudar o Portal de Notícias: ${error.message}`)
 }
 
@@ -508,7 +559,7 @@ export async function mudarUsoDoPortal(accountId, usa) {
 // (para não avisar duas vezes), então um push perdido no caminho fica sem
 // segunda chance — este é o botão que dá.
 export async function reavisar(pecaId) {
-  const { data, error } = await sbClient.rpc('conteudo_reavisar', { p_peca: pecaId })
+  const { data, error } = await _funcao('conteudo_reavisar', { p_peca: pecaId })
   if (error) throw new Error(error.message.replace(/^.*?:\s*/, ''))
   return Array.isArray(data) ? data[0] : data
 }
@@ -520,7 +571,7 @@ export async function excluirPeca(pecaId) {
   if (arquivos.length) {
     await sbClient.storage.from(BUCKET).remove(arquivos.map(a => a.caminho))
   }
-  const { error } = await sbClient.from('conteudo_pecas').delete().eq('id', pecaId)
+  const { error } = await deOnde(sbClient).from('conteudo_pecas').delete().eq('id', pecaId)
   if (error) throw new Error(`Não consegui excluir: ${error.message}`)
 }
 
@@ -549,7 +600,7 @@ export async function subirArquivo(peca, file, ordem) {
     .upload(caminho, file, { upsert: true, contentType: file.type })
   if (erroUp) throw new Error(`Não consegui enviar ${file.name}: ${erroUp.message}`)
 
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('conteudo_arquivos')
     .insert({
       peca_id: peca.id,
@@ -606,7 +657,7 @@ export async function duplicarPeca(peca) {
     const { error: erroCopia } = await sbClient.storage.from(BUCKET).copy(a.caminho, destino)
     if (erroCopia) continue   // um arquivo que falha não impede os outros
 
-    const { data, error } = await sbClient.from('conteudo_arquivos').insert({
+    const { data, error } = await deOnde(sbClient).from('conteudo_arquivos').insert({
       peca_id: nova.id,
       ordem: a.ordem,
       bucket: a.bucket,
@@ -633,12 +684,12 @@ export async function duplicarPeca(peca) {
 
 export async function removerArquivo(arquivo) {
   await sbClient.storage.from(BUCKET).remove([arquivo.caminho])
-  const { error } = await sbClient.from('conteudo_arquivos').delete().eq('id', arquivo.id)
+  const { error } = await deOnde(sbClient).from('conteudo_arquivos').delete().eq('id', arquivo.id)
   if (error) throw new Error(`Não consegui remover o arquivo: ${error.message}`)
 }
 
 export async function trocarOrdem(arquivoId, novaOrdem) {
-  const { error } = await sbClient.from('conteudo_arquivos').update({ ordem: novaOrdem }).eq('id', arquivoId)
+  const { error } = await deOnde(sbClient).from('conteudo_arquivos').update({ ordem: novaOrdem }).eq('id', arquivoId)
   if (error) throw new Error(`Não consegui reordenar: ${error.message}`)
 }
 

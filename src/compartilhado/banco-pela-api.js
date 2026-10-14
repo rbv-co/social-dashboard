@@ -172,6 +172,28 @@ const ROTAS = {
     },
     ordens: ['created_at'],
   },
+  // ── 5.9 — Conteúdo ── (`da_marca` = "desta marca OU de todas", o `.or(account_id.eq.X,account_id.is.null)`)
+  conteudo_pecas: {
+    area: 'conteudo', rota: '/conteudo/pecas',
+    filtros: { account_id: eq('account_id'), id: eq('id'), status: { eq: 'status', in: 'status' } },
+    ordens: ['publicar_em', 'created_at'], autoria: ['criado_por'],
+  },
+  conteudo_arquivos: { area: 'conteudo', rota: '/conteudo/arquivos', filtros: { peca_id: eq('peca_id'), account_id: eq('account_id') }, ordens: [] },
+  conteudo_eventos: {
+    area: 'conteudo', rota: '/conteudo/eventos', filtros: { peca_id: eq('peca_id'), account_id: eq('account_id') }, ordens: [],
+    autoria: ['quem', 'quando'],
+  },
+  conteudo_ideias: {
+    area: 'conteudo', rota: '/conteudo/ideias',
+    filtros: { account_id: eq('account_id'), da_marca: eq('da_marca'), situacao: { eq: 'situacao', in: 'situacao' }, descartada: eq('descartada') },
+    ordens: [], autoria: ['criado_por', 'origem'],
+  },
+  conteudo_blocos: {
+    area: 'conteudo', rota: '/conteudo/blocos',
+    filtros: { account_id: eq('account_id'), da_marca: eq('da_marca'), ativo: eq('ativo') }, ordens: [], autoria: ['criado_por'],
+  },
+  conteudo_concorrentes: { area: 'conteudo', rota: '/conteudo/concorrentes', filtros: { account_id: eq('account_id'), ativo: eq('ativo') }, ordens: [] },
+  conteudo_jobs: { area: 'conteudo', rota: '/conteudo/jobs', filtros: { id: eq('id'), account_id: eq('account_id'), status: { eq: 'status', in: 'status' } }, ordens: [] },
   // ── 5.7 — Gestão de tráfego ──
   gt_budget_analises: {
     area: 'trafego', rota: '/gestao-trafego/analises-de-orcamento',
