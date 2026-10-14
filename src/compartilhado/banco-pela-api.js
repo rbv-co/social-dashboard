@@ -216,6 +216,14 @@ const ROTAS = {
   },
   acessos_termos: { area: 'acessos', rota: '/acessos/termos', filtros: { pessoa_id: eq('pessoa_id') }, ordens: [] },
   acessos_log: { area: 'acessos', rota: '/acessos/log', filtros: {}, ordens: [], autoria: ['quem'] }, // só escreve; `quem` é da sessão
+  // ── 5.10 — Autenticidade / selo Vessel (`/autenticidade/*`). Ordem fixa na rota (sem `ordem` nem `select`) ──
+  vessel_lotes: { area: 'autenticidade', rota: '/autenticidade/lotes', filtros: {}, ordens: [], ordemFixa: [{ col: 'criado_em', asc: false }] },
+  vessel_pecas: { area: 'autenticidade', rota: '/autenticidade/pecas', filtros: { codigo: { in: 'codigo', eq: 'codigo' } }, ordens: [] },
+  vessel_registros: { area: 'autenticidade', rota: '/autenticidade/registros', filtros: {}, ordens: [], ordemFixa: [{ col: 'registrado_em', asc: false }] },
+  // a rota só devolve as baixas ATIVAS: `desfeita_em is null` é implícito
+  vessel_baixas: { area: 'autenticidade', rota: '/autenticidade/baixas', filtros: {}, ordens: [], implicitos: { desfeita_em: { is: 'null' } }, ordemFixa: [{ col: 'baixada_em', asc: false }] },
+  vessel_cartao_pedidos: { area: 'autenticidade', rota: '/autenticidade/cartao-pedidos', filtros: {}, ordens: [], ordemFixa: [{ col: 'criado_em', asc: false }] },
+  vessel_lembretes: { area: 'autenticidade', rota: '/autenticidade/lembretes', filtros: {}, ordens: [], ordemFixa: [{ col: 'criado_em', asc: false }] },
   // ── 5.8 — Fábrica de anúncios (leituras; as escritas do painel são as 4 edges e o
   // `escolher`, feitos na tela; as do robô são as rotas `/fabrica/robo/*`) ──
   fabrica_lojas: { area: 'fabrica', rota: '/fabrica/lojas', filtros: { ativo: eq('ativo') }, ordens: [] },
@@ -471,18 +479,23 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
   // Filtro que a rota não declara: só `eq`/`in`, só sem limite (a leitura vem
   // INTEIRA, paginada abaixo) e numa coluna que a rota devolve — aí a tela filtra
   // as mesmas linhas que o banco filtraria. Qualquer outro caso recusa alto.
-  const naTela = partes.filtros.filter((f) => !def.filtros[f.col]?.[f.op])
+  // `implicitos`: o que a rota já faz sempre (ex.: só as baixas ativas) — o filtro some, sem parâmetro e sem filtrar na tela
+  const implicito = (f) => def.implicitos?.[f.col]?.[f.op] === f.val
+  const naTela = partes.filtros.filter((f) => !implicito(f) && !def.filtros[f.col]?.[f.op])
   if (naTela.length && (partes.limite || naTela.some((f) => f.op !== 'eq' && f.op !== 'in'))) {
     throw new ErroDeTraducao(`${partes.tabela}: a rota ${def.rota} não filtra por ${naTela.map((f) => f.col + '=' + f.op).join(', ')}`)
   }
-  const params = parametrosDosFiltros(def, partes.tabela, partes.filtros.filter((f) => !naTela.includes(f)))
+  const params = parametrosDosFiltros(def, partes.tabela, partes.filtros.filter((f) => !naTela.includes(f) && !implicito(f)))
   const cols = colunasDoSelect(partes.select, def)
   // A ordem pedida vai para a rota quando ela a declara (UMA coluna: o `ordem` da
   // API aceita um campo só); senão, a tela ordena — e isso só é certo se NADA foi
   // cortado antes (sem limite).
   const naRota = partes.ordem.length === 1 && def.ordens.includes(partes.ordem[0].col)
   if (partes.ordem.length && naRota) params.ordem = partes.ordem.map((o) => `${o.col}.${o.asc ? 'asc' : 'desc'}`).join(',')
-  if (partes.ordem.length && !naRota && partes.limite) {
+  // `ordemFixa`: a rota já devolve nesta ordem (sem parâmetro `ordem`); pedir a MESMA ordem está satisfeito
+  const fixa = !!def.ordemFixa && partes.ordem.length === def.ordemFixa.length
+    && partes.ordem.every((o, i) => o.col === def.ordemFixa[i].col && o.asc === def.ordemFixa[i].asc)
+  if (partes.ordem.length && !naRota && !fixa && partes.limite) {
     throw new ErroDeTraducao(`${partes.tabela}: a rota não ordena por ${partes.ordem.map((o) => o.col)} e o pedido corta em ${partes.limite}`)
   }
   if (partes.limite > TETO_DE_LINHAS) throw new ErroDeTraducao(`${partes.tabela}: limite ${partes.limite} acima do teto de ${TETO_DE_LINHAS} linhas da API`)
@@ -509,7 +522,7 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
     const aceita = (f, l) => (f.op === 'eq' ? [valorDoEq(f.val)] : f.val.replace(/^\(|\)$/g, '').split(',')).includes(String(l[f.col]))
     linhas = linhas.filter((l) => naTela.every((f) => aceita(f, l)))
   }
-  if (partes.ordem.length && !naRota) linhas = ordenarNaTela(linhas, partes.ordem)
+  if (partes.ordem.length && !naRota && !fixa) linhas = ordenarNaTela(linhas, partes.ordem)
   return { data: projetar(linhas, cols, partes.tabela), error: null, count: naTela.length ? linhas.length : total }
 }
 

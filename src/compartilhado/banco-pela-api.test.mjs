@@ -465,3 +465,29 @@ test('ligarCadastroPelaApi: POST /ligar; ficha de outro login = 409 com a frase'
   assert.deepEqual(pedidos[0].corpo, { profile_id: 'u2' })
   assert.equal(r.error.status, 409)
 })
+
+// ── 5.10 — Autenticidade ──
+test('vessel_baixas: `desfeita_em is null` é implícito na rota (sem parâmetro e sem filtrar na tela)', async () => {
+  const pedidos = api({ 'GET /autenticidade/baixas': [200, [{ codigo: 'A', motivo: 'x', baixada_em: 't' }]] })
+  const r = await b.consultaPelaApi('vessel_baixas').select('codigo,motivo,baixada_em').is('desfeita_em', null)
+  assert.deepEqual(r.data, [{ codigo: 'A', motivo: 'x', baixada_em: 't' }])
+  assert.equal(busca(pedidos[0]).desfeita_em, undefined)
+  const ruim = await b.consultaPelaApi('vessel_baixas').select('*').eq('motivo', 'x').limit(5)
+  assert.match(ruim.error.message, /não filtra/)
+})
+
+test('vessel_cartao_pedidos: a ordem fixa da rota (criado_em desc) satisfaz o `.order().limit(20)` da tela', async () => {
+  const pedidos = api({ 'GET /autenticidade/cartao-pedidos': [200, [{ id: 'b' }, { id: 'a' }]] })
+  const r = await b.consultaPelaApi('vessel_cartao_pedidos').select('*').order('criado_em', { ascending: false }).limit(20)
+  assert.equal(r.error, null)
+  assert.deepEqual(r.data.map((x) => x.id), ['b', 'a']) // sem reordenar na tela
+  assert.deepEqual(busca(pedidos[0]), { limite: '20' })
+  const outra = await b.consultaPelaApi('vessel_cartao_pedidos').select('*').order('criado_em').limit(20)
+  assert.match(outra.error.message, /não ordena/)
+})
+
+test('vessel_pecas: `in` de códigos vira a lista da rota', async () => {
+  const pedidos = api({ 'GET /autenticidade/pecas': [200, []] })
+  await b.consultaPelaApi('vessel_pecas').select('codigo').in('codigo', ['A1', 'B2'])
+  assert.equal(busca(pedidos[0]).codigo, 'A1,B2')
+})

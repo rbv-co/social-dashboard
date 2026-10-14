@@ -2350,10 +2350,14 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
-import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+import { sbClient as sbClientDoSupabase } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado as estadoDoLogin } from '../../compartilhado/controle-de-login-e-usuario.js'
 // Chave `conta` (Plano 7): conferir-senha (5.0) pela API em Go.
-import { areaNaApi, conferirSenhaPelaApi } from '../../compartilhado/api.js'
+import { areaNaApi, conferirSenhaPelaApi, fetchDaApi } from '../../compartilhado/api.js'
+// Chave `autenticidade` (Plano 7): as leituras do selo, as 16 RPCs e a edge `vessel-baixar-cartao` pela API em Go (5.10).
+import { clienteDoSelo } from './cliente-do-selo.js'
+// Com a chave `autenticidade` ligada, `.from('vessel_*')` e `.rpc('vessel_*')` daqui vão pela API; desligada, é o supabase-js.
+const sbClient = clienteDoSelo(sbClientDoSupabase)
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 // O filete do cartão no tom do selo dele (Onda 2c).
 import { classeDoTom } from './tom-do-selo.js'
@@ -3972,6 +3976,20 @@ const erroDoDownload = ref('')
 /** Busca UM arquivo (frente ou verso) pela edge `vessel-baixar-cartao`, que o lê no Zoho. Devolve { bytes } ou { erro: frase }. */
 async function buscarOArquivoDoCartao(linha, face, formato) {
   try {
+    if (areaNaApi('autenticidade')) {
+      // A API responde os bytes (200) ou `{erro|error}` (a edge dizia `erro`; o portão, `error`).
+      const r = await fetchDaApi('/vessel-baixar-cartao', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: linha.codigo, face, formato }),
+      })
+      if (!r.ok) {
+        const detalhe = await r.json().catch(() => null)
+        return { erro: fraseDoDownloadRecusado(detalhe?.erro ?? detalhe?.error) }
+      }
+      const blob = await r.blob()
+      if (!blob.size) return { erro: fraseDoDownloadRecusado(null) }
+      return { bytes: new Uint8Array(await blob.arrayBuffer()) }
+    }
     const { data, error } = await sbClient.functions.invoke('vessel-baixar-cartao',
       { body: { codigo: linha.codigo, face, formato } })
     if (error) {
