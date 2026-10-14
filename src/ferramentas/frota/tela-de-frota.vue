@@ -23,8 +23,8 @@ import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-u
 // Chave `conta` (Plano 7): invite-user e conferir-senha (5.0) pela API em Go.
 // Chave `edges-core` (Plano 7): avisar-decisao-de-reserva (Plano 4).
 import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi, fetchDaApi, rpcNaArea } from '../../compartilhado/api.js'
-// Chave `admin` (Plano 7): `profiles` pela API (5.1).
-import { deOnde } from '../../compartilhado/banco-pela-api.js'
+// Chave `admin` (Plano 7): `profiles` pela API (5.1). Chave `frota` (5.3): as `frota_*`, 2 RPCs e as 3 gravações compostas.
+import { deOnde, escreverComposto } from '../../compartilhado/banco-pela-api.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
 import { seloDoVeiculo, tomDoCartao, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
@@ -650,7 +650,7 @@ async function abrirFichaDoHistorico(ficha) {
   respostasDaFichaAberta.value = ficha.feita_em === hoje.value ? null : []
   fichaDetalhe.value = { veiculo, ficha }
   if (ficha.feita_em === hoje.value) return
-  const { data, error } = await sbClient.from('frota_checklist_respostas')
+  const { data, error } = await deOnde(sbClient).from('frota_checklist_respostas')
     .select('*').eq('checklist_id', ficha.id).order('ordem')
   // Falhar aqui NÃO pode virar "nenhum item respondido": é a mentira que o
   // padrão da central proíbe por escrito. A marca faz o modal dizer que não
@@ -1038,11 +1038,17 @@ async function salvarTelefoneDigitado(c) {
 
 function voltar() { router.push({ name: 'gestao-interna' }) }
 
+/* Placa, retirada ou ficha repetidas: no Supabase vinha na frase do banco ("duplicate key");
+ * na API é `409 conflito`. */
+function duplicado(erro) {
+  return erro?.status === 409 || /duplicate|unique/i.test(erro?.message || '')
+}
+
 async function carregar() {
   carregando.value = true
   falha.value = ''
   const [v, ua, uh, p, pe, pf, se, q, pl, rv, bn, ci, cc, cf, catv, ab] = await Promise.all([
-    sbClient.from('frota_veiculos').select('*').order('nome'),
+    deOnde(sbClient).from('frota_veiculos').select('*').order('nome'),
     // frota_uso vem em DUAS consultas de propósito, e não numa só com limite.
     //
     // Uma posse que nunca troca de mão guarda o `saida_em` do dia em que foi
@@ -1058,12 +1064,12 @@ async function carregar() {
     // são elas que decidem quem responde pelo carro hoje. Nenhuma pode faltar.
     // A ordem se mantém da mais recente pra mais antiga como era antes: quem
     // procura "o uso aberto deste carro" sem dizer o tipo espera o mais novo.
-    sbClient.from('frota_uso').select('*').is('volta_em', null)
+    deOnde(sbClient).from('frota_uso').select('*').is('volta_em', null)
       .order('saida_em', { ascending: false }),
     // FECHADAS: o histórico de viagens, que é o que cresce pra sempre. Aqui o
     // limite faz sentido — só as devoluções recentes interessam pra montar a
     // tela (último KM, último tanque).
-    sbClient.from('frota_uso').select('*').not('volta_em', 'is', null)
+    deOnde(sbClient).from('frota_uso').select('*').not('volta_em', 'is', null)
       .order('saida_em', { ascending: false }).limit(400),
     // numero_corporativo/numero_pessoal entram pelo botão de WhatsApp da
     // cobrança (V2 do quadro D16) — telefoneDaCobranca() escolhe qual dos dois
@@ -1087,20 +1093,20 @@ async function carregar() {
     // A agenda de reservas: quem vê a Frota vê a agenda inteira. Saber que o
     // carro está reservado é o que evita o conflito de viagens — esconder isso
     // de quem dirige recriaria no app o problema que o papel tem.
-    sbClient.from('frota_requisicoes').select('*').order('retirada_prevista'),
-    sbClient.from('frota_plano_revisao').select('*').order('ordem'),
-    sbClient.from('frota_revisoes').select('*'),
+    deOnde(sbClient).from('frota_requisicoes').select('*').order('retirada_prevista'),
+    deOnde(sbClient).from('frota_plano_revisao').select('*').order('ordem'),
+    deOnde(sbClient).from('frota_revisoes').select('*'),
     // Bens do Patrimônio — a lista do seletor de ligação na ficha (qualquer
     // categoria, como já era) e, com os campos extras, a matéria-prima pra
     // "Acrescentar veículo" puxar dados de um bem (F9). Pode falhar sem
     // derrubar nada: quem não tem Patrimônio ainda gere a frota.
     deOnde(sbClient).from('patrimonio_bens')
       .select('id,nome,numero,categoria_id,marca,valor_centavos').order('nome').limit(500),
-    sbClient.from('frota_checklist_itens').select('*').order('ordem'),
-    sbClient.from('frota_checklist_config').select('*').limit(1),
+    deOnde(sbClient).from('frota_checklist_itens').select('*').order('ordem'),
+    deOnde(sbClient).from('frota_checklist_config').select('*').limit(1),
     // 120 dias: o bastante pra saber quando foi a última mensal, sem crescer
     // pra sempre.
-    sbClient.from('frota_checklist').select('*')
+    deOnde(sbClient).from('frota_checklist').select('*')
       .gte('feita_em', new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10))
       .order('feita_em', { ascending: false }),
     // A categoria "Veículos" do Patrimônio, só pra saber QUAL id filtrar em
@@ -1112,7 +1118,7 @@ async function carregar() {
     // e `frota_checklist`: leitura que pode falhar sozinha sem derrubar a tela.
     // A ordem é a do índice da tabela — do mais novo para o mais velho —, que é
     // como todo mundo que lê esta lista a quer.
-    sbClient.from('frota_abastecimentos').select('*').order('abastecido_em', { ascending: false }),
+    deOnde(sbClient).from('frota_abastecimentos').select('*').order('abastecido_em', { ascending: false }),
   ])
   // As duas metades de frota_uso são igualmente obrigatórias: sem as abertas a
   // tela não sabe quem está com cada carro; sem as fechadas ela não sabe o KM.
@@ -1162,7 +1168,7 @@ async function carregar() {
   // pronto. Sem ficha nenhuma hoje, nem consulta: não há o que buscar.
   const idsDeHoje = fichas.value.filter((f) => f.feita_em === hoje.value).map((f) => f.id)
   if (idsDeHoje.length) {
-    const rd = await sbClient.from('frota_checklist_respostas')
+    const rd = await deOnde(sbClient).from('frota_checklist_respostas')
       .select('*').in('checklist_id', idsDeHoje).order('ordem')
     // Falhou? A lista fica vazia, mas `falhaRespostas` avisa a tela — sem essa
     // marca, "vazio por falha" e "vazio porque não tinha item" ficam iguais,
@@ -1197,17 +1203,17 @@ async function carregar() {
  * dia" sem ter olhado. */
 async function carregarCopiasNoZoho() {
   const [pend, ent, todas] = await Promise.all([
-    sbClient.from('frota_checklist_pdf')
+    deOnde(sbClient).from('frota_checklist_pdf')
       .select('checklist_id,situacao,tentativas,ultimo_erro,criado_em')
       .neq('situacao', 'enviado').order('criado_em').limit(200),
-    sbClient.from('frota_checklist_pdf')
+    deOnde(sbClient).from('frota_checklist_pdf')
       .select('checklist_id', { count: 'exact', head: true }).eq('situacao', 'enviado'),
     // A terceira leitura é do HISTÓRICO, não do quadro de problemas: ele
     // precisa saber que uma ficha específica CHEGOU, e "não está na lista de
     // pendentes" não é a mesma coisa que "chegou" — a linha pode nem ter
     // entrado na fila ainda. 300 é a mesma ordem de grandeza das fichas que a
     // tela carrega (120 dias).
-    sbClient.from('frota_checklist_pdf')
+    deOnde(sbClient).from('frota_checklist_pdf')
       .select('checklist_id,situacao,ultimo_erro,enviado_em')
       .order('criado_em', { ascending: false }).limit(300),
   ])
@@ -1515,8 +1521,32 @@ async function confirmarPasse() {
     para: alvo, donoFixo: paraEstoque ? null : donoFixo, quando: new Date().toISOString(),
   })
 
+  if (areaNaApi('frota')) {
+    // Pela API, fechar + abrir + "parado" são UMA transação: nada fica pela metade, então
+    // somem os avisos de "carro sem responsável" dos passos abaixo.
+    const paraParar = paraEstoque && veiculo.situacao !== 'inativo'
+    if (fechar || abrir || paraParar) {
+      const { error } = await escreverComposto('/frota/usos/trocar', {
+        veiculo_id: veiculo.id,
+        ...(fechar ? { fechar: { id: fechar.id, volta_em: fechar.volta_em } } : {}),
+        ...(abrir ? { abrir: { pessoa_id: abrir.pessoa_id, pessoa_nome: abrir.pessoa_nome, saida_em: abrir.saida_em } } : {}),
+        ...(paraParar ? { para_estoque: true } : {}),
+      })
+      if (error) {
+        gravando.value = false
+        erroPasse.value = error.status === 409
+          ? error.message
+          : 'Não consegui registrar a troca. Tente de novo — nada foi alterado.'
+        return
+      }
+    }
+    gravando.value = false
+    fecharPasse()
+    await carregar()
+    return
+  }
   if (fechar) {
-    const { error: erroFechar } = await sbClient.from('frota_uso').update({ volta_em: fechar.volta_em }).eq('id', fechar.id)
+    const { error: erroFechar } = await deOnde(sbClient).from('frota_uso').update({ volta_em: fechar.volta_em }).eq('id', fechar.id)
     if (erroFechar) {
       // Nada foi aberto ainda — não tenta o segundo passo com o primeiro
       // falho. A tela não recarrega: recarregar aqui faria parecer que deu
@@ -1527,7 +1557,7 @@ async function confirmarPasse() {
     }
   }
   if (abrir) {
-    const { error: erroAbrir } = await sbClient.from('frota_uso').insert(abrir)
+    const { error: erroAbrir } = await deOnde(sbClient).from('frota_uso').insert(abrir)
     if (erroAbrir) {
       gravando.value = false
       // O MESMO defeito crítico da Tarefa 6, e aqui é pior: se o fechamento
@@ -1554,7 +1584,7 @@ async function confirmarPasse() {
   // carro está livre mas não foi pro estoque, e o que fazer. Meia verdade dita
   // é melhor que a verdade inteira escondida.
   if (paraEstoque && veiculo.situacao !== 'inativo') {
-    const { data: mudou, error: erroEstoque } = await sbClient.from('frota_veiculos')
+    const { data: mudou, error: erroEstoque } = await deOnde(sbClient).from('frota_veiculos')
       .update({ situacao: 'inativo' }).eq('id', veiculo.id).select('id')
     if (erroEstoque || (mudou || []).length !== 1) {
       gravando.value = false
@@ -1693,7 +1723,7 @@ async function confirmar() {
         aceite_checklist_hash: p.ficha ? (p.ficha.assinatura_hash || null) : null,
       }
       : {}
-    const r = await sbClient.from('frota_uso').insert({
+    const r = await deOnde(sbClient).from('frota_uso').insert({
       veiculo_id: f.linha.veiculo.id,
       // A HORA REAL DA SAÍDA, só no registro avulso. Sem ela o banco carimba
       // `now()`, e uma retirada de sábado entraria como se fosse de segunda —
@@ -1721,12 +1751,12 @@ async function confirmar() {
        histórico, e o histórico tem o segundo caminho (casar pela janela da
        reserva) justamente para as viagens que nasceram sem ele. */
     if (!erro && f.reserva && r.data && r.data.id) {
-      await sbClient.from('frota_requisicoes')
+      await deOnde(sbClient).from('frota_requisicoes')
         .update({ uso_id: r.data.id, situacao: 'usada' })
         .eq('id', f.reserva.id)
     }
   } else {
-    const r = await sbClient.from('frota_uso')
+    const r = await deOnde(sbClient).from('frota_uso')
       .update({ volta_em: new Date().toISOString(), km_volta: km, tanque_quartos: tanque })
       .eq('id', f.uso.id)
     erro = r.error
@@ -1735,7 +1765,7 @@ async function confirmar() {
   if (erro) {
     // O índice único do banco é quem garante que um carro não saia duas vezes.
     // Se dois celulares registrarem ao mesmo tempo, um perde — e tem que saber.
-    problemas.value = [/duplicate|unique/i.test(erro.message || '')
+    problemas.value = [duplicado(erro)
       ? 'Alguém registrou a retirada deste carro agora há pouco. Recarregue para ver.'
       : 'Não consegui gravar. Confira a conexão e tente de novo.']
     return
@@ -2058,7 +2088,7 @@ async function gravarAbastecimento() {
   if (problemasDoAbast.value.barra.length) return
   gravandoAbast.value = true
   erroAbast.value = ''
-  const { error } = await sbClient.from('frota_abastecimentos').insert({
+  const { error } = await deOnde(sbClient).from('frota_abastecimentos').insert({
     veiculo_id: formAbast.veiculoId,
     pessoa_id: euId.value || null,
     pessoa_nome: euId.value ? nomeDaPessoa(euId.value) : null,
@@ -2150,7 +2180,7 @@ async function gravarChecklist({ ficha, respostas, assinatura }) {
     }
 
     // 2) A ficha anterior DESTE carro, pra encadear.
-    const { data: anteriores, error: erroAnterior } = await sbClient.from('frota_checklist')
+    const { data: anteriores, error: erroAnterior } = await deOnde(sbClient).from('frota_checklist')
       .select('assinatura_hash').eq('veiculo_id', ficha.veiculo_id)
       .not('assinada_em', 'is', null).order('feita_em', { ascending: false }).limit(1)
     if (erroAnterior) {
@@ -2213,11 +2243,32 @@ async function gravarChecklist({ ficha, respostas, assinatura }) {
      UPDATE — permitido porque o gatilho da ficha só dispara quando ela JÁ
      estava assinada (`when (old.assinada_em is not null)`).
      E OS TRÊS PASSOS SE CONFEREM, um a um. */
-  const { data, error } = await sbClient.from('frota_checklist')
+  if (areaNaApi('frota')) {
+    // Pela API a ficha, as respostas e a assinatura são UMA transação: não existe "ficha sem
+    // respostas" nem "ficha sem assinatura", então somem os avisos de meio-caminho.
+    // `aberta_em` vai DENTRO da assinatura; `assinada_por` é da sessão (o corpo com ele toma 400).
+    const { aberta_em: _abertaEm, ...fichaApi } = campos
+    const { assinada_por: _quem, ...assinaturaApi } = assinar || {}
+    const { error: erroApi } = await escreverComposto('/frota/checklists', {
+      ficha: fichaApi, respostas, ...(assinar ? { assinatura: assinaturaApi } : {}),
+    })
+    gravando.value = false
+    if (erroApi) {
+      erroChecklist.value = duplicado(erroApi)
+        ? 'O checklist deste carro já foi preenchido hoje.'
+        : 'Não consegui gravar o checklist, e NADA foi salvo. Confira a conexão e tente de novo.'
+      return false
+    }
+    seloDoChecklist.value = selo({ queriaAssinar: !!assinar, assinaturaGravada: !!assinar })
+    conferindoVeiculo.value = null
+    await carregar()
+    return true
+  }
+  const { data, error } = await deOnde(sbClient).from('frota_checklist')
     .insert(campos).select('id').single()
   if (error) {
     gravando.value = false
-    erroChecklist.value = /duplicate|unique/i.test(error.message || '')
+    erroChecklist.value = duplicado(error)
       ? 'O checklist deste carro já foi preenchido hoje.'
       : 'Não consegui gravar o checklist. Confira a conexão e tente de novo.'
     return false
@@ -2233,7 +2284,7 @@ async function gravarChecklist({ ficha, respostas, assinatura }) {
   // não dá ordem estável, mas a ORDEM DOS ITENS faz parte da impressão digital.
   // Sem gravá-la, a leitura devolveria os itens em outra ordem e a conferência
   // acusaria de adulterada uma ficha intacta.
-  const { error: erroRespostas } = await sbClient.from('frota_checklist_respostas')
+  const { error: erroRespostas } = await deOnde(sbClient).from('frota_checklist_respostas')
     .insert(respostas.map((r, i) => ({ ...r, checklist_id: data.id, ordem: i })))
   if (erroRespostas) {
     gravando.value = false
@@ -2251,7 +2302,7 @@ async function gravarChecklist({ ficha, respostas, assinatura }) {
 
   let assinaturaGravada = false
   if (assinar) {
-    const { data: assinada, error: erroAssinar } = await sbClient.from('frota_checklist')
+    const { data: assinada, error: erroAssinar } = await deOnde(sbClient).from('frota_checklist')
       .update(assinar).eq('id', data.id).select('id')
     // CONFERE O NÚMERO DE LINHAS, não só o `error`: um UPDATE recusado por RLS
     // volta SEM erro e com zero linha. Olhando só o `error`, a tela diria
@@ -2295,9 +2346,9 @@ const erroDoItem = ref('')
 
 async function salvarItemDeChecklist(dados) {
   erroDoItem.value = ''
-  const { error } = await sbClient.from('frota_checklist_itens').insert(dados)
+  const { error } = await deOnde(sbClient).from('frota_checklist_itens').insert(dados)
   if (error) {
-    erroDoItem.value = /duplicate|unique/i.test(error.message || '')
+    erroDoItem.value = duplicado(error)
       ? `Já existe um item chamado "${dados.item}". Edite o que existe em vez de criar outro igual.`
       : `Não consegui acrescentar "${dados.item}". Confira a conexão e clique em Acrescentar de novo `
         + '— o que você digitou continua no campo.'
@@ -2311,7 +2362,7 @@ async function salvarItemDeChecklist(dados) {
 async function alternarImpedeUso(i) {
   erroDoItem.value = ''
   const novo = !i.impede_uso
-  const { data, error } = await sbClient.from('frota_checklist_itens')
+  const { data, error } = await deOnde(sbClient).from('frota_checklist_itens')
     .update({ impede_uso: novo }).eq('id', i.id).select('id')
   // CONTA AS LINHAS, não só o erro: um update recusado pela permissão volta sem
   // erro e sem mudar nada, e a tela diria que gravou.
@@ -2324,7 +2375,7 @@ async function alternarImpedeUso(i) {
 
 async function alternarItemDeChecklist(i) {
   erroDoItem.value = ''
-  const { error } = await sbClient.from('frota_checklist_itens')
+  const { error } = await deOnde(sbClient).from('frota_checklist_itens')
     .update({ ativo: !i.ativo }).eq('id', i.id)
   if (error) {
     erroDoItem.value = `Não consegui ${i.ativo ? 'desligar' : 'religar'} "${i.item}". `
@@ -2338,7 +2389,7 @@ async function salvarConfigDeChecklist(cfg) {
   // frota_checklist_config tem UMA linha só, com chave primária `id` booleana
   // sempre verdadeira — por isso o update filtra por `id = true`, não por um
   // id de registro comum.
-  const { error } = await sbClient.from('frota_checklist_config')
+  const { error } = await deOnde(sbClient).from('frota_checklist_config')
     .update({ dia_semanal: cfg.dia_semanal, semana_mensal: cfg.semana_mensal,
       dia_mensal: cfg.dia_mensal }).eq('id', true)
   if (error) {
@@ -2443,7 +2494,7 @@ async function enviarPedido() {
   if (probs.length && !jaAvisado.value) { jaAvisado.value = true; return }
 
   gravando.value = true
-  const { error } = await sbClient.from('frota_requisicoes').insert({
+  const { error } = await deOnde(sbClient).from('frota_requisicoes').insert({
     veiculo_id: pedidoForm.veiculoId,
     ...motoristaDoPedido.value,
     departamento: pedidoForm.departamento || null,
@@ -2490,7 +2541,7 @@ async function confirmarDecisao() {
     return
   }
   gravando.value = true
-  const { error } = await sbClient.from('frota_requisicoes')
+  const { error } = await deOnde(sbClient).from('frota_requisicoes')
     .update({ situacao: d.acao, motivo_decisao: motivoDaRecusa.value.trim() || null })
     .eq('id', d.requisicao.id)
   gravando.value = false
@@ -2748,7 +2799,7 @@ async function salvarEdicao() {
 
   gravando.value = true
   erroDaEdicao.value = ''
-  const { error } = await sbClient.from('frota_requisicoes').update({
+  const { error } = await deOnde(sbClient).from('frota_requisicoes').update({
     veiculo_id: edicaoForm.veiculoId,
     ...motoristaDaEdicao.value,
     departamento: edicaoForm.departamento || null,
@@ -2801,7 +2852,7 @@ async function confirmarEncerramento() {
     return
   }
   gravando.value = true
-  const { error } = await sbClient.from('frota_requisicoes')
+  const { error } = await deOnde(sbClient).from('frota_requisicoes')
     .update({ situacao: e.acao, encerrada_motivo: motivoDoEncerramento.value.trim() })
     .eq('id', e.requisicao.id)
   gravando.value = false
@@ -2838,7 +2889,7 @@ async function mudarArquivamento(reserva, arquivar) {
   if (!reserva || arquivando.value) return
   arquivando.value = reserva.id
   erroDeArquivar.value = ''
-  const { data, error } = await sbClient.from('frota_requisicoes')
+  const { data, error } = await deOnde(sbClient).from('frota_requisicoes')
     .update({ arquivada_em: arquivar ? new Date().toISOString() : null })
     .eq('id', reserva.id)
     .select('id')
@@ -2940,8 +2991,8 @@ async function salvarItem() {
   gravando.value = true
   const dados = { item: itemForm.item.trim(), a_cada_km: km, observacao: itemForm.observacao.trim() || null }
   const r = itemEmEdicao.value.novo
-    ? await sbClient.from('frota_plano_revisao').insert({ ...dados, ordem: plano.value.length + 1 })
-    : await sbClient.from('frota_plano_revisao').update(dados).eq('id', itemEmEdicao.value.id)
+    ? await deOnde(sbClient).from('frota_plano_revisao').insert({ ...dados, ordem: plano.value.length + 1 })
+    : await deOnde(sbClient).from('frota_plano_revisao').update(dados).eq('id', itemEmEdicao.value.id)
   gravando.value = false
   if (r.error) { errosDoItem.value = ['Não consegui gravar. Tente de novo.']; return }
   adminToast(itemEmEdicao.value.novo ? 'Item acrescentado.' : 'Item salvo.')
@@ -2950,7 +3001,7 @@ async function salvarItem() {
 }
 
 async function alternarItem(p) {
-  const { error } = await sbClient.from('frota_plano_revisao').update({ ativo: !p.ativo }).eq('id', p.id)
+  const { error } = await deOnde(sbClient).from('frota_plano_revisao').update({ ativo: !p.ativo }).eq('id', p.id)
   // A falha era ENGOLIDA: sem `carregar()` o interruptor voltava sozinho para
   // onde estava e a tela não dizia uma palavra — a pessoa clicava de novo
   // achando que tinha errado o dedo.
@@ -3030,7 +3081,7 @@ async function conferirEtiqueta() {
   if (et.numero === null) { avisoEtiqueta.value = null; return }
 
   conferindoEtiqueta.value = true
-  const { data, error } = await sbClient.rpc('etiqueta_quem_e', { p_numero: et.numero })
+  const { data, error } = await rpcNaArea('frota', sbClient, 'etiqueta_quem_e', { p_numero: et.numero })
   conferindoEtiqueta.value = false
   // Falhou a consulta? Fica CALADA. Um "número livre" dito por engano faria a
   // pessoa colar adesivo repetido — e a gravação ainda vai conferir de novo no
@@ -3128,8 +3179,8 @@ async function conferirAssinaturas(veiculo) {
      quem acabou de assinar direitinho. As duas colunas vêm da tabela, e são
      casadas por `id`. */
   const [{ data, error }, { data: extras, error: erroExtras }] = await Promise.all([
-    sbClient.rpc('frota_corrente_do_veiculo', { p_veiculo: veiculo.id }),
-    sbClient.from('frota_checklist')
+    rpcNaArea('frota', sbClient, 'frota_corrente_do_veiculo', { p_veiculo: veiculo.id }),
+    deOnde(sbClient).from('frota_checklist')
       .select('id, assinatura_versao, assinatura_rabisco').eq('veiculo_id', veiculo.id),
   ])
   conferindo.value = false
@@ -3380,12 +3431,12 @@ async function salvarVeiculo() {
     Object.assign(dados, comoFicaParaDados(vForm.comoFica, vForm.pessoa_id)
       || { situacao: 'ativo', pessoa_id: null })
 
-    const { error } = await sbClient.from('frota_veiculos').insert(dados)
+    const { error } = await deOnde(sbClient).from('frota_veiculos').insert(dados)
     if (error) {
       gravando.value = false
       // Placa é UNIQUE no banco (migration 022): duas pessoas cadastrando o
       // mesmo carro, ou alguém repetindo sem perceber, batem aqui.
-      errosDoVeiculo.value = [/duplicate|unique/i.test(error.message || '')
+      errosDoVeiculo.value = [duplicado(error)
         ? 'Já existe outro veículo com essa placa.'
         : 'Não consegui gravar. Confira a conexão e tente de novo.']
       return
@@ -3438,10 +3489,10 @@ async function salvarVeiculo() {
     quando: dados.atualizado_em,
   })
 
-  const { error } = await sbClient.from('frota_veiculos').update(dados).eq('id', veiculoAberto.value.id)
+  const { error } = await deOnde(sbClient).from('frota_veiculos').update(dados).eq('id', veiculoAberto.value.id)
   if (error) {
     gravando.value = false
-    errosDoVeiculo.value = [/duplicate|unique/i.test(error.message || '')
+    errosDoVeiculo.value = [duplicado(error)
       ? 'Já existe outro veículo com essa placa.'
       : 'Não consegui gravar. Confira a conexão e tente de novo.']
     return
@@ -3455,8 +3506,27 @@ async function salvarVeiculo() {
   // robô da manhã passam a cobrar quem não está mais com o carro — enquanto o
   // dono novo nunca é chamado e a linha do tempo afirma, pra sempre, que quem
   // saiu continuou com ele.
+  if (areaNaApi('frota') && (fecharPosse || abrirPosse)) {
+    // Fechar a posse antiga e abrir a nova: UMA transação na API.
+    const { error: erroPosse } = await escreverComposto('/frota/usos/trocar', {
+      veiculo_id: veiculoAberto.value.id,
+      ...(fecharPosse ? { fechar: { id: fecharPosse.id, volta_em: fecharPosse.volta_em } } : {}),
+      ...(abrirPosse ? { abrir: { pessoa_id: abrirPosse.pessoa_id, pessoa_nome: abrirPosse.pessoa_nome, saida_em: abrirPosse.saida_em } } : {}),
+    })
+    if (erroPosse) {
+      gravando.value = false
+      errosDoVeiculo.value = ['O veículo foi gravado, mas não consegui registrar a troca de responsável — '
+        + 'o registro de quem está com o carro ficou como estava. Abra o veículo de novo e troque o '
+        + 'responsável mais uma vez; se falhar outra vez, avise quem administra a Frota.']
+      return
+    }
+    gravando.value = false
+    fecharVeiculo()
+    carregar()
+    return
+  }
   if (fecharPosse) {
-    const { error: erroFechar } = await sbClient.from('frota_uso')
+    const { error: erroFechar } = await deOnde(sbClient).from('frota_uso')
       .update({ volta_em: fecharPosse.volta_em }).eq('id', fecharPosse.id)
     if (erroFechar) {
       // Nada de abrir a posse nova: o segundo passo com o primeiro falho é o
@@ -3471,7 +3541,7 @@ async function salvarVeiculo() {
     }
   }
   if (abrirPosse) {
-    const { error: erroAbrir } = await sbClient.from('frota_uso').insert(abrirPosse)
+    const { error: erroAbrir } = await deOnde(sbClient).from('frota_uso').insert(abrirPosse)
     if (erroAbrir) {
       gravando.value = false
       errosDoVeiculo.value = ['O veículo foi gravado, mas não consegui registrar que o carro '
@@ -3504,7 +3574,7 @@ const historicoDoVeiculo = computed(() => {
  * meses depois, o formulário que o dono pediu pra tirar. */
 
 async function apagarRevisao(r) {
-  const { error } = await sbClient.from('frota_revisoes').delete().eq('id', r.id)
+  const { error } = await deOnde(sbClient).from('frota_revisoes').delete().eq('id', r.id)
   if (!error) carregar()
 }
 
@@ -3551,10 +3621,28 @@ async function gravarLancamento(dados) {
   // aqui desabilitaria todos os botões de gravar da Frota, sem explicação, até
   // a pessoa recarregar a página.
   try {
+    if (areaNaApi('frota')) {
+      // Cabeçalho + trocas em UMA transação: falhou, nada ficou (não há cabeçalho órfão a desfazer).
+      // Cada troca herda veículo, km, data e oficina do cabeçalho; `criada_por` é da sessão.
+      const { error } = await escreverComposto('/frota/manutencoes', {
+        manutencao: {
+          veiculo_id: veiculoId, km: dados.km, feita_em: dados.feitaEm || null, oficina: dados.oficina,
+          total_centavos: dados.totalCentavos, observacao: dados.observacao,
+        },
+        trocas: (dados.itens || []).map((it) => ({
+          item: String((it && it.item) || '').trim(),
+          custo_centavos: Number.isInteger(it && it.valorCentavos) ? it.valorCentavos : null,
+        })),
+      })
+      if (error) { erroDoLancamento.value = mensagemDoLancamento({ erroCab: error }); return }
+      fecharLancamento()
+      await carregar()
+      return
+    }
     // PASSO 1: o cabeçalho. `.select()` é obrigatório — sem ele não volta o id,
     // e sem o id não há como ligar as trocas nem como desfazer se o passo 2
     // falhar.
-    const { data: cab, error: erroCab } = await sbClient.from('frota_manutencoes')
+    const { data: cab, error: erroCab } = await deOnde(sbClient).from('frota_manutencoes')
       .insert({
         veiculo_id: veiculoId,
         km: dados.km,
@@ -3577,7 +3665,7 @@ async function gravarLancamento(dados) {
     // PASSO 2: as trocas, uma linha por item marcado. Insert de várias linhas
     // numa chamada só: o PostgREST envolve numa transação, então não existe o
     // estado "2 das 3 gravadas".
-    const { error: erroLinhas } = await sbClient.from('frota_revisoes')
+    const { error: erroLinhas } = await deOnde(sbClient).from('frota_revisoes')
       .insert(linhasParaGravar({
         manutencaoId: cab.id, veiculoId,
         km: dados.km, feitaEm: dados.feitaEm, oficina: dados.oficina,
@@ -5036,7 +5124,7 @@ onMounted(async () => {
     <template v-if="area === 'relatorios' && !carregando && !falha">
       <aba-de-relatorios
         :relatorios="RELATORIOS_DA_FROTA"
-        :contexto="{ sbClient, veiculos, empresas: empresasPat, locais: locaisPat,
+        :contexto="{ sbClient: deOnde(sbClient), veiculos, empresas: empresasPat, locais: locaisPat,
                      comodos: comodosPat, pessoas, plano, revisoes, fichas }"
         :empresas="empresasPat"
         :locais="locaisPat"
