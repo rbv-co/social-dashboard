@@ -221,7 +221,7 @@ import { estado, PERMISSION_TREE, RECURSOS } from '../../compartilhado/controle-
 // pela API em Go. O resto desta tela é a área `admin` (5.1).
 import { areaNaApi, corpoDaEdge } from '../../compartilhado/api.js'
 // Chave `admin` (Plano 7): as tabelas do 5.1 pela API (adFetch, gravar e os .from abaixo).
-import { tabelaNaApi, fetchPostgrest, deOnde, contarPelaApi, escreverComposto } from '../../compartilhado/banco-pela-api.js'
+import { tabelaNaApi, fetchPostgrest, deOnde, contarPelaApi, ligarCadastroPelaApi, escreverComposto } from '../../compartilhado/banco-pela-api.js'
 import { APROVACOES } from '../../compartilhado/catalogo-de-ferramentas.js'
 import { agruparRecursos, contarAcoes, estadoDaSelecao, marcarTudo } from './agrupar-permissoes.js'
 import { derivarFeatures } from '../../compartilhado/derivar-features.js'
@@ -3189,7 +3189,7 @@ function _secaoLotacao(alvo, colaborador) {
 async function _gravarLotacao(sel, colaboradorId, coluna) {
   const antes = sel.dataset.valorAnterior || ''
   sel.disabled = true
-  const { error } = await sbClient.from('acessos_pessoas')
+  const { error } = await deOnde(sbClient).from('acessos_pessoas')
     .update({ [coluna]: sel.value || null }).eq('id', colaboradorId)
   sel.disabled = false
   if (error) {
@@ -3213,9 +3213,18 @@ async function _ligarCadastro(botao, colaboradorId, profileId, aoMudar) {
   //
   // O `.select('id')` é o que permite saber se alguma linha foi mesmo afetada:
   // sem ele, zero linhas atualizadas volta como sucesso.
-  const { data, error } = await sbClient.from('acessos_pessoas')
-    .update({ profile_id: profileId })
-    .eq('id', colaboradorId).is('profile_id', null).select('id')
+  // Pela API a guarda é do servidor: `ligar` responde 409 se a ficha já é de OUTRO login.
+  let data, error
+  if (areaNaApi('acessos')) {
+    const r = await ligarCadastroPelaApi(colaboradorId, profileId)
+    const jaLigada = r.error?.status === 409
+    error = jaLigada ? null : r.error
+    data = jaLigada ? [] : [{ id: colaboradorId }]
+  } else {
+    ({ data, error } = await deOnde(sbClient).from('acessos_pessoas')
+      .update({ profile_id: profileId })
+      .eq('id', colaboradorId).is('profile_id', null).select('id'))
+  }
   if (!error && (!data || !data.length)) {
     botao.disabled = false; botao.textContent = antes
     adminToast('Este cadastro já foi ligado a outro login enquanto esta ficha estava aberta. '
@@ -3235,7 +3244,7 @@ async function _criarCadastro(botao, p, aoMudar) {
   botao.disabled = true; const antes = botao.textContent; botao.textContent = 'Criando…'
   // `nome` é a única coluna obrigatória sem valor padrão. Cai para o e-mail
   // quando o login não tem nome — mesma regra que a lista usa para exibir.
-  const { error } = await sbClient.from('acessos_pessoas').insert({
+  const { error } = await deOnde(sbClient).from('acessos_pessoas').insert({
     nome: (p.bruto && p.bruto.name) || p.email,
     email_corporativo: p.email,
     profile_id: p.id,
@@ -3706,7 +3715,7 @@ async function loadAdminUsers() {
     // login — continuaria aparecendo como "sem cadastro de colaborador". Sem o
     // `id`, ligar o cadastro mandaria `undefined` e não atualizaria nada. Os
     // dois defeitos seriam silenciosos: nenhum erro, nenhum teste vermelho.
-    sbClient.from('acessos_pessoas').select(
+    deOnde(sbClient).from('acessos_pessoas').select(
       'id,profile_id,nome,email_corporativo,conta_apple,setor_id,organizacao_id,marca_id,'
       + 'acessos_setores(nome),acessos_organizacoes(nome),patrimonio_empresas(nome)'),
   ])
@@ -3755,8 +3764,8 @@ async function loadAdminUsers() {
   // pequenas em paralelo; o atraso não se compara ao estrago.
   const [rMarcas, rLocais, rSetores] = await Promise.all([
     deOnde(sbClient).from('patrimonio_empresas').select('id,nome').order('nome'),
-    sbClient.from('acessos_organizacoes').select('id,nome').order('nome'),
-    sbClient.from('acessos_setores').select('id,nome').order('nome'),
+    deOnde(sbClient).from('acessos_organizacoes').select('id,nome').order('nome'),
+    deOnde(sbClient).from('acessos_setores').select('id,nome').order('nome'),
   ])
   const errListas = rMarcas.error || rLocais.error || rSetores.error
   if (errListas) {

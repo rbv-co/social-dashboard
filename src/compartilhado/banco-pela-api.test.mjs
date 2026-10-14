@@ -423,3 +423,97 @@ test('escreverComposto: sucesso devolve o corpo; 409 devolve a frase e o status'
   assert.equal(dup.error.status, 409)
   assert.equal(dup.error.message, 'Já existe ficha deste carro hoje.')
 })
+
+// ── 5.4 — Colaboradores e Acessos ──
+test('acessos_pessoas: embutidos fixos passam, status vira filtro e a contagem sai do cabeçalho', async () => {
+  const pedidos = api({ 'GET /acessos/pessoas': [200, [{ id: 'p1', nome: 'Ana', profile_id: null, acessos_setores: { nome: 'TI' }, acessos_organizacoes: null, patrimonio_empresas: null }], { 'X-Total-Count': '1' }] })
+  const r = await b.consultaPelaApi('acessos_pessoas').select('id,nome,acessos_setores(nome),patrimonio_empresas(nome)').eq('status', 'ativo')
+  assert.deepEqual(r.data, [{ id: 'p1', nome: 'Ana', acessos_setores: { nome: 'TI' }, patrimonio_empresas: null }])
+  assert.equal(busca(pedidos[0]).status, 'ativo')
+  api({ 'GET /acessos/pessoas': [200, [{ id: 'p1' }], { 'X-Total-Count': '7' }] })
+  const c = await b.consultaPelaApi('acessos_pessoas').select('*', { count: 'exact', head: true }).eq('status', 'desligado')
+  assert.equal(c.count, 7)
+})
+
+test('acessos_vinculos: o embutido acessos_recursos só com as colunas que a rota devolve', async () => {
+  api({ 'GET /acessos/vinculos': [200, [{ pessoa_id: 'p', acessos_recursos: { nome: 'Pasta', tipo: 'icloud', arquivado_em: null } }]] })
+  const ok = await b.consultaPelaApi('acessos_vinculos').select('acessos_recursos(nome,tipo,arquivado_em)').eq('pessoa_id', 'p')
+  assert.equal(ok.data[0].acessos_recursos.nome, 'Pasta')
+  const ruim = await b.consultaPelaApi('acessos_vinculos').select('acessos_recursos(nome,caminho)').eq('pessoa_id', 'p')
+  assert.match(ruim.error.message, /só devolve/)
+})
+
+test('acessos_recursos: arquivado_em nulo = arquivado=false; ordens duplas ficam na tela', async () => {
+  const pedidos = api({ 'GET /acessos/recursos': [200, [{ id: 'b', nome: 'B', caminho: 'x' }, { id: 'a', nome: 'A', caminho: 'x' }]] })
+  const r = await b.consultaPelaApi('acessos_recursos').select('*').eq('tipo', 'workdrive').is('arquivado_em', null).order('caminho').order('nome')
+  assert.deepEqual([busca(pedidos[0]).tipo, busca(pedidos[0]).arquivado, busca(pedidos[0]).ordem], ['workdrive', 'false', undefined])
+  assert.deepEqual(r.data.map((x) => x.id), ['a', 'b'])
+})
+
+test('acessos_log: `quem` sai do corpo; pessoa: delete por id e update sem profile_id', async () => {
+  const pedidos = api({ 'POST /acessos/log': [201, { id: 'l' }], 'DELETE /acessos/pessoas/p9': [204, undefined], 'PATCH /acessos/pessoas/p1': [200, { id: 'p1' }] })
+  await b.consultaPelaApi('acessos_log').insert({ quem: 'u', acao: 'x', resultado: 'ok' })
+  await b.consultaPelaApi('acessos_pessoas').delete().eq('id', 'p9')
+  await b.consultaPelaApi('acessos_pessoas').update({ nome: 'N' }).eq('id', 'p1')
+  assert.deepEqual(pedidos[0].corpo, { acao: 'x', resultado: 'ok' })
+  assert.deepEqual(pedidos.map((p) => p.chave), ['POST /acessos/log', 'DELETE /acessos/pessoas/p9', 'PATCH /acessos/pessoas/p1'])
+})
+
+test('ligarCadastroPelaApi: POST /ligar; ficha de outro login = 409 com a frase', async () => {
+  const pedidos = api({ 'POST /acessos/pessoas/p1/ligar': [409, { error: 'conflito', mensagem: 'Esta ficha já está ligada a outro login.' }] })
+  const r = await b.ligarCadastroPelaApi('p1', 'u2')
+  assert.deepEqual(pedidos[0].corpo, { profile_id: 'u2' })
+  assert.equal(r.error.status, 409)
+})
+
+// ── 5.5 — Comercial ──
+test('bling_pedido_nota: o `.or(and,and)` da janela vira `janela=[A,B]`; outro `or` é recusado', async () => {
+  const pedidos = api({ 'GET /comercial/notas': [200, [{ pedido_id: 1 }]] })
+  const a = '2026-10-01', z = '2026-10-31'
+  const r = await b.consultaPelaApi('bling_pedido_nota').select('pedido_id')
+    .or(`and(data_da_venda.gte.${a},data_da_venda.lte.${z}),and(data_pedido.gte.${a},data_pedido.lte.${z})`).range(0, 999)
+  assert.equal(r.error, null)
+  assert.deepEqual(busca(pedidos[0]), { janela: '[2026-10-01,2026-10-31]', limite: '1000' })
+  const ruim = await b.consultaPelaApi('bling_pedido_nota').select('pedido_id').or('total.gt.5,total.lt.1').range(0, 9)
+  assert.match(ruim.error.message, /or sem tradução/)
+})
+
+test('`.range(de, ate)` vira limite + deslocamento (a 2ª página da tela é a 2ª da rota)', async () => {
+  const pedidos = api({ 'GET /comercial/ajustes-de-valor': [200, [{ pedido_id: 9, total_corrigido: 1 }]] })
+  await b.consultaPelaApi('bling_pedido_ajuste_valor').select('pedido_id,total_corrigido').range(1000, 1999)
+  assert.deepEqual(busca(pedidos[0]), { limite: '1000', deslocamento: '1000' })
+})
+
+test('shopify_pedidos: gte/lt viram criado_de/criado_ate; `in` de status vira lista', async () => {
+  const pedidos = api({ 'GET /comercial/pedidos-shopify': [200, []] })
+  await b.consultaPelaApi('shopify_pedidos').select('id,total').gte('criado_em_shopify', '2026-10-01T03:00:00.000Z')
+    .lt('criado_em_shopify', '2026-11-01T03:00:00.000Z').in('status_financeiro', ['paid', 'partially_paid']).range(0, 999)
+  assert.deepEqual(busca(pedidos[0]), { criado_de: '2026-10-01T03:00:00.000Z', criado_ate: '2026-11-01T03:00:00.000Z', status_financeiro: 'paid,partially_paid', limite: '1000' })
+})
+
+test('metas: year/month viram ano/mes; bling_lojas: PATCH pelo loja_id', async () => {
+  const pedidos = api({ 'GET /comercial/metas-lojas': [200, []], 'PATCH /comercial/lojas/42': [200, { loja_id: 42, fechado_em: '2026-10-01' }] })
+  await b.consultaPelaApi('bling_metas').select('loja_id,meta_valor').eq('year', 2026).eq('month', 10)
+  assert.deepEqual([busca(pedidos[0]).ano, busca(pedidos[0]).mes], ['2026', '10'])
+  const r = await b.fetchPostgrest('bling_lojas?loja_id=eq.42', { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ fechado_em: '2026-10-01' }) })
+  assert.equal(r.ok, true)
+  assert.equal(pedidos[1].chave, 'PATCH /comercial/lojas/42')
+})
+
+test('bling_pedido_vendedor: upsert em lotes de 1000 e `.limit(5000)` lê em páginas até o limite', async () => {
+  const pedidos = api({ 'POST /comercial/pedidos-vendedor/gravar': [200, { gravadas: 1 }] })
+  await b.consultaPelaApi('bling_pedido_vendedor').upsert(Array.from({ length: 2500 }, (_, i) => ({ pedido_id: i + 1, vendor_id: 1 })))
+  assert.deepEqual(pedidos.map((p) => p.corpo.linhas.length), [1000, 1000, 500])
+  let n = 0
+  globalThis.fetch = async (url) => {
+    const u = new URL(url, 'http://x'); const desl = Number(u.searchParams.get('deslocamento') || 0)
+    n++
+    const linhas = Array.from({ length: Math.min(1000, 2300 - desl) }, (_, i) => ({ vendor_id: 1, loja_id: 2, pedido_data: '2026-10-01', i: desl + i }))
+    return { status: 200, ok: true, text: async () => JSON.stringify(linhas), headers: { get: (k) => (k === 'X-Total-Count' ? '2300' : null) } }
+  }
+  const r = await b.consultaPelaApi('bling_pedido_vendedor').select('vendor_id,loja_id,pedido_data').order('pedido_data', { ascending: false }).limit(5000)
+  assert.equal(r.data.length, 2300)
+  assert.equal(n, 3)
+  const recusa = await b.consultaPelaApi('bling_lojas').select('*').limit(5000)
+  assert.match(recusa.error.message, /acima do teto/)
+})

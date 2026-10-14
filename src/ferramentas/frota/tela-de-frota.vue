@@ -24,7 +24,7 @@ import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-u
 // Chave `edges-core` (Plano 7): avisar-decisao-de-reserva (Plano 4).
 import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi, fetchDaApi, rpcNaArea } from '../../compartilhado/api.js'
 // Chave `admin` (Plano 7): `profiles` pela API (5.1). Chave `frota` (5.3): as `frota_*`, 2 RPCs e as 3 gravações compostas.
-import { deOnde, escreverComposto } from '../../compartilhado/banco-pela-api.js'
+import { deOnde, escreverComposto, ligarCadastroPelaApi } from '../../compartilhado/banco-pela-api.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
 import { seloDoVeiculo, tomDoCartao, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
@@ -832,8 +832,11 @@ async function darAcessoAoDono(c) {
     // PASSO 5: o elo com o cadastro. Sem ele o quadro de cobrança não casa a
     // pessoa com a conta. (O aviso das 7h30 ainda chega: o robô resgata pelo
     // e-mail quando o elo falta — conferido em `_shared/quem-loga.js`.)
-    const { data: ligou } = await sbClient.from('acessos_pessoas')
-      .update({ profile_id: perfil.id }).eq('id', pessoa.id).select('id')
+    // Pela API o elo tem rota própria (`ligar`; admin; ficha de OUTRO login = 409, sem sobrescrever).
+    const { data: ligou } = areaNaApi('acessos')
+      ? await ligarCadastroPelaApi(pessoa.id, perfil.id).then((r) => ({ data: r.error ? [] : [{ id: pessoa.id }] }))
+      : await deOnde(sbClient).from('acessos_pessoas')
+        .update({ profile_id: perfil.id }).eq('id', pessoa.id).select('id')
     if ((ligou || []).length !== 1) {
       pendencias.push('O elo entre a conta e a ficha do colaborador não ficou gravado. '
         + 'O aviso ainda chega pelo e-mail, mas avise quem administra para ligar a ficha.')
@@ -951,7 +954,7 @@ async function copiarTelefoneParaCadastro(c) {
   if (!pessoa || !contato.telefone || salvandoTelefone[c.veiculo.id]) return
   salvandoTelefone[c.veiculo.id] = true
   erroSalvarTelefone[c.veiculo.id] = ''
-  const { error } = await sbClient.from('acessos_pessoas')
+  const { error } = await deOnde(sbClient).from('acessos_pessoas')
     .update({ numero_pessoal: contato.telefone, atualizado_em: new Date().toISOString() })
     .eq('id', pessoa.id)
   salvandoTelefone[c.veiculo.id] = false
@@ -1008,7 +1011,7 @@ async function salvarTelefoneDigitado(c) {
 
   salvandoTelefone[c.veiculo.id] = true
   erroSalvarTelefone[c.veiculo.id] = ''
-  const { data, error } = await sbClient.from('acessos_pessoas')
+  const { data, error } = await deOnde(sbClient).from('acessos_pessoas')
     .update({ numero_corporativo: conferido.numero, atualizado_em: new Date().toISOString() })
     .eq('id', pessoa.id)
     .select('id')
@@ -1079,7 +1082,7 @@ async function carregar() {
     // (ficha ligada ao login mas sem e-mail preenchido não era achada). Sem a
     // coluna aqui, o resgate pelo elo nunca dispararia — é o mesmo erro que já
     // aconteceu com `email_corporativo`: a decisão erra calada.
-    sbClient.from('acessos_pessoas')
+    deOnde(sbClient).from('acessos_pessoas')
       .select('id,nome,email_corporativo,profile_id,numero_corporativo,numero_pessoal').order('nome'),
     // PORTA ESTREITA (13/08/2026): a leitura acima devolve VAZIO para quem não
     // tem Colaboradores e Acessos — medido: Gabriel Alves, Guilherme Cardoso e
