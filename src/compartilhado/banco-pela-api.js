@@ -163,6 +163,40 @@ const ROTAS = {
   },
   // só escreve (nenhuma tela lê o log); `quem` vem da sessão
   patrimonio_log: { area: 'patrimonio', rota: '/patrimonio/log', filtros: {}, ordens: [], autoria: ['quem'] },
+  // ── 5.3 — Frota (`/frota/*`). As gravações compostas (ficha, manutenção, troca de posse) não passam
+  // por aqui: são `escreverComposto` (uma transação na API) ──
+  frota_veiculos: { area: 'frota', rota: '/frota/veiculos', filtros: { pessoa_id: eq('pessoa_id') }, ordens: ['nome'] },
+  frota_uso: {
+    area: 'frota', rota: '/frota/usos',
+    // `volta_em is null` = aberta; `not.is.null` = fechada
+    filtros: {
+      volta_em: { is: ['aberta', nulo('true')], not: ['aberta', naoNulo('false')] },
+      veiculo_id: eq('veiculo_id'), saida_em: { gte: 'saida_de', lte: 'saida_ate' },
+    },
+    ordens: ['saida_em'],
+  },
+  frota_requisicoes: { area: 'frota', rota: '/frota/requisicoes', filtros: {}, ordens: ['retirada_prevista'], autoria: ['criada_por'] },
+  frota_checklist: {
+    area: 'frota', rota: '/frota/checklists',
+    filtros: {
+      veiculo_id: eq('veiculo_id'), feita_em: { gte: 'feita_de', lte: 'feita_ate' },
+      assinada_em: { is: ['assinada', nulo('false')], not: ['assinada', naoNulo('true')] },
+    },
+    ordens: ['feita_em'],
+  },
+  frota_checklist_respostas: { area: 'frota', rota: '/frota/checklists/respostas', filtros: { checklist_id: { eq: 'checklist_id', in: 'checklist_id' } }, ordens: ['ordem'] },
+  frota_checklist_pdf: {
+    area: 'frota', rota: '/frota/checklists/copias',
+    // `situacao <> 'enviado'` = a rota `pendente=true`; outro valor não tem par
+    filtros: { situacao: { eq: 'situacao', neq: ['pendente', (v) => { if (v !== 'enviado') throw new ErroDeTraducao(`neq.${v} sem tradução`); return 'true' }] } },
+    ordens: ['criado_em'],
+  },
+  frota_checklist_itens: { area: 'frota', rota: '/frota/checklist-itens', filtros: {}, ordens: ['ordem'] },
+  // linha única (`id = true`, fixada pela rota): o PATCH não leva id
+  frota_checklist_config: { area: 'frota', rota: '/frota/checklist-config', filtros: {}, ordens: [], linhaUnica: true },
+  frota_plano_revisao: { area: 'frota', rota: '/frota/plano-revisao', filtros: {}, ordens: ['ordem'] },
+  frota_revisoes: { area: 'frota', rota: '/frota/revisoes', filtros: {}, ordens: [] },
+  frota_abastecimentos: { area: 'frota', rota: '/frota/abastecimentos', filtros: {}, ordens: ['abastecido_em'], autoria: ['criado_por'] },
   // ── 5.8 — Fábrica de anúncios (leituras; as escritas do painel são as 4 edges e o
   // `escolher`, feitos na tela; as do robô são as rotas `/fabrica/robo/*`) ──
   fabrica_lojas: { area: 'fabrica', rota: '/fabrica/lojas', filtros: { ativo: eq('ativo') }, ordens: [] },
@@ -503,7 +537,9 @@ export async function escreverPelaApi(operacao, partes, corpo) {
     }
   } else if (operacao === 'editar') {
     if (linhas.length !== 1) throw new ErroDeTraducao(`${partes.tabela}: editar pede um corpo`)
-    const r = await um('PATCH', `${def.rota}/${encodeURIComponent(idDoFiltro(partes, 'editar'))}`, linhas[0])
+    // linha única: o filtro da tela é `id=true` e a rota não tem id no caminho
+    const caminho = def.linhaUnica ? def.rota : `${def.rota}/${encodeURIComponent(idDoFiltro(partes, 'editar'))}`
+    const r = await um('PATCH', caminho, linhas[0])
     if (r.erro) return { data: null, error: r.erro }
     res = [r.linha]
   } else if (operacao === 'apagar') {
@@ -562,6 +598,9 @@ class ConsultaPelaApi {
   eq(col, val) { this.p.filtros.push({ col, op: 'eq', val: String(val) }); return this }
   ilike(col, val) { this.p.filtros.push({ col, op: 'ilike', val: String(val) }); return this }
   is(col, val) { this.p.filtros.push({ col, op: 'is', val: String(val) }); return this }
+  neq(col, val) { this.p.filtros.push({ col, op: 'neq', val: String(val) }); return this }
+  // `.not('col', 'is', null)` → `col=not.is.null` (o mesmo que a URL à mão)
+  not(col, op, val) { this.p.filtros.push({ col, op: 'not', val: `${op}.${val}` }); return this }
   in(col, vals) { this.p.filtros.push({ col, op: 'in', val: vals.join(',') }); return this }
   gte(col, val) { this.p.filtros.push({ col, op: 'gte', val: String(val) }); return this }
   lte(col, val) { this.p.filtros.push({ col, op: 'lte', val: String(val) }); return this }
@@ -614,6 +653,15 @@ class ConsultaPelaApi {
  * ligada; senão, é o MESMO `sbClient.from('t')` de sempre.
  */
 /** A consulta pela API, sem olhar a chave (para os testes e para quem já decidiu). */
+/**
+ * Gravação composta (UMA transação na API: ficha de checklist, manutenção, troca de
+ * posse). Devolve `{ data, error }` como o supabase-js; o erro leva `status` e `message` (a frase).
+ */
+export async function escreverComposto(caminho, corpo) {
+  const r = await pedir('POST', caminho, { corpo })
+  return r.error ? { data: null, error: erroDoSupabase(r.error, r.data) } : { data: r.data, error: null }
+}
+
 export function consultaPelaApi(tabela) { return new ConsultaPelaApi(tabela) }
 
 export function deOnde(sbClient) {

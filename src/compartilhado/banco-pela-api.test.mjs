@@ -351,3 +351,75 @@ test('5.2: criar bem devolve o objeto (.select("id").single()); nome repetido vo
   assert.equal(dup.error.status, 409)
   assert.equal(dup.error.message, 'Já existe.')
 })
+
+// ── 5.3 — Frota ──
+const busca = (p) => Object.fromEntries(new URLSearchParams(p.busca))
+
+test('frota_uso: aberta/fechada viram `aberta`, a ordem e o limite vão para a rota', async () => {
+  const pedidos = api({ 'GET /frota/usos': [200, [{ id: 'u1' }], { 'X-Total-Count': '1' }] })
+  await b.consultaPelaApi('frota_uso').select('*').is('volta_em', null).order('saida_em', { ascending: false })
+  await b.consultaPelaApi('frota_uso').select('*').not('volta_em', 'is', null).order('saida_em', { ascending: false }).limit(400)
+  assert.equal(busca(pedidos[0]).aberta, 'true')
+  assert.equal(busca(pedidos[0]).ordem, 'saida_em.desc')
+  assert.deepEqual([busca(pedidos[1]).aberta, busca(pedidos[1]).limite], ['false', '400'])
+})
+
+test('frota_checklist: `assinada_em` não nulo vira `assinada=true`; faixa de datas vira feita_de/feita_ate', async () => {
+  const pedidos = api({ 'GET /frota/checklists': [200, [{ assinatura_hash: 'h' }]] })
+  const r = await b.consultaPelaApi('frota_checklist').select('assinatura_hash').eq('veiculo_id', 'v1')
+    .not('assinada_em', 'is', null).order('feita_em', { ascending: false }).limit(1)
+  assert.deepEqual(r.data, [{ assinatura_hash: 'h' }])
+  assert.deepEqual(busca(pedidos[0]), { veiculo_id: 'v1', assinada: 'true', ordem: 'feita_em.desc', limite: '1' })
+  await b.consultaPelaApi('frota_checklist').select('*').gte('feita_em', '2026-07-01').lte('feita_em', '2026-07-31')
+  assert.deepEqual([busca(pedidos[1]).feita_de, busca(pedidos[1]).feita_ate], ['2026-07-01', '2026-07-31'])
+})
+
+test('frota_checklist_pdf: `neq enviado` = pendente=true; outro valor é recusado', async () => {
+  const pedidos = api({ 'GET /frota/checklists/copias': [200, []] })
+  const ok = await b.consultaPelaApi('frota_checklist_pdf').select('*').neq('situacao', 'enviado').order('criado_em').limit(200)
+  assert.equal(ok.error, null)
+  assert.equal(busca(pedidos[0]).pendente, 'true')
+  const ruim = await b.consultaPelaApi('frota_checklist_pdf').select('*').neq('situacao', 'erro').limit(1)
+  assert.match(ruim.error.message, /sem tradução/)
+})
+
+test('frota_checklist_respostas: `in` de ids vira a lista da rota', async () => {
+  const pedidos = api({ 'GET /frota/checklists/respostas': [200, []] })
+  await b.consultaPelaApi('frota_checklist_respostas').select('*').in('checklist_id', ['a', 'b']).order('ordem')
+  assert.equal(busca(pedidos[0]).checklist_id, 'a,b')
+})
+
+test('frota_checklist_config: update com `id=true` é PATCH na rota sem id', async () => {
+  const pedidos = api({ 'PATCH /frota/checklist-config': [200, { dia_semanal: 1 }] })
+  const r = await b.consultaPelaApi('frota_checklist_config').update({ dia_semanal: 1 }).eq('id', true)
+  assert.equal(r.error, null)
+  assert.equal(pedidos[0].chave, 'PATCH /frota/checklist-config')
+})
+
+test('frota_requisicoes e abastecimentos: a autoria sai do corpo (é da sessão)', async () => {
+  const pedidos = api({ 'POST /frota/requisicoes': [201, { id: 'r1' }], 'POST /frota/abastecimentos': [201, { id: 'a1' }] })
+  await b.consultaPelaApi('frota_requisicoes').insert({ veiculo_id: 'v', criada_por: 'u' })
+  await b.consultaPelaApi('frota_abastecimentos').insert({ veiculo_id: 'v', criado_por: 'u' })
+  assert.deepEqual(pedidos.map((p) => p.corpo), [{ veiculo_id: 'v' }, { veiculo_id: 'v' }])
+})
+
+test('frota_revisoes: apagar por id é DELETE na rota', async () => {
+  const pedidos = api({ 'DELETE /frota/revisoes/r9': [204, undefined] })
+  const r = await b.consultaPelaApi('frota_revisoes').delete().eq('id', 'r9')
+  assert.equal(r.error, null)
+  assert.equal(pedidos[0].chave, 'DELETE /frota/revisoes/r9')
+})
+
+test('escreverComposto: sucesso devolve o corpo; 409 devolve a frase e o status', async () => {
+  const pedidos = api({
+    'POST /frota/usos/trocar': [200, { fechado: 'u1', aberto: 'u2' }],
+    'POST /frota/checklists': [409, { error: 'conflito', mensagem: 'Já existe ficha deste carro hoje.' }],
+  })
+  const ok = await b.escreverComposto('/frota/usos/trocar', { veiculo_id: 'v' })
+  assert.deepEqual(ok, { data: { fechado: 'u1', aberto: 'u2' }, error: null })
+  assert.deepEqual(pedidos[0].corpo, { veiculo_id: 'v' })
+  const dup = await b.escreverComposto('/frota/checklists', { ficha: {} })
+  assert.equal(dup.data, null)
+  assert.equal(dup.error.status, 409)
+  assert.equal(dup.error.message, 'Já existe ficha deste carro hoje.')
+})

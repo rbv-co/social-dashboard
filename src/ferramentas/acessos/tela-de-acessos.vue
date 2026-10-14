@@ -68,6 +68,7 @@ import { deOnde, TETO_DE_LINHAS } from '../../compartilhado/banco-pela-api.js'
 import { areaNaApi } from '../../compartilhado/api.js'
 // A API em Go entrega no máximo TETO_DE_LINHAS por pedido (o `limit` de 5000 seria recusado): a auditoria de bens pede o teto.
 const LIMITE_BENS_AUDITORIA = areaNaApi('patrimonio') ? TETO_DE_LINHAS : LIMITE_AUDITORIA
+const LIMITE_VEICULOS_AUDITORIA = areaNaApi('frota') ? TETO_DE_LINHAS : LIMITE_AUDITORIA
 
 const router = useRouter()
 
@@ -1821,7 +1822,7 @@ async function _acFichaCarregarContadores(id){
   try{
     const[b,v,t]=await Promise.all([
       deOnde(sbClient).from('patrimonio_bens').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
-      sbClient.from('frota_veiculos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
+      deOnde(sbClient).from('frota_veiculos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
       sbClient.from('acessos_termos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
     ]);
     if(_acSel!==id)return;
@@ -2079,7 +2080,7 @@ async function _acRenderPatItens(pessoaId){
       deOnde(sbClient).from('patrimonio_bens')
         .select('id,numero,nome,marca,numero_serie,situacao,valor_centavos,data_compra,patrimonio_categorias(nome),patrimonio_locais(nome),patrimonio_comodos(nome)')
         .eq('pessoa_id',pessoaId).order('nome'),
-      sbClient.from('frota_veiculos').select('id,nome,placa').eq('pessoa_id',pessoaId).order('nome')
+      deOnde(sbClient).from('frota_veiculos').select('id,nome,placa').eq('pessoa_id',pessoaId).order('nome')
     ]);
     bens=r[0].data||[];erroBens=r[0].error;
     veiculos=r[1].data||[];erroVeiculos=r[1].error;
@@ -2250,7 +2251,7 @@ async function _acRenderAuditoria(){
       // SEM avisar. foiCortado() abaixo detecta quando a lista voltou exatamente
       // no limite e transforma o corte silencioso num aviso na tela.
       deOnde(sbClient).from('patrimonio_bens').select('id,nome,pessoa_id').limit(LIMITE_BENS_AUDITORIA),
-      sbClient.from('frota_veiculos').select('id,nome,pessoa_id').limit(LIMITE_AUDITORIA),
+      deOnde(sbClient).from('frota_veiculos').select('id,nome,pessoa_id').limit(LIMITE_VEICULOS_AUDITORIA),
       sbClient.from('acessos_vinculos').select('pessoa_id,papel,estado,acessos_recursos(nome,tipo,arquivado_em)')
     ]));
   }catch(e){
@@ -2303,7 +2304,7 @@ async function _acRenderAuditoria(){
   }
   // Item C: número de linhas bateu igual ao limite explícito → tratamos como
   // corte do PostgREST e avisamos, em vez de deixar a tela parecer completa.
-  const corteMsg=avisoDeCorte([foiCortado(bens,LIMITE_BENS_AUDITORIA)&&{rotulo:'bens',limite:LIMITE_BENS_AUDITORIA},foiCortado(veiculosAud)&&'veículos']);
+  const corteMsg=avisoDeCorte([foiCortado(bens,LIMITE_BENS_AUDITORIA)&&{rotulo:'bens',limite:LIMITE_BENS_AUDITORIA},foiCortado(veiculosAud,LIMITE_VEICULOS_AUDITORIA)&&{rotulo:'veículos',limite:LIMITE_VEICULOS_AUDITORIA}]);
   if(corteMsg)avisos.push(corteMsg);
   if(avisos.length)_acAudAviso=avisos.join(' ');
   const setorById={};(setores||[]).forEach(s=>setorById[s.id]=s);

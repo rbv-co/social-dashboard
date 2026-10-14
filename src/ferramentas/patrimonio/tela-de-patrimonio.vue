@@ -971,7 +971,7 @@ import { normalizarPlaca, fraseDaSincronia } from '../frota/etiqueta-do-veiculo.
 import { vTravaRolagem } from '../../compartilhado/travar-rolagem-de-fundo.js'
 
 // Patrimônio pela API em Go quando `VITE_API_AREAS` inclui `patrimonio`; senão, o Supabase de sempre.
-// Tabela que ainda não mora na API (frota_veiculos) cai no `sbClient` dentro do `deOnde`.
+// `frota_veiculos` vai pela API quando a área `frota` está ligada; senão cai no `sbClient` dentro do `deOnde`.
 const db = deOnde(sbClient)
 // Nome repetido: 23505 no Supabase, 409 `conflito` na API.
 const ehNomeRepetido = (e) => e.code === '23505' || e.status === 409 || /duplicate key|unique/i.test(e.message)
@@ -1342,7 +1342,7 @@ async function criarVeiculoDoBem() {
   })
   gravandoLigacaoFrota.value = false
   if (error) {
-    adminToast(/duplicate|unique/i.test(error.message || '')
+    adminToast(error.status === 409 || /duplicate|unique/i.test(error.message || '')
       ? 'Já existe outro veículo da Frota com essa placa.'
       : 'Não consegui criar o veículo na Frota. Tente de novo.', false)
     return
