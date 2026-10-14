@@ -17,9 +17,6 @@ const TotalRPCDoPainel = 92
 // sub-plano. Registrar uma função em FuncoesRPC exige TIRÁ-LA daqui no mesmo commit (a montagem
 // recusa o nome nos dois lugares: mover, não copiar). Critério de entrada do Plano 8: lista vazia.
 var RPCPendentes = []string{
-	// 5.3 (frota): 2
-	"etiqueta_quem_e",
-	"frota_corrente_do_veiculo",
 	// 5.10 (autenticidade): 16
 	"vessel_alertas",
 	"vessel_baixar_garantia",

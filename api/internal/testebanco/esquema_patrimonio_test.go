@@ -129,6 +129,7 @@ func TestFatiaDoPatrimonioPosseDefaultsERPCsFelizes(t *testing.T) {
 		e1   = "a1000000-0000-4000-a000-000000000011"
 		catV = "a4000000-0000-4000-a000-000000000011"
 		v1   = "f0000000-0000-4000-a000-000000000011"
+		v2   = "f0000000-0000-4000-a000-000000000012"
 		pos  = "f1000000-0000-4000-a000-000000000011"
 		via  = "f1000000-0000-4000-a000-000000000012"
 	)
@@ -137,10 +138,11 @@ func TestFatiaDoPatrimonioPosseDefaultsERPCsFelizes(t *testing.T) {
 		insert into profiles (id, email, role, features) values ('`+pat+`', 'pat@x.com', 'viewer', '{patrimonio}');
 		insert into patrimonio_empresas (id, nome) values ('`+e1+`', 'Vessel');
 		insert into patrimonio_categorias (id, nome) values ('`+catV+`', 'Veículos');
-		insert into frota_veiculos (id, placa, nome, pessoa_id) values ('`+v1+`', 'ABC1D23', 'Kwid', null);
-		-- carro sem responsável com uma posse aberta (combinação que o gatilho existe para desfazer) e uma
-		-- viagem aberta, sem tipo: o default 'viagem' a deixa fora do fechamento
-		insert into frota_uso (id, veiculo_id, tipo) values ('`+pos+`', '`+v1+`', 'posse');
+		insert into frota_veiculos (id, placa, nome, pessoa_id) values ('`+v1+`', 'ABC1D23', 'Kwid', null), ('`+v2+`', 'ABC1D24', 'Uno', null);
+		-- um carro sem responsável com uma posse aberta (combinação que o gatilho existe para desfazer) e outro
+		-- com uma viagem aberta, sem tipo: o default 'viagem' a deixa fora do fechamento. Dois carros, e não um:
+		-- produção tem um índice único (uniq_frota_uso_um_aberto), um uso aberto por carro, de qualquer tipo
+		insert into frota_uso (id, veiculo_id, tipo) values ('`+pos+`', '`+v2+`', 'posse');
 		insert into frota_uso (id, veiculo_id) values ('`+via+`', '`+v1+`');`); err != nil {
 		t.Fatal(err)
 	}
@@ -157,13 +159,13 @@ func TestFatiaDoPatrimonioPosseDefaultsERPCsFelizes(t *testing.T) {
 	abertas := func() string {
 		return um(`select string_agg(tipo || ':' || (volta_em is null)::text, ',' order by tipo) from frota_uso`)
 	}
-	if err := como(`update frota_veiculos set nome = 'Kwid 2' where id = '` + v1 + `'`); err != nil {
+	if err := como(`update frota_veiculos set nome = 'Uno 2' where id = '` + v2 + `'`); err != nil {
 		t.Fatal(err)
 	}
 	if v := abertas(); v != "posse:true,viagem:true" {
 		t.Errorf("mudar o nome do carro mexeu nas posses (UPDATE OF pessoa_id): %s", v)
 	}
-	if err := como(`update frota_veiculos set pessoa_id = null where id = '` + v1 + `'`); err != nil {
+	if err := como(`update frota_veiculos set pessoa_id = null where id in ('` + v1 + `', '` + v2 + `')`); err != nil {
 		t.Fatal(err)
 	}
 	if v := abertas(); v != "posse:false,viagem:true" {
