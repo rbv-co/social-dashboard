@@ -91,6 +91,6 @@ func montarPessoas(r chi.Router, p *pgxpool.Pool) {
 	deve(consultaPessoas.Validar(autz.Producao))
 	deve(tabelaPessoas.Validar(autz.Producao))
 	r.Get("/acessos/pessoas", consultaPessoas.Handler(p, autz.Producao))
-	r.With(soSessaoPropria).Post("/acessos/pessoas", dados.RotaCriar[corpoPessoaNova](p, autz.Producao, tabelaPessoas))
+	r.With(soSessaoPropria, soAdminSeLiga).Post("/acessos/pessoas", dados.RotaCriar[corpoPessoaNova](p, autz.Producao, tabelaPessoas))
 	r.With(soSessaoPropria).Patch("/acessos/pessoas/{id}", dados.RotaEditar[corpoPessoa](p, autz.Producao, tabelaPessoas))
 }

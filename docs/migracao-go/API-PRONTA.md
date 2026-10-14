@@ -374,7 +374,7 @@ Montagem, `soPainel`, varreduras de vazamento por conta, "entrar como" e sessão
 | Método e caminho | Substitui (Supabase) | Quem pode | Observações |
 |---|---|---|---|
 | `GET /acessos/pessoas` | `acessos_pessoas` (Colaboradores e Acessos, Frota, Admin) | catálogo | `?status=`; `contar=1&limite=1` → `X-Total-Count`; embutidos acima |
-| `POST /acessos/pessoas` | `.insert` (cadastro e "criar cadastro" do Admin) | catálogo, sessão própria | `nome` obrigatório; nasce `ativo`; aceita `profile_id` na criação |
+| `POST /acessos/pessoas` | `.insert` (cadastro e "criar cadastro" do Admin) | catálogo, sessão própria | `nome` obrigatório; nasce `ativo`; `profile_id` na criação só com papel `admin` (`403 "Só admin pode ligar."`) |
 | `PATCH /acessos/pessoas/{id}` | `.update` (ficha, desligar, reativar, Zoho, lotação) | catálogo, sessão própria | `profile_id`, `avatar_url`, `id`, `criado_em` → `400` |
 | `POST /acessos/pessoas/{id}/ligar` | `.update({profile_id})` (Admin :3217, Frota :836) | **papel `admin`**, sessão própria | `{profile_id}`; ficha ligada a OUTRO login = `409`; ao mesmo = `200`; só a feature `acessos` = `403 "Só admin pode ligar."` (404 antes, para ficha invisível) |
 | `DELETE /acessos/pessoas/{id}` | `.delete` | **papel `admin`**, sessão própria | `204`, cascata do banco; só a feature = `403 "Só admin pode excluir."` |

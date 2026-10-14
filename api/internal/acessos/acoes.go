@@ -1,8 +1,10 @@
 package acessos
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -129,6 +131,29 @@ func (c corpoLog) Validar() error {
 }
 
 var tabelaLog = dados.Tabela{Nome: "acessos_log", Resposta: colunasLog, Autor: "quem"}
+
+// soAdminSeLiga: criar ficha JÁ ligada a um login (POST /acessos/pessoas com profile_id) é a mesma
+// decisão do ligar (pode_ver_bem), então exige o mesmo papel admin; sem profile_id nada muda. O corpo é
+// lido sob o teto de 1 MiB e devolvido ao handler; corpo ilegível segue adiante e o handler responde 400.
+func soAdminSeLiga(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		e := autz.EscopoDo(r.Context())
+		if e == nil || e.Papel == "admin" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		bruto, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		r.Body = io.NopCloser(bytes.NewReader(bruto))
+		var c struct {
+			ProfileID json.RawMessage `json:"profile_id"`
+		}
+		if err == nil && json.Unmarshal(bruto, &c) == nil && len(c.ProfileID) > 0 && string(c.ProfileID) != "null" {
+			dados.Erro(w, http.StatusForbidden, "sem_permissao", "Só admin pode ligar.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func montarAcoesDaPessoa(r chi.Router, p *pgxpool.Pool) {
 	deve(tabelaLog.Validar(autz.Producao))

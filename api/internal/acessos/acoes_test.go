@@ -157,3 +157,21 @@ func TestTrilha(t *testing.T) {
 			Efeito: "select count(*)::text from acessos_log where acao = 'colaborador.editar' and quem = '" + idAcessos + "'", Quer: "1"},
 	})
 }
+
+// Criar ficha já ligada a um login é o mesmo poder do ligar: só admin (achado da revisão do 5.4).
+func TestCriarJaLigadoSoAdmin(t *testing.T) {
+	m := novoMundo(t, montarPessoas, montarAcoesDaPessoa)
+	foto := m.Um(t, fotoDosAcessos)
+	nada := func(nome, quem, corpo string, status int) caso {
+		return caso{Nome: nome, Quem: quem, Metodo: "POST", Caminho: "/acessos/pessoas", Corpo: corpo, Status: status,
+			Efeito: fotoDosAcessos, Quer: foto}
+	}
+	m.Rodar(t, []caso{
+		nada("feature acessos liga na criação", "acessos", `{"nome":"Fulano","profile_id":"`+idAcessos+`"}`, 403),
+		nada("sem Acessos", "frota", `{"nome":"Fulano","profile_id":"`+idFrota+`"}`, 403),
+		{Nome: "acessos cria sem elo", Quem: "acessos", Metodo: "POST", Caminho: "/acessos/pessoas",
+			Corpo: `{"nome":"Fulano","profile_id":null}`, Status: 201, Tem: `"profile_id":null`},
+		{Nome: "admin cria já ligada", Quem: "admin", Metodo: "POST", Caminho: "/acessos/pessoas",
+			Corpo: `{"nome":"Beltrano","profile_id":"` + idViewer + `"}`, Status: 201, Tem: idViewer},
+	})
+}
