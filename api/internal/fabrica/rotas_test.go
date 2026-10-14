@@ -44,12 +44,15 @@ func mundoMontado(t *testing.T) (*mundoteste.Mundo, *atomic.Int64) {
 	return novoMundo(t, func(r chi.Router, p *pgxpool.Pool) { Montar(r, p, gh, dir) }), &pedidos
 }
 
+// a query obrigatória das leituras que não respondem sem ela (Plano 5.10)
+var consultas = map[string]string{"/fabrica/robo/material-do-sku": "?sku=SS0001HB.S1"}
+
 func varrer(t *testing.T, m *mundoteste.Mundo, f func(metodo, rota, caminho, corpo string)) (leituras, gravacoes int) {
 	t.Helper()
 	err := chi.Walk(m.H.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		if metodo == http.MethodGet {
 			leituras++
-			f(metodo, rota, rota, "")
+			f(metodo, rota, rota+consultas[rota], "")
 			return nil
 		}
 		gravacoes++
@@ -96,8 +99,8 @@ func TestNadaVazaEntreContas(t *testing.T) {
 			t.Errorf("adminA1 não viu A2 em %s (a rota projeta account_id?): %s", rota, b)
 		}
 	})
-	if l != 9 || g != 12 || varridas != 1 {
-		t.Errorf("rotas = %d leituras (%d varridas) e %d escritas, esperava 9 (1) e 12", l, varridas, g)
+	if l != 10 || g != 12 || varridas != 1 {
+		t.Errorf("rotas = %d leituras (%d varridas) e %d escritas, esperava 10 (1) e 12", l, varridas, g)
 	}
 }
 
@@ -146,8 +149,8 @@ func TestRotasDeRoboSoServico(t *testing.T) {
 			}
 		}
 	})
-	if robo != 7 {
-		t.Errorf("rotas de robô = %d, esperava 7", robo)
+	if robo != 8 {
+		t.Errorf("rotas de robô = %d, esperava 8", robo)
 	}
 	if m.Um(t, fotoDaFabrica) != antes {
 		t.Error("sessão de painel ou robô sem a chave gravou numa rota de robô")
