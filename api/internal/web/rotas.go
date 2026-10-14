@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/acesso"
+	"github.com/rbv-co/social-dashboard/api/internal/acessos"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/canais"
@@ -183,6 +184,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
 			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
 			conteudo.Montar(r, p) // Plano 5.9
+			acessos.Montar(r, p)  // Plano 5.4: colaboradores e acessos (cadastro)
 			vessel.Montar(r, p)   // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
 			vendas.Montar(r, p)   // Plano 5.5: Comercial (Bling e Shopify)
 			frota.Montar(r, p)    // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)

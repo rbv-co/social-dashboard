@@ -64,7 +64,7 @@ var colunasDoWorker = map[string]string{
 	"gc_estoque_item":              "deposito_id,sku,produto,categoria,saldo",
 	"gc_vendas_item":               "mes,canal_loja_id,sku,produto,categoria,unidades,faturamento",
 	"gestao_comercial_briefings":   "id,rodada,periodo,resumo,conteudo,dados_json,created_at",
-	"acessos_pessoas":              "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id", // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
+	"acessos_pessoas":              "id,nome,cargo,status,criado_em,atualizado_em,setor_id,email_corporativo,numero_pessoal,numero_corporativo,data_inicio_contrato,data_fim_contrato,motivo_saida,avatar_url,zoho_account_id,email_outlook,conta_apple,organizacao_id,profile_id,marca_id", // Planos 5.2 e 5.4 (a união que as telas leem)
 	"frota_veiculos":               "id,placa,nome,marca,ano,cor,combustivel,renavam,chassi,tipo_oleo,contrato,codigo_patrimonial,aluguel_centavos,fipe_centavos,categoria_comercial,blindado,situacao,pessoa_id,local_texto,observacao,criado_em,atualizado_em,seguro_seguradora,seguro_apolice,seguro_vence_em,seguro_valor_centavos,tag_pedagio,rastreador,bem_id,contato_nome,contato_telefone,contato_papel,oficina_nome,oficina_telefone,empresa_id,local_id,comodo_id",
 	"frota_uso":                    "id,veiculo_id,pessoa_id,pessoa_nome,saida_em,km_saida,volta_em,km_volta,destino,finalidade,tanque_quartos,observacao,criado_em,tipo,aceite_em,aceite_por,aceite_nome,aceite_rabisco,aceite_checklist_id,aceite_checklist_hash",
 	"frota_requisicoes":            "id,veiculo_id,pessoa_id,pessoa_nome,departamento,destino,finalidade,retirada_prevista,devolucao_prevista,situacao,criada_por,criada_em,decidida_por,decidida_em,motivo_decisao,uso_id,observacao,encerrada_por,encerrada_em,encerrada_motivo,arquivada_em,arquivada_por",
@@ -125,7 +125,13 @@ var colunasDoWorker = map[string]string{
 	"patrimonio_tipos":      "id,categoria_id,nome,ordem,criado_em",
 	"patrimonio_config":     "chave,valor,atualizado_em",
 	"patrimonio_log":        "id,quem,acao,alvo,resultado,detalhe,quando",
-	"acessos_setores":       "id,nome,ordem",
+	"acessos_setores":       "id,nome,cor,ordem,criado_em,organizacao_id", // Planos 5.2 e 5.4
+	// Plano 5.4 (Colaboradores e Acessos): colunas das rotas /acessos/*. acessos_conexoes NÃO entra: nenhuma rota a lê.
+	"acessos_organizacoes": "id,nome,ordem,criado_em",
+	"acessos_recursos":     "id,tipo,provedor,nome,external_id,drive_id,caminho,criado_em,arquivado_em,arquivado_motivo",
+	"acessos_vinculos":     "id,recurso_id,pessoa_id,papel,estado,observacao,criado_em,feito_em",
+	"acessos_termos":       "id,pessoa_id,titulo,arquivo_path,enviado_em,observacao",
+	"acessos_log":          "id,quando,quem,acao,provedor,alvo,resultado,detalhe",
 	// Plano 5.9 (conteúdo): o que as rotas, as RPCs e o /conteudo-trigger presumem; conteudo_jobs é a fila do vigia
 	// da VPS. Todas com DDL no repositório.
 	"conteudo_arquivos":     "id,peca_id,ordem,bucket,caminho,tipo,mime,bytes,created_at",
@@ -214,6 +220,10 @@ var tiposDoWorker = map[string]string{
 	"patrimonio_bens.pessoa_id": "uuid", "patrimonio_bens.local_id": "uuid", "patrimonio_bens.categoria_id": "uuid",
 	"patrimonio_bens.comodo_id": "uuid", "patrimonio_posse.bem_id": "uuid", "patrimonio_posse.de": "date",
 	"patrimonio_posse.ate": "date", "patrimonio_config.valor": "text", "equipes.local_id": "uuid", "acessos_pessoas.profile_id": "uuid",
+	// Plano 5.4: filtros e a conferência do "ligar" fazem cast nestas colunas
+	"acessos_pessoas.id": "uuid", "acessos_pessoas.status": "text", "acessos_vinculos.recurso_id": "uuid",
+	"acessos_vinculos.pessoa_id": "uuid", "acessos_termos.pessoa_id": "uuid", "acessos_recursos.tipo": "text",
+	"acessos_recursos.arquivado_em": "timestamp with time zone", "acessos_log.quem": "uuid",
 	// Plano 5.9: os casts das rotas, das RPCs e do /conteudo-trigger (account_id das conteudo_* é uuid: o init completa)
 	"conteudo_pecas.criado_por": "uuid", "conteudo_pecas.responsavel": "uuid", "conteudo_arquivos.id": "uuid",
 	"conteudo_arquivos.peca_id": "uuid", "conteudo_arquivos.ordem": "integer", "conteudo_eventos.quem": "uuid",
@@ -266,6 +276,8 @@ var unicosDoWorker = []string{
 	"gt_config_metricas(balde)", "gt_objetivo_interacao(alvo_id)", "gt_problemas_meta(ad_id,codigo)", "interesses_sugeridos(marca_id,objetivo)",
 	"acessos_perfis(nome)",     // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 	"patrimonio_config(chave)", // Plano 5.2: PUT /patrimonio/config/{chave} é upsert por este único
+	// Plano 5.4: os 409 de organização e setor dependem destes únicos completos
+	"acessos_organizacoes(nome)", "acessos_setores(organizacao_id,nome)",
 	// Plano 5.5: Tabela.Gravar (on conflict) nos dois caches; e o único (chave, ano, mês) das metas, que o salvamento do mês presume
 	"bling_pedido_vendedor(pedido_id)", "bling_vendedores(vendor_id)",
 	"bling_metas(loja_id,year,month)", "bling_vendedor_metas(vendor_id,year,month)",

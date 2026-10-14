@@ -119,8 +119,8 @@ create table public.canais_grupos_membros (
   unique (grupo_id, profile_id)
 );
 
--- do 5.4, MÍNIMA: o que autz.CarregarEscopo lê. Fonte: acessos/001_base.sql:2-11 e 004_v2.sql:21. Na fonte
--- `nome` é NOT NULL; aqui fica anulável de propósito: os testes do autz inserem só (id, profile_id).
+-- do 5.4, MÍNIMA: o que autz.CarregarEscopo lê. Fonte: acessos/001_base.sql:2-11 e 004_v2.sql:21. As colunas
+-- que faltam e o `nome` NOT NULL da fonte entram em 01-tabelas-5-04.sql (por `alter table`).
 create table public.acessos_pessoas (
   id                uuid primary key default gen_random_uuid(),
   nome              text,
