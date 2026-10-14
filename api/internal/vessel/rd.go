@@ -1,4 +1,4 @@
-// Package vessel: as tarefas da Vessel que o worker roda.
+// Package vessel: as tarefas da Vessel que o worker roda (Plano 4) e o painel de Autenticidade do selo (Plano 5.10): leituras, RPCs e o cartão EAN.
 package vessel
 
 import (
