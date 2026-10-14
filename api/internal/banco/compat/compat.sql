@@ -52,8 +52,14 @@ exception when invalid_text_representation then
 end
 $$;
 
--- Conservador: sem configuração é 'authenticated', nunca 'service_role'.
+-- Conservador: sem configuração é 'authenticated', nunca 'service_role'. Uma exceção, explícita: 'dono' (a API
+-- fazendo o que a edge fazia com a chave de serviço: Plano 6, vessel-registrar-garantia) devolve NULL, como uma conexão
+-- direta do dono do banco sem JWT; é o ramo que `vessel_decidir_pedido_de_registro('bling')` aceita. Só banco.ComAnonimo
+-- põe 'dono', e só o código do servidor o chama: nenhuma rota entrega esse papel a quem pede.
 create or replace function auth.role() returns text
 language sql stable as $$
-  select coalesce(nullif(current_setting('app.papel_db', true), ''), 'authenticated')
+  select case current_setting('app.papel_db', true)
+           when 'dono' then null
+           else coalesce(nullif(current_setting('app.papel_db', true), ''), 'authenticated')
+         end
 $$;

@@ -71,6 +71,14 @@ var publicas = map[string]bool{
 	"POST /auth/esqueci-senha": true, "POST /auth/definir-senha": true,
 	// Plano 5.1: o pedido de acesso da tela de login (JSON obrigatório, 10 por IP e 100 no total por hora, validação no handler)
 	"POST /pedir-acesso": true,
+	// Plano 6: a Vessel anônima e o Core no dialeto do Supabase. Chave do Core ou nenhuma; 415, limite por IP e global,
+	// lista fechada de funções e de edges, CORS: tudo provado em publico/*_test.go
+	"POST /rest/v1/rpc/{nome}": true, "OPTIONS /rest/v1/rpc/{nome}": true,
+	"POST /functions/v1/{edge}": true, "OPTIONS /functions/v1/{edge}": true,
+	// Plano 6: Storage. URL pública (só bucket público), URL assinada (HMAC com vencimento) e o envio de currículo (só as
+	// duas pastas consultor-*; chave do Core ou limite por IP): arquivos/*_test.go
+	"GET /storage/v1/object/public/{bucket}/*": true, "GET /storage/v1/object/sign/{bucket}/*": true,
+	"POST /storage/v1/object/vessel-curriculos/{pasta}/{arquivo}": true, "OPTIONS /storage/v1/object/vessel-curriculos/{pasta}/{arquivo}": true,
 }
 
 func webhooksPublicos() []string {
@@ -223,7 +231,12 @@ func coreFalso(t *testing.T) string {
 
 // Rotas que só exigem sessão (qualquer módulo, ou nenhum). TODA outra rota do grupo
 // autenticado tem de ter portão de módulo: uma rota nova sem portão falha no teste da varredura.
-var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "GET /eu/canais": true,
+var soSessao = map[string]bool{
+	// Plano 6: Storage. Cada bucket tem a SUA regra (Ler/Escrever/Apagar, uma matriz bucket × pessoa em arquivos/*_test.go);
+	// com o bucket literal "{bucket}" o teste de módulo não vale: sem sessão 401 e com sessão de cliente 403 ele cobre.
+	"GET /arquivos/{bucket}": true, "GET /arquivos/{bucket}/*": true, "PUT /arquivos/{bucket}/*": true,
+	"DELETE /arquivos/{bucket}": true, "POST /arquivos/{bucket}/copiar": true, "POST /arquivos/{bucket}/assinar": true,
+	"POST /auth/sair": true, "GET /auth/eu": true, "GET /eu/canais": true,
 	// Plano 5.0: a conta de quem está logado; invite-user e entrar-como têm o portão das edges
 	// DENTRO do handler (400 com a frase da edge: TestContaPelaMontagemReal) e /rpc/{nome} só
 	// responde para nome registrado, cada um com o seu portão (sem registro: 404).
@@ -1482,5 +1495,40 @@ func TestSeloPelaMontagemReal(t *testing.T) {
 		if w.Code != c.status || !strings.Contains(w.Body.String(), c.tem) {
 			t.Errorf("%s: %s %s = %d %s; esperava %d com %q", c.nome, c.metodo, c.rota, w.Code, w.Body, c.status, c.tem)
 		}
+	}
+}
+
+// Plano 6, pela montagem real: o envio de currículo do Core (chave certa, um IP só, nomes UUID como o Core gera) não toma o
+// teto por IP do anônimo, e o anônimo toma; a rota de arquivo e a de edge usam a MESMA regra de "quem é o Core".
+func TestCurriculoPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{VesselInterno: "chave-do-core-com-mais-de-24-caracteres", ArquivosDir: t.TempDir()})
+	envia := func(i int, cab ...string) int {
+		r := httptest.NewRequest("POST", fmt.Sprintf("/storage/v1/object/vessel-curriculos/consultor-tivoli/%08x-0000-4000-a000-000000000000.pdf", i), strings.NewReader("%PDF-1.4\nconteudo\n"))
+		r.RemoteAddr = "127.0.0.1:4000"
+		r.Header.Set("Content-Type", "application/pdf")
+		for _, c := range cab {
+			k, v, _ := strings.Cut(c, ": ")
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for i := 0; i < 15; i++ { // o Core: o mesmo IP 15 vezes, todas passam
+		if st := envia(i, "Authorization: Bearer chave-do-core-com-mais-de-24-caracteres", "X-Forwarded-For: 203.0.113.5"); st != 200 {
+			t.Fatalf("Core, envio %d = %d", i+1, st)
+		}
+	}
+	var visto429 bool
+	for i := 100; i < 115; i++ { // o anônimo (a anon do navegador não vale como chave): 10 por IP por hora
+		if st := envia(i, "Authorization: Bearer chave-anon-publica", "X-Real-IP: 198.51.100.9"); st == 429 {
+			visto429 = true
+		} else if st != 200 {
+			t.Fatalf("anônimo, envio %d = %d", i, st)
+		}
+	}
+	if !visto429 {
+		t.Error("o anônimo mandou 15 currículos do mesmo IP sem tomar 429")
 	}
 }

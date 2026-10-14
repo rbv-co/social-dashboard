@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/acesso"
 	"github.com/rbv-co/social-dashboard/api/internal/acessos"
+	"github.com/rbv-co/social-dashboard/api/internal/arquivos"
 	"github.com/rbv-co/social-dashboard/api/internal/atendimentos"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
@@ -29,6 +30,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/paineis"
 	"github.com/rbv-co/social-dashboard/api/internal/patrimonio"
+	"github.com/rbv-co/social-dashboard/api/internal/publico"
 	"github.com/rbv-co/social-dashboard/api/internal/redes"
 	"github.com/rbv-co/social-dashboard/api/internal/trafego"
 	"github.com/rbv-co/social-dashboard/api/internal/vendas"
@@ -132,6 +134,18 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		panic(err) // declaração errada: a API não sobe
 	}
 	cli := core.Novo(cfg.CoreURL, cfg.CoreToken)
+	// Plano 6: a Vessel anônima e o que o Core encaminha, no DIALETO DO SUPABASE (/rest/v1/rpc, /functions/v1): a virada
+	// troca só a base e a chave no Core e no site. Fora de auth.Exigir: a chave do Core ou nenhuma, limites e 415 lá dentro.
+	vs := &publico.Servico{Pool: p, Segredo: cfg.VesselInterno, SoCore: cfg.VesselSoCore, Origens: cfg.Origens}
+	vs.Edges = map[string]publico.Edge{
+		"vessel-conta":              vs.Conta(&email.ZeptoMail{Token: cfg.ZeptoToken, De: cfg.ZeptoDe, Nome: "VESSEL Brasil"}),
+		"vessel-registrar-garantia": vs.Garantia(cli),
+	}
+	vs.Montar(r)
+	// Plano 6: Storage em disco. URL pública, URL assinada e envio de currículo (Core/anônimo) são anônimos; o resto vai no
+	// grupo de sessão, SEM o prazo de domínio (cada transferência estende o da própria conexão).
+	arq := &arquivos.Servico{Raiz: cfg.ArquivosDir, Segredo: cfg.ArquivosSegredo, Quem: vs.Quem, Origens: cfg.Origens, SoCore: cfg.VesselSoCore}
+	arq.MontarPublicas(r)
 	av := &meta.AoVivo{Pool: p, Core: cli}
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Exigir(p, s))
@@ -170,6 +184,12 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		// antes de ler o corpo, a chave ou chamar o fornecedor.
 		r.With(comPrazo(PrazoCusto)).Post("/custo-anthropic", custo.Rota{Chave: cfg.AnthropicAdmin, Buscar: custo.Anthropic{}.Buscar}.ServeHTTP)
 		r.With(comPrazo(PrazoCusto)).Post("/custo-openai", custo.Rota{Chave: cfg.OpenAIAdmin, Buscar: custo.OpenAI{}.Buscar}.ServeHTTP)
+
+		// Plano 6: Storage (sessão de painel ou de serviço; o escopo vem de autz.ComEscopo; "entrar como" não grava).
+		r.Group(func(r chi.Router) {
+			r.Use(autz.ComEscopo(p))
+			arq.Montar(r)
+		})
 
 		// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
 		// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de

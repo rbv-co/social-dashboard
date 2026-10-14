@@ -1,6 +1,6 @@
 -- FATIA 5.11 do esquema de produção para os testes (GERADO por fatia511.mjs: create/alter table e índices das
 -- migrations em db/migrations, em ordem de nome, das tabelas que as 62 RPCs de atendimentos da Vessel tocam).
--- Sem RLS, policy nem gatilho (os gatilhos vivos vão em 03-funcoes-5-11.sql). Tabelas: vessel_atendimentos, vessel_beauty_session_cadastros, vessel_beauty_sessions, vessel_consentimentos, vessel_lista_espera, vessel_origens, vessel_pedido_itens, vessel_pedidos, vessel_pessoas, vessel_praca_cidades, vessel_pracas, vessel_private_edit_card_leituras, vessel_private_edits, vessel_rd_envios, vessel_sessao_aberturas, vessel_stylist_aberturas, vessel_stylist_circle_edicoes, vessel_stylist_contatos, vessel_stylist_etapas, vessel_stylist_etapas_historico, vessel_stylist_etapas_trilha, vessel_stylist_motivos_de_saida, vessel_stylist_na_edicao, vessel_stylist_qualificacoes, vessel_stylists
+-- Sem RLS, policy nem gatilho (os gatilhos vivos vão em 03-funcoes-5-11.sql). Tabelas: vessel_agenda_da_loja, vessel_atendimentos, vessel_beauty_session_cadastros, vessel_beauty_sessions, vessel_candidaturas, vessel_card_consultas, vessel_client_advisors, vessel_consentimentos, vessel_convite_aberturas, vessel_lista_espera, vessel_origens, vessel_pedido_itens, vessel_pedidos, vessel_pessoas, vessel_praca_cidades, vessel_pracas, vessel_private_edit_card_leituras, vessel_private_edits, vessel_rd_envios, vessel_rsvp_tentativas, vessel_sessao_aberturas, vessel_sessoes, vessel_stylist_aberturas, vessel_stylist_circle_edicoes, vessel_stylist_contatos, vessel_stylist_etapas, vessel_stylist_etapas_historico, vessel_stylist_etapas_trilha, vessel_stylist_motivos_de_saida, vessel_stylist_na_edicao, vessel_stylist_qualificacoes, vessel_stylists, vessel_tentativas_de_login, vessel_tentativas_de_presente, vessel_tentativas_de_transferencia, vessel_transferencias, vessel_vendedores_bling
 
 -- funções que o DDL usa (CHECK/default), verbatim do levantamento
 set check_function_bodies = off;
@@ -83,6 +83,58 @@ create table if not exists public.vessel_atendimentos (
   atualizado_em    timestamptz not null default now()
 );
 
+-- 2026-09-16-vessel-pessoas-e-atendimentos.sql
+create table if not exists public.vessel_convite_aberturas (
+  id              bigserial primary key,
+  momento         timestamptz not null default now(),
+  convite_codigo  text,
+  praca           text,
+  client_advisor  text,
+  via             text,
+  ip_hash         text
+);
+
+-- 2026-09-17-vessel-client-advisor-e-o-vendedor.sql
+create table if not exists public.vessel_vendedores_bling (
+  bling_vendedor_id bigint primary key,
+  nome              text not null,
+  chave             text not null,          -- o nome sem acento e sem maiúscula
+  loja_id           bigint,
+  situacao          text,                   -- A ativo | I inativo | E excluído
+  atualizado_em     timestamptz not null default now()
+);
+
+-- 2026-09-17-vessel-client-advisors.sql
+create table if not exists public.vessel_client_advisors (
+  id         bigserial primary key,
+  codigo     text not null,
+  nome       text not null,
+  chave      text not null,           -- o nome sem acento e sem maiúscula
+  loja       text,
+  criado_em  timestamptz not null default now()
+);
+
+-- 2026-09-17-vessel-contas-base.sql
+create table if not exists public.vessel_sessoes (
+  id            uuid primary key default gen_random_uuid(),
+  cliente_id    uuid not null references public.vessel_clientes(id) on delete cascade,
+  token_hash    text not null unique,
+  criada_em     timestamptz not null default now(),
+  expira_em     timestamptz not null,
+  ultimo_uso_em timestamptz,
+  agente        text,
+  ip_hash       text,
+  encerrada_em  timestamptz
+);
+
+-- 2026-09-17-vessel-contas-base.sql
+create table if not exists public.vessel_tentativas_de_login (
+  id      bigserial primary key,
+  chave   text not null,          -- login normalizado
+  quando  timestamptz not null default now(),
+  acertou boolean not null
+);
+
 -- 2026-09-17-vessel-pedidos.sql
 create table if not exists public.vessel_pedidos (
   id                 bigserial primary key,
@@ -120,6 +172,20 @@ create table if not exists public.vessel_pedido_itens (
   quantidade       numeric(12,3),
   valor_unitario   numeric(12,2),
   desconto         numeric(12,2)
+);
+
+-- 2026-09-17-vessel-registro-com-conta.sql
+create table if not exists public.vessel_tentativas_de_presente (
+  codigo text not null,
+  quando timestamptz not null default now()
+);
+
+-- 2026-09-17-vessel-um-horario-uma-visita.sql
+create table if not exists public.vessel_agenda_da_loja (
+  loja               text primary key,
+  ao_mesmo_tempo     int  not null default 1,
+  minutos_por_visita int  not null default 60,
+  atualizado_em      timestamptz not null default now()
 );
 
 -- 2026-09-18-vessel-beauty-sessions.sql
@@ -222,6 +288,56 @@ create table if not exists public.vessel_private_edits (
   ativa       boolean not null default true,
   criado_em   timestamptz not null default now(),
   teste       boolean not null default false
+);
+
+-- 2026-09-18-zzzzz-vessel-transferencia-de-propriedade.sql
+create table if not exists public.vessel_transferencias (
+  id           uuid primary key default gen_random_uuid(),
+  peca_codigo  text not null,
+  cliente_de   uuid not null references public.vessel_clientes(id),
+  -- ⚠️ SÓ O HASH. O código de 6 dígitos não é guardado em lugar nenhum: ele
+  -- aparece UMA vez, na resposta da geração, e depois só existe na mão da
+  -- dona. Quem tiver o banco na frente não consegue transferir a peça de
+  -- ninguém — mesma regra da senha (bcrypt, custo 10).
+  codigo_hash  text not null,
+  criado_em    timestamptz not null default now(),
+  vale_ate     timestamptz not null,
+  usado_em     timestamptz,
+  cliente_para uuid references public.vessel_clientes(id),
+  cancelado_em timestamptz,
+
+  -- O prazo nasce para a frente. Convite que já nasce vencido seria um convite
+  -- que nunca funciona, e a tela não teria como explicar por quê.
+  constraint vessel_transferencias_prazo_check
+    check (vale_ate > criado_em),
+  -- Usado e "para quem" são a MESMA informação: um sem o outro é uma linha que
+  -- ninguém sabe ler depois — ou uma transferência sem destino, ou um destino
+  -- sem transferência.
+  constraint vessel_transferencias_uso_check
+    check ((usado_em is null) = (cliente_para is null)),
+  -- Um convite acaba de UM jeito só. Usado e cancelado ao mesmo tempo seria a
+  -- trilha dizendo duas coisas contrárias sobre o mesmo papel.
+  constraint vessel_transferencias_fim_unico_check
+    check (usado_em is null or cancelado_em is null),
+  -- ⚠️ O CÓDIGO DA PEÇA TEM DE ESTAR NORMALIZADO, e isto não é capricho: o
+  -- índice único de "um convite aberto por peça" é sobre esta coluna. Um
+  -- "tbnwxas28a" e um "TBNWXAS-28A" gravados crus seriam DUAS peças para o
+  -- índice e UMA peça para a cliente — dois convites abertos para a mesma
+  -- bolsa, que é o que o índice existe para impedir. É a mesma normalização
+  -- de todas as irmãs do selo.
+  constraint vessel_transferencias_codigo_normalizado_check
+    check (peca_codigo = upper(regexp_replace(peca_codigo, '[\s.\-_]', '', 'g'))),
+  -- Ninguém transfere para si mesma. A recusa acontece antes, na função
+  -- (`sua_ja`); isto é a trava de baixo, para o caso de alguém um dia gravar
+  -- nesta tabela por outro caminho.
+  constraint vessel_transferencias_nao_para_si_check
+    check (cliente_para is null or cliente_para <> cliente_de)
+);
+
+-- 2026-09-18-zzzzz-vessel-transferencia-de-propriedade.sql
+create table if not exists public.vessel_tentativas_de_transferencia (
+  codigo text not null,
+  quando timestamptz not null default now()
 );
 
 -- 2026-09-22-vessel-t11-bases-do-stylist-circle.sql
@@ -353,6 +469,31 @@ create table if not exists public.vessel_stylist_qualificacoes (
     check (observacao is null or length(observacao) <= 280)
 );
 
+-- 2026-09-25-vessel-candidaturas-da-vaga.sql
+create table if not exists public.vessel_candidaturas (
+  id              uuid primary key default gen_random_uuid(),
+  criado_em       timestamptz not null default now(),
+  vaga            text not null,
+  nome            text not null,
+  whatsapp        text not null,
+  cidade          text not null,
+  experiencia     text not null check (experiencia in ('luxo', 'varejo', 'nao')),
+  fim_de_semana   boolean not null,
+  curriculo       text,
+  origem          jsonb not null default '{}'::jsonb,
+  ip_hash         text,
+  teste           boolean not null default false
+);
+
+-- 2026-09-25-vessel-convite-da-convidada-teto-e-abertura-da-equipe.sql
+create table if not exists public.vessel_rsvp_tentativas (
+  id             bigserial primary key,
+  atendimento_id bigint not null references public.vessel_atendimentos(id) on delete cascade,
+  ip_hash        text,
+  momento        timestamptz not null default now(),
+  teste          boolean not null default false
+);
+
 -- 2026-09-25-vessel-praca-e-edicao.sql
 create table if not exists public.vessel_pracas (
   id           bigserial primary key,
@@ -416,6 +557,13 @@ create table if not exists public.vessel_rd_envios (
 );
 
 -- 2026-09-29-vessel-card-da-stylist.sql
+create table if not exists public.vessel_card_consultas (
+  id       bigserial primary key,
+  ip_hash  text not null,
+  momento  timestamptz not null default now()
+);
+
+-- 2026-09-29-vessel-card-da-stylist.sql
 create table if not exists public.vessel_private_edit_card_leituras (
   id               bigserial primary key,
   private_edit_id  bigint not null references public.vessel_private_edits(id) on delete cascade,
@@ -448,12 +596,28 @@ alter table public.vessel_atendimentos
   add constraint vessel_atendimentos_loja_valida check (
     loja in ('iguatemi', 'tivoli', 'parkshopping'));
 
+-- 2026-09-17-vessel-client-advisor-e-o-vendedor.sql
+alter table public.vessel_client_advisors
+  add column if not exists bling_vendedor_id  bigint,
+  add column if not exists vendedor_ligado_em timestamptz,
+  -- Quem olhou a lista e não se achou nela. Sem esta marca, a pergunta
+  -- voltaria a cada aparelho novo, para sempre.
+  add column if not exists vendedor_dispensado_em timestamptz;
+
 -- 2026-09-17-vessel-fase-de-testes.sql
 alter table public.vessel_pessoas
   add column if not exists teste boolean not null default true;
 
 -- 2026-09-17-vessel-fase-de-testes.sql
 alter table public.vessel_atendimentos
+  add column if not exists teste boolean not null default true;
+
+-- 2026-09-17-vessel-fase-de-testes.sql
+alter table public.vessel_convite_aberturas
+  add column if not exists teste boolean not null default true;
+
+-- 2026-09-17-vessel-fase-de-testes.sql
+alter table public.vessel_client_advisors
   add column if not exists teste boolean not null default true;
 
 -- 2026-09-17-vessel-item-desconto-e-porcentagem.sql
@@ -767,6 +931,10 @@ alter table public.vessel_stylists drop constraint if exists vessel_stylists_obs
 alter table public.vessel_stylists add constraint vessel_stylists_observacoes_curta
   check (observacoes is null or length(observacoes) <= 2000);
 
+-- 2026-09-25-vessel-candidaturas-na-planilha.sql
+alter table public.vessel_candidaturas
+  add column if not exists na_planilha_em timestamptz;
+
 -- 2026-09-25-vessel-praca-e-edicao.sql
 alter table public.vessel_stylists      add column if not exists praca_id bigint references public.vessel_pracas(id);
 
@@ -845,6 +1013,38 @@ create index if not exists vessel_atendimentos_origem_idx
 create index if not exists vessel_atendimentos_agenda_idx
   on public.vessel_atendimentos (loja, quando) where status in ('solicitado', 'confirmado');
 
+-- 2026-09-16-vessel-pessoas-e-atendimentos.sql
+create index if not exists vessel_convite_aberturas_codigo_idx
+  on public.vessel_convite_aberturas (convite_codigo, momento);
+
+-- 2026-09-16-vessel-pessoas-e-atendimentos.sql
+create index if not exists vessel_convite_aberturas_praca_idx
+  on public.vessel_convite_aberturas (praca, momento);
+
+-- 2026-09-17-vessel-client-advisor-e-o-vendedor.sql
+create index if not exists vessel_vendedores_bling_chave_idx
+  on public.vessel_vendedores_bling (chave);
+
+-- 2026-09-17-vessel-client-advisor-e-o-vendedor.sql
+create unique index if not exists vessel_client_advisors_vendedor_idx
+  on public.vessel_client_advisors (bling_vendedor_id)
+  where bling_vendedor_id is not null;
+
+-- 2026-09-17-vessel-client-advisors.sql
+create unique index if not exists vessel_client_advisors_codigo_idx
+  on public.vessel_client_advisors (codigo);
+
+-- 2026-09-17-vessel-client-advisors.sql
+create unique index if not exists vessel_client_advisors_chave_idx
+  on public.vessel_client_advisors (chave);
+
+-- 2026-09-17-vessel-contas-base.sql
+create index if not exists vessel_sessoes_cliente_idx on public.vessel_sessoes (cliente_id);
+
+-- 2026-09-17-vessel-contas-base.sql
+create index if not exists vessel_tentativas_login_idx
+  on public.vessel_tentativas_de_login (chave, quando desc);
+
 -- 2026-09-17-vessel-fase-de-testes.sql
 create index if not exists vessel_pessoas_teste_idx
   on public.vessel_pessoas (teste) where teste;
@@ -898,6 +1098,10 @@ create index if not exists vessel_lista_espera_visita_idx
   on public.vessel_lista_espera (visita_data, visita_hora)
   where visita_data is not null;
 
+-- 2026-09-17-vessel-registro-com-conta.sql
+create index if not exists vessel_tentativas_presente_idx
+  on public.vessel_tentativas_de_presente (codigo, quando desc);
+
 -- 2026-09-17-vessel-um-horario-uma-visita.sql
 create index if not exists vessel_atendimentos_hora_idx
   on public.vessel_atendimentos (loja, quando)
@@ -942,6 +1146,19 @@ create unique index if not exists vessel_stylists_codigo_idx
 -- 2026-09-18-vessel-stylist-circle.sql
 create index if not exists vessel_consentimentos_stylist_idx
   on public.vessel_consentimentos (stylist_id, finalidade) where stylist_id is not null;
+
+-- 2026-09-18-zzzzz-vessel-transferencia-de-propriedade.sql
+create unique index if not exists vessel_transferencias_um_aberto_idx
+  on public.vessel_transferencias (peca_codigo)
+  where usado_em is null and cancelado_em is null;
+
+-- 2026-09-18-zzzzz-vessel-transferencia-de-propriedade.sql
+create index if not exists vessel_transferencias_peca_idx
+  on public.vessel_transferencias (peca_codigo, criado_em desc);
+
+-- 2026-09-18-zzzzz-vessel-transferencia-de-propriedade.sql
+create index if not exists vessel_tentativas_transferencia_idx
+  on public.vessel_tentativas_de_transferencia (codigo, quando desc);
 
 -- 2026-09-21-pedido-conferido-no-bling.sql
 create index if not exists vessel_pedidos_situacao_idx
@@ -990,6 +1207,20 @@ create index vessel_stylist_etapas_historico_stylist_idx
 create index if not exists vessel_stylist_qualificacoes_stylist_idx
   on public.vessel_stylist_qualificacoes (stylist_id, avaliado_em desc, id desc);
 
+-- 2026-09-25-vessel-candidaturas-da-vaga.sql
+create index if not exists vessel_candidaturas_vaga_criado
+  on public.vessel_candidaturas (vaga, criado_em desc);
+
+-- 2026-09-25-vessel-candidaturas-da-vaga.sql
+create index if not exists vessel_candidaturas_ip_recente
+  on public.vessel_candidaturas (ip_hash, criado_em);
+
+-- 2026-09-25-vessel-convite-da-convidada-teto-e-abertura-da-equipe.sql
+create index if not exists vessel_rsvp_tentativas_atendimento_idx on public.vessel_rsvp_tentativas (atendimento_id, momento);
+
+-- 2026-09-25-vessel-convite-da-convidada-teto-e-abertura-da-equipe.sql
+create index if not exists vessel_rsvp_tentativas_ip_idx on public.vessel_rsvp_tentativas (ip_hash, momento);
+
 -- 2026-09-25-vessel-praca-e-edicao.sql
 create index if not exists vessel_praca_cidades_praca_idx on public.vessel_praca_cidades (praca_id);
 
@@ -1008,6 +1239,14 @@ create index if not exists vessel_rd_envios_status on public.vessel_rd_envios (s
 -- 2026-09-28-zzzzzz-vessel-edicao-e-o-evento.sql
 create index if not exists vessel_stylist_na_edicao_presente_idx
   on public.vessel_stylist_na_edicao (stylist_id, presente_em) where presente_em is not null;
+
+-- 2026-09-29-vessel-card-da-stylist.sql
+create index if not exists vessel_card_consultas_ip_momento
+  on public.vessel_card_consultas (ip_hash, momento);
+
+-- 2026-09-29-vessel-card-da-stylist.sql
+create index if not exists vessel_card_consultas_momento
+  on public.vessel_card_consultas (momento);
 
 -- 2026-09-29-vessel-card-da-stylist.sql
 create index if not exists vessel_pe_card_leituras_encontro

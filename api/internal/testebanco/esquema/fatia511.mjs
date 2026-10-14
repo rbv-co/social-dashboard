@@ -1,4 +1,4 @@
-// Gera 01-tabelas-5-11.sql e 03-funcoes-5-11.sql (fatia 5.11: as 62 RPCs de atendimentos da Vessel).
+// Gera 01-tabelas-5-11.sql e 03-funcoes-5-11.sql (fatia 5.11: as 62 RPCs de atendimentos da Vessel, mais o que o Plano 6 usa: as rotas públicas e as edges da conta e da garantia).
 // Tabelas: o DDL das migrations (db/migrations/*.sql, em ordem de nome): create table, alter table, índices e
 // tipos que citam as tabelas da fatia. Funções: VERBATIM do levantamento (02-funções.csv), as RPCs de
 // atendimentos/rpc.go mais o fecho do que elas chamam, menos o que as outras fatias já carregam.
@@ -39,6 +39,10 @@ function comandos(sql) {
 }
 
 const nomes = [...readFileSync('api/internal/atendimentos/rpc.go', 'utf8').matchAll(/^\t(?:grava|le|tabela)\("([a-z0-9_]+)"/gm)].map((m) => m[1]);
+// Plano 6: toda função vessel_* que o pacote publico cita (declarações das rotas e o que as edges em Go chamam)
+for (const f of readdirSync('api/internal/publico').filter((x) => x.endsWith('.go') && !x.endsWith('_test.go'))) {
+  for (const m of readFileSync(join('api/internal/publico', f), 'utf8').matchAll(/"(vessel_[a-z0-9_]+)"/g)) if (!nomes.includes(m[1])) nomes.push(m[1]);
+}
 const [cab, ...lin] = lerCSV(readFileSync(join(dir, '02-funções.csv'), 'utf8'));
 const funcoes = new Map(lin.filter((l) => l.length === cab.length).map((l) => [l[cab.indexOf('proname')], l[cab.indexOf('definicao')]]));
 

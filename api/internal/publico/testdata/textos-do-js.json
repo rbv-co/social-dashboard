@@ -1,0 +1,31 @@
+{
+ "primeiro": {
+  "assunto": "Seu acesso VESSEL",
+  "html": "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#2A2823;line-height:1.6\">\n  <p style=\"letter-spacing:.2em;font-size:12px;color:#5E6851\">VESSEL</p>\n  <h1 style=\"font-weight:300;font-size:22px\">Bem-vinda, Maria</h1>\n  <p>Criamos seu perfil VESSEL. Use o e-mail ou o seu documento e a senha abaixo para entrar. Você pode trocar a senha assim que entrar.</p>\n  <p style=\"font-size:20px;letter-spacing:.08em;background:#F2EFE6;padding:12px 16px;display:inline-block\">Abc234xyz789</p>\n  <p style=\"font-size:12px;color:#6B685F\">VESSEL Brasil · vesselbrasil.com.br</p>\n</div>",
+  "texto": "Bem-vinda, Maria\n\nCriamos seu perfil VESSEL. Use o e-mail ou o seu documento e a senha abaixo para entrar. Você pode trocar a senha assim que entrar.\n\nSua senha: Abc234xyz789\n\nVESSEL Brasil · vesselbrasil.com.br"
+ },
+ "primeiroXss": {
+  "assunto": "Seu acesso VESSEL",
+  "html": "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#2A2823;line-height:1.6\">\n  <p style=\"letter-spacing:.2em;font-size:12px;color:#5E6851\">VESSEL</p>\n  <h1 style=\"font-weight:300;font-size:22px\">Bem-vinda, José</h1>\n  <p>Criamos seu perfil VESSEL. Use o e-mail ou o seu documento e a senha abaixo para entrar. Você pode trocar a senha assim que entrar.</p>\n  <p style=\"font-size:20px;letter-spacing:.08em;background:#F2EFE6;padding:12px 16px;display:inline-block\">a&lt;b&gt;&amp;&#39;&quot;c</p>\n  <p style=\"font-size:12px;color:#6B685F\">VESSEL Brasil · vesselbrasil.com.br</p>\n</div>",
+  "texto": "Bem-vinda, José\n\nCriamos seu perfil VESSEL. Use o e-mail ou o seu documento e a senha abaixo para entrar. Você pode trocar a senha assim que entrar.\n\nSua senha: a<b>&'\"c\n\nVESSEL Brasil · vesselbrasil.com.br"
+ },
+ "sem": {
+  "assunto": "Seu acesso VESSEL",
+  "html": "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#2A2823;line-height:1.6\">\n  <p style=\"letter-spacing:.2em;font-size:12px;color:#5E6851\">VESSEL</p>\n  <h1 style=\"font-weight:300;font-size:22px\">Bem-vinda, </h1>\n  <p>Criamos seu perfil VESSEL. Use o e-mail ou o seu documento e a senha abaixo para entrar. Você pode trocar a senha assim que entrar.</p>\n  <p style=\"font-size:20px;letter-spacing:.08em;background:#F2EFE6;padding:12px 16px;display:inline-block\">Zzzzzz222222</p>\n  <p style=\"font-size:12px;color:#6B685F\">VESSEL Brasil · vesselbrasil.com.br</p>\n</div>",
+  "texto": "Bem-vinda, \n\nCriamos seu perfil VESSEL. Use o e-mail ou o seu documento e a senha abaixo para entrar. Você pode trocar a senha assim que entrar.\n\nSua senha: Zzzzzz222222\n\nVESSEL Brasil · vesselbrasil.com.br"
+ },
+ "nova": {
+  "assunto": "Sua nova senha VESSEL",
+  "html": "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#2A2823;line-height:1.6\">\n  <p style=\"letter-spacing:.2em;font-size:12px;color:#5E6851\">VESSEL</p>\n  <h1 style=\"font-weight:300;font-size:22px\">Nova senha</h1>\n  <p>Geramos uma senha nova para o seu perfil. A senha anterior deixou de valer. Se não foi você quem pediu, fale com a gente.</p>\n  <p style=\"font-size:20px;letter-spacing:.08em;background:#F2EFE6;padding:12px 16px;display:inline-block\">Qwer1234Tyui</p>\n  <p style=\"font-size:12px;color:#6B685F\">VESSEL Brasil · vesselbrasil.com.br</p>\n</div>",
+  "texto": "Nova senha\n\nGeramos uma senha nova para o seu perfil. A senha anterior deixou de valer. Se não foi você quem pediu, fale com a gente.\n\nSua senha: Qwer1234Tyui\n\nVESSEL Brasil · vesselbrasil.com.br"
+ },
+ "mask": [
+  "a•••@x.com",
+  "",
+  "",
+  "é•••@x.com",
+  "a•••@b"
+ ],
+ "alfabeto": "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789",
+ "tam": 12
+}

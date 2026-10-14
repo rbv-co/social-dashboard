@@ -131,16 +131,15 @@ func TestCarregarVariaveisDoWorker(t *testing.T) {
 	}
 }
 
-func TestCarregarRDEArquivos(t *testing.T) {
+func TestCarregarArquivosDir(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://x")
-	t.Setenv("RD_STATION_TOKEN", " token-publico-rd ")
 	c, _ := Carregar()
-	if c.RDStationToken != "token-publico-rd" || c.ArquivosDir != "/var/lib/api/arquivos" || !slices.Contains(c.Segredos(), "token-publico-rd") {
+	if c.ArquivosDir != "/var/lib/api/arquivos" {
 		t.Fatalf("%+v", c)
 	}
-	t.Setenv("ARQUIVOS_DIR", "/dados/arquivos")
-	if c, _ := Carregar(); c.ArquivosDir != "/dados/arquivos" {
-		t.Fatalf("ArquivosDir = %q", c.ArquivosDir)
+	t.Setenv("ARQUIVOS_DIR", " /dados/arquivos ")
+	if c, _ = Carregar(); c.ArquivosDir != "/dados/arquivos" {
+		t.Fatalf("%+v", c)
 	}
 }
 func TestCarregarAlerta(t *testing.T) {
@@ -293,5 +292,41 @@ func TestCarregarGitHubPAT(t *testing.T) {
 	}
 	if !slices.Contains(c.Segredos(), "SEGREDO-x") {
 		t.Fatal("GITHUB_PAT fora de Segredos()")
+	}
+}
+
+func TestCarregarVesselPublica(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	if c, err := Carregar(); err != nil || c.VesselInterno != "" || c.VesselSoCore || c.ArquivosSegredo != "" {
+		t.Fatalf("padrão: %+v (err %v)", c, err)
+	}
+	t.Setenv("VESSEL_INTERNO_SEGREDO", " chave-do-core-com-mais-de-24-caracteres ")
+	t.Setenv("ARQUIVOS_SEGREDO", "hmac-dos-arquivos-com-mais-de-24-caracteres")
+	for v, quer := range map[string]bool{"true": true, "TRUE": true, "1": true, "sim": false, "0": false, "": false} {
+		t.Setenv("VESSEL_SO_CORE", v)
+		c, err := Carregar()
+		if err != nil || c.VesselSoCore != quer || c.VesselInterno != "chave-do-core-com-mais-de-24-caracteres" {
+			t.Errorf("VESSEL_SO_CORE=%q: %+v (err %v), esperava %t", v, c.VesselSoCore, err, quer)
+		}
+		for _, segredo := range []string{"chave-do-core-com-mais-de-24-caracteres", "hmac-dos-arquivos-com-mais-de-24-caracteres"} {
+			if !slices.Contains(c.Segredos(), segredo) {
+				t.Errorf("%q não está em Segredos(): sairia no log do worker", segredo)
+			}
+		}
+	}
+}
+
+func TestSegredosCurtosDaVesselNaoSobem(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	for _, nome := range []string{"VESSEL_INTERNO_SEGREDO", "ARQUIVOS_SEGREDO"} {
+		t.Setenv(nome, "curto")
+		if _, err := Carregar(); err == nil || !strings.Contains(err.Error(), nome) {
+			t.Errorf("%s curto: err = %v, esperava recusa", nome, err)
+		}
+		t.Setenv(nome, strings.Repeat("a", 24))
+		if _, err := Carregar(); err != nil {
+			t.Errorf("%s com 24 caracteres: %v", nome, err)
+		}
+		t.Setenv(nome, "")
 	}
 }

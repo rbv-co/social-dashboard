@@ -122,3 +122,6 @@ dist-demonstracao
 docs/migracao-go/levantamento/
 
 ops/migracao/saida/
+
+# binários que `go build` deixa na pasta (já entrou um de 22 MB no PR #378; ver NOTAS, Plano 6)
+/api/api
