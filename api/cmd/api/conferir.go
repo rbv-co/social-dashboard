@@ -54,8 +54,8 @@ var colunasDoWorker = map[string]string{
 	"bling_pedido_nota":           "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
 	"bling_pedido_ajuste_valor":   "pedido_id,total_corrigido",
 	"bling_pedido_vendedor":       "pedido_id,qtd_itens",
-	"acessos_pessoas":             "id,nome,profile_id,email_corporativo",
-	"frota_veiculos":              "id,nome,pessoa_id,situacao",
+	"acessos_pessoas":             "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id",       // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
+	"frota_veiculos":              "id,placa,nome,marca,fipe_centavos,situacao,pessoa_id,bem_id,atualizado_em", // + Plano 5.2 (sincronizar_carro_e_bem); o 5.3 amplia
 	"frota_checklist_itens":       "cadencia,ordem,ativo",
 	"frota_checklist_config":      "dia_semanal,semana_mensal,dia_mensal",
 	"frota_checklist":             "veiculo_id,feita_em,cadencias",
@@ -96,6 +96,18 @@ var colunasDoWorker = map[string]string{
 	"gt_problemas_meta":       "ad_id,codigo,account_id,titulo,grave,primeira_vez,ultima_vez,resolvido_em",
 	"fabrica_marcas":          "id,nome,caption_template,ad_account,page_id,ig_id,account_id,ativo,segmento,termos_produto,created_at", // + Plano 5.8: GET /fabrica/marcas
 	"interesses_sugeridos":    "id,marca_id,objetivo,itens,propostos,validos,gerado_em",
+	// Plano 5.2 (patrimônio e cadastros): o que as rotas, as RPCs e os gatilhos do bem presumem. Tabelas sem DDL
+	// no repositório (a D0 as reproduz das migrations): o conferir pega a divergência no banco restaurado.
+	"patrimonio_bens":       "id,numero,nome,valor_centavos,data_compra,empresa_id,local_id,comodo_id,categoria_id,tipo_id,marca,numero_serie,pessoa_id,dono_texto,etiquetado,situacao,observacao,detalhes,criado_em,atualizado_em",
+	"patrimonio_posse":      "id,bem_id,pessoa_id,pessoa_nome,de,ate,motivo,criado_em",
+	"patrimonio_empresas":   "id,nome,ordem,criado_em",
+	"patrimonio_locais":     "id,nome,ordem,criado_em,empresa_id",
+	"patrimonio_comodos":    "id,nome,ordem,criado_em,local_id",
+	"patrimonio_categorias": "id,nome,vida_util_anos,ordem,criado_em",
+	"patrimonio_tipos":      "id,categoria_id,nome,ordem,criado_em",
+	"patrimonio_config":     "chave,valor,atualizado_em",
+	"patrimonio_log":        "id,quem,acao,alvo,resultado,detalhe,quando",
+	"acessos_setores":       "id,nome,ordem",
 	// Plano 5.9 (conteúdo): o que as rotas, as RPCs e o /conteudo-trigger presumem; conteudo_jobs é a fila do vigia
 	// da VPS. Todas com DDL no repositório.
 	"conteudo_arquivos":     "id,peca_id,ordem,bucket,caminho,tipo,mime,bytes,created_at",
@@ -161,6 +173,10 @@ var tiposDoWorker = map[string]string{
 	"gt_objetivo_interacao.conta_id": "uuid", "gt_campanhas_rascunho.criado_por": "uuid", "gt_fila_decisoes.decidido_por": "uuid",
 	"gt_ponderada_config.metas_por_conta": "jsonb", "gt_ponderada_config.limiares_resultado": "jsonb",
 	"gt_config_metricas.metricas": "jsonb", "gt_budget_analises.impactos": "jsonb", "gt_campanhas_rascunho.estado": "jsonb",
+	// Plano 5.2: os filtros fazem ::uuid/::date nestas colunas e os embutidos de bens casam por uuid
+	"patrimonio_bens.pessoa_id": "uuid", "patrimonio_bens.local_id": "uuid", "patrimonio_bens.categoria_id": "uuid",
+	"patrimonio_bens.comodo_id": "uuid", "patrimonio_posse.bem_id": "uuid", "patrimonio_posse.de": "date",
+	"patrimonio_posse.ate": "date", "patrimonio_config.valor": "text", "equipes.local_id": "uuid", "acessos_pessoas.profile_id": "uuid",
 	// Plano 5.9: os casts das rotas, das RPCs e do /conteudo-trigger (account_id das conteudo_* é uuid: o init completa)
 	"conteudo_pecas.criado_por": "uuid", "conteudo_pecas.responsavel": "uuid", "conteudo_arquivos.id": "uuid",
 	"conteudo_arquivos.peca_id": "uuid", "conteudo_arquivos.ordem": "integer", "conteudo_eventos.quem": "uuid",
@@ -201,7 +217,8 @@ var unicosDoWorker = []string{
 	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
 	// Plano 5.7: alvos de ON CONFLICT (tela, RPC e robô sugerir-interesses)
 	"gt_config_metricas(balde)", "gt_objetivo_interacao(alvo_id)", "gt_problemas_meta(ad_id,codigo)", "interesses_sugeridos(marca_id,objetivo)",
-	"acessos_perfis(nome)", // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
+	"acessos_perfis(nome)",     // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
+	"patrimonio_config(chave)", // Plano 5.2: PUT /patrimonio/config/{chave} é upsert por este único
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
@@ -220,6 +237,8 @@ var funcoesDoWorker = []string{
 	"conteudo_guarda_aprovacao()",        // Plano 5.9: a função do gatilho (as 6 RPCs, conferirRPC confere por web.FuncoesRPC)
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
 	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
+	// Plano 5.2: os gatilhos do bem que as escritas do Patrimônio presumem (os 5 do carro, que a cadeia alcança, são do 5.3)
+	"bem_de_veiculo_segue_a_frota()", "patrimonio_espelha_responsavel_no_veiculo()", "patrimonio_espelha_situacao_no_veiculo()",
 }
 
 // gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados
@@ -227,6 +246,9 @@ var funcoesDoWorker = []string{
 var gatilhosDoWorker = [][2]string{
 	{"equipes_atualizado", "equipes"}, {"trg_espelhar_grupo_do_canal", "bling_lojas"}, {"trg_espelhar_rename_do_grupo", "canais_grupos"},
 	{"trg_guard_profiles", "profiles"}, {"trg_impedir_autopromocao", "profiles"},
+	// Plano 5.2: a situação e o responsável do bem andam com o carro ligado a ele
+	{"trg_bem_de_veiculo_segue_a_frota", "patrimonio_bens"}, {"trg_patrimonio_espelha_responsavel", "patrimonio_bens"},
+	{"trg_patrimonio_espelha_situacao", "patrimonio_bens"},
 	{"conteudo_pecas_guarda", "conteudo_pecas"}, // Plano 5.9: sem ele, quem não aprova aprova pelo PATCH
 }
 
