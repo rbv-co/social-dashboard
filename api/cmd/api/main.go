@@ -19,7 +19,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		slog.Error("uso: api <api|worker [listar|rodar <tarefa> [--forcar]|saude|conferir]|importar-usuarios|migrar>")
+		slog.Error("uso: api <api|worker [listar|rodar <tarefa> [--forcar]|saude|conferir]|servico <criar|revogar|listar>|importar-usuarios|migrar>")
 		os.Exit(2)
 	}
 	if os.Args[1] == "worker" && len(os.Args) > 2 && os.Args[2] == "saude" {
@@ -40,7 +40,9 @@ func main() {
 	defer p.Close()
 	// O worker NÃO migra: api e worker subindo juntos disputariam a migração (o goose daqui não
 	// tem trava). Quem migra é o `api` (ou `api migrar`); o worker confere as tabelas e recusa subir.
-	if os.Args[1] != "worker" {
+	// O `servico` também não migra: um binário mais novo que a API no ar não mexe no esquema por um
+	// `listar` (sem a migração 00006 o comando falha com "relation ... does not exist": rode `api migrar`).
+	if os.Args[1] != "worker" && os.Args[1] != "servico" {
 		if err := banco.Migrar(p); err != nil {
 			slog.Error("migrations", "erro", err)
 			os.Exit(1)
@@ -48,12 +50,15 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "api":
-		// Prazos: WriteTimeout acima do maior prazo por requisição (web.PrazoCollabs = 120 s)
+		if cfg.ZeptoToken == "" { // o convite e o "esqueci a senha" dependem dele (Carregar já validou os endereços e o remetente)
+			slog.Warn("ZEPTOMAIL_TOKEN ausente: convite e esqueci-senha não mandam e-mail")
+		}
+		// Prazos: WriteTimeout acima do maior prazo por requisição (web.PrazoCollabs = 120 s; o grupo de domínio, web.PrazoDominio, é menor)
 		// para o handler terminar e responder antes de a conexão cair; ReadTimeout cobre o
 		// corpo de até 5 MB da Shopify em rede ruim; IdleTimeout fecha keep-alive parado.
 		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), cfg),
 			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
-			WriteTimeout: web.PrazoCollabs + 30*time.Second, IdleTimeout: 120 * time.Second}
+			WriteTimeout: web.EscritaDoServidor, IdleTimeout: 120 * time.Second}
 		fim := make(chan struct{})
 		go func() {
 			<-ctx.Done()
@@ -72,6 +77,10 @@ func main() {
 		<-fim // espera o escoamento das requisições antes do p.Close() adiado
 	case "worker":
 		codigo := rodarWorker(ctx, p, cfg, os.Args[2:])
+		p.Close()
+		os.Exit(codigo)
+	case "servico":
+		codigo := servicoComando(ctx, auth.NovoStore(p), os.Args[2:], os.Stdout, os.Stderr)
 		p.Close()
 		os.Exit(codigo)
 	case "importar-usuarios":

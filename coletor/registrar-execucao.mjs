@@ -10,6 +10,7 @@
 // Reexportado para quem já importava daqui não quebrar.
 export { PRECO, calcularUsd, ehModeloAnthropic, custoDaExecucao } from './lib/custo-da-execucao.mjs';
 import { custoDaExecucao } from './lib/custo-da-execucao.mjs';
+import { fabricaNaApi, ROBOS_DA_FABRICA, registrarExecucaoNaApi } from './lib/fabrica-banco.mjs';
 
 // Registra uma execução. `usd` é opcional: se vier undefined, calcula de modelo+tokens.
 export async function registrarExecucao({
@@ -22,7 +23,9 @@ export async function registrarExecucao({
     // Lê o env na hora da chamada (scripts como panorama populam o .env em runtime).
     const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
     const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-    if (!SERVICE_KEY) { console.error('aviso ia_execucoes: falta SUPABASE_SERVICE_KEY'); return; }
+    // Plano 7 (5.8): os robôs da Fábrica gravam pela rota do robô quando a API está ligada.
+    const pelaApi = fabricaNaApi() && ROBOS_DA_FABRICA.includes(robo);
+    if (!pelaApi && !SERVICE_KEY) { console.error('aviso ia_execucoes: falta SUPABASE_SERVICE_KEY'); return; }
     // NULO quando ninguém sabe (motor pago de fora), 0 só quando é zero mesmo.
     const custo = custoDaExecucao({ modelo, inputTokens, outputTokens, usd });
     const body = {
@@ -32,6 +35,7 @@ export async function registrarExecucao({
       duracao_ms: duracaoMs, itens, unidade, status, detalhe,
       github_run_id: process.env.GITHUB_RUN_ID || null,
     };
+    if (pelaApi) { await registrarExecucaoNaApi(body); return; }
     const r = await fetch(SUPABASE_URL + '/rest/v1/ia_execucoes', {
       method: 'POST',
       headers: {

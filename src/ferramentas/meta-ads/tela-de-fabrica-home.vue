@@ -5,6 +5,10 @@ import { useRouter } from 'vue-router'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
+import { areaNaApi, fetchDaApi, invocarNaArea } from '../../compartilhado/api.js'
+// Chave `fabrica` (Plano 7): leituras e edges da Fábrica (5.8) pela API.
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import TourCoachmark from './tour-coachmark.vue'
 import { CHECKLIST, COACH } from './tutorial-fabrica.js'
 import './estudio.css'
@@ -29,9 +33,13 @@ let timer = null
 async function carregar() {
   if (!hasPermission('module:meta:fabrica')) { router.push({ name: 'meta-ads' }); return }
   // em criação
-  const camp = await sb("fabrica_campanhas?select=id,nome,status,created_at&fechada_em=is.null&purgado_em=is.null&status=in.(gerando,pronta,erro)&order=created_at.desc")
+  // Pela API (chave `fabrica`) a contagem de criativos vem na própria rodada
+  // (`qtd_criativos`, 5.8): some o laço de uma consulta por campanha.
+  const naApi = areaNaApi('fabrica')
+  const camp = await sb(`fabrica_campanhas?select=id,nome,status,created_at${naApi ? ',qtd_criativos' : ''}&fechada_em=is.null&purgado_em=is.null&status=in.(gerando,pronta,erro)&order=created_at.desc`)
+  if (naApi) for (const c of camp) c.qtd = c.qtd_criativos || 0
   // contagem de criativos por campanha (uma consulta por campanha; volume pequeno)
-  for (const c of camp) {
+  else for (const c of camp) {
     const { count } = await sbClient.from('fabrica_criativos').select('id', { count: 'exact', head: true }).eq('campanha_id', c.id)
     c.qtd = count || 0
   }
@@ -39,7 +47,7 @@ async function carregar() {
   // remove da seleção o que não está mais em criação
   if (selecionadas.value.size) selecionadas.value = new Set(camp.filter((c) => selecionadas.value.has(c.id)).map((c) => c.id))
   publicadas.value = await sb("fabrica_campanhas?select=id,nome,fechada_em&fechada_em=not.is.null&order=fechada_em.desc&limit=8")
-  const { count: totCri } = await sbClient.from('fabrica_criativos').select('id', { count: 'exact', head: true })
+  const { count: totCri } = await deOnde(sbClient).from('fabrica_criativos').select('id', { count: 'exact', head: true })
   nums.value = { criando: camp.length, criativos: totCri || 0, publicadas: publicadas.value.length }
   carregarStatusPublicadas()   // em 2º plano: pinta os badges quando o Meta responde
 }
@@ -73,12 +81,14 @@ function estadoDoStatus(eff) {
 // Excluída = o Graph nega o GET (code 100 / "does not exist"). Erro transitório -> '?' (não afirma excluída).
 async function statusCampanhaMeta(metaId) {
   try {
-    const { data: { session } } = await sbClient.auth.getSession()
-    const r = await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + (session?.access_token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId: ACCOUNT_ID, path: '/' + metaId, params: { fields: 'effective_status' }, method: 'GET' }),
-    })
+    const corpo = JSON.stringify({ accountId: ACCOUNT_ID, path: '/' + metaId, params: { fields: 'effective_status' }, method: 'GET' })
+    const r = areaNaApi('edges-core')
+      ? await fetchDaApi('/meta-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo })
+      : await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + ((await sbClient.auth.getSession()).data.session?.access_token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: corpo,
+      })
     const d = await r.json().catch(() => null)
     if (d && d.effective_status) return estadoDoStatus(d.effective_status)
     const msg = String((d && d.error && (d.error.message || d.error)) || '')
@@ -103,7 +113,7 @@ async function carregarStatusPublicadas() {
 }
 async function apagar(c) {
   if (!confirm(`Apagar a campanha "${c.nome}"? ${c.status === 'gerando' ? 'A geração em andamento será cancelada. ' : ''}Isso remove os criativos e não dá pra desfazer.`)) return
-  const { error } = await sbClient.functions.invoke('fabrica-apagar', { body: { campanhaId: c.id } })
+  const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-apagar', { body: { campanhaId: c.id } })
   if (error) return alert('Falha ao apagar: ' + error.message)
   carregar()
 }
@@ -125,7 +135,7 @@ async function apagarSelecionadas() {
   apagandoMassa.value = true
   const falhas = []
   for (const c of alvos) {
-    const { error } = await sbClient.functions.invoke('fabrica-apagar', { body: { campanhaId: c.id } })
+    const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-apagar', { body: { campanhaId: c.id } })
     if (error) falhas.push(c.nome)
   }
   apagandoMassa.value = false

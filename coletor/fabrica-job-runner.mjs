@@ -11,6 +11,9 @@
 //   node fabrica-job-runner.mjs --job <uuid>
 import './lib/carregar-env.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
+// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
+// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
+import { vaiParaApi, fabricaNaApi, lerFabrica, escreverFabrica, proximoLote } from './lib/fabrica-banco.mjs';
 import { run as gerarRun } from './gerar-criativos.mjs';
 import { exportarCampanhaZoho } from './exportar-zoho.mjs';
 import { run as subirRun } from './subir-estudio.mjs';
@@ -26,16 +29,19 @@ const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'applicat
 // --- Supabase REST (service key) — mesmo padrão de sbGet/sbPost dos outros .mjs do coletor
 // (subir-estudio.mjs, gerar-criativos.mjs); sbPatch é o análogo de sbPost trocando o método. ---
 async function sbGet(p) {
+  if (vaiParaApi(p)) return lerFabrica(p);
   const r = await fetch(REST + p, { headers: H });
   if (!r.ok) throw new Error('GET ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
 }
 async function sbPatch(p, body) {
+  if (vaiParaApi(p)) return escreverFabrica('PATCH', p, body);
   const r = await fetch(REST + p, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error('PATCH ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r;
 }
 async function sbPost(p, body, prefer) {
+  if (vaiParaApi(p)) return escreverFabrica('POST', p, body);
   const r = await fetch(REST + p, { method: 'POST', headers: prefer ? { ...H, Prefer: prefer } : H, body: JSON.stringify(body) });
   if (!r.ok && ![200, 201, 204].includes(r.status)) throw new Error('POST ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r;
@@ -46,13 +52,20 @@ async function sbPost(p, body, prefer) {
 // Action via GITHUB_TOKEN (workflow_dispatch é permitido pra ele). A idempotência do gerar-criativos
 // (pula os criativos já existentes) faz cada lote continuar de onde parou — do início ao fim, sem
 // travar (cada lote é curto, bem abaixo do timeout). Guard de segurança: para em 300 lotes.
-async function encadearProximoLote(params) {
+async function encadearProximoLote(params, jobId) {
   const continuacao = (params.continuacao || 0) + 1;
   if (continuacao > 300) { console.warn('encadeamento: limite de 300 lotes atingido — parando por segurança'); return; }
   const prox = { ...params, continuacao };
-  const novo = await sbPost('/fabrica_jobs', [{ tipo: 'gerar', params: prox, status: 'enfileirado' }], 'return=representation');
-  const novoId = (await novo.json())[0].id;
-  if (prox.campanhaId) await sbPatch(`/fabrica_campanhas?id=eq.${prox.campanhaId}`, { job_id: novoId });
+  let novoId;
+  if (fabricaNaApi()) {
+    // Pela API, UMA rota cria o job do próximo lote e o liga à rodada (idempotente:
+    // um segundo pedido devolve o que já existe; 409 acima de 300 lotes).
+    novoId = await proximoLote(jobId);
+  } else {
+    const novo = await sbPost('/fabrica_jobs', [{ tipo: 'gerar', params: prox, status: 'enfileirado' }], 'return=representation');
+    novoId = (await novo.json())[0].id;
+    if (prox.campanhaId) await sbPatch(`/fabrica_campanhas?id=eq.${prox.campanhaId}`, { job_id: novoId });
+  }
   const repo = process.env.GITHUB_REPO, token = process.env.GH_TOKEN;
   if (!repo || !token) { console.warn('sem GH_TOKEN/GITHUB_REPO — próximo lote (job ' + novoId + ') ficou enfileirado; dispare manualmente'); return; }
   const gh = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/fabrica.yml/dispatches`, {
@@ -154,7 +167,7 @@ async function main() {
       await sbPatch(`/fabrica_jobs?id=eq.${jobId}`, { status: 'concluido', resultado: r, updated_at: new Date().toISOString() });
       if (r.incompleto && r.novas > 0) {
         // lote parcial: encadeia o próximo automaticamente; campanha segue 'gerando' (não marca pronta)
-        await encadearProximoLote(job.params || {});
+        await encadearProximoLote(job.params || {}, jobId);
         await reg(r.criativos, 'criativos', 'ok', 'lote ' + ((job.params?.continuacao || 0) + 1) + ' (+' + r.novas + ')');
       } else {
         // completo (ou nada novo progrediu). Conta o TOTAL da campanha: se 0, NÃO diz "pronto pra curar"

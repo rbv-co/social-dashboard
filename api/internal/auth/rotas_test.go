@@ -146,6 +146,14 @@ func TestEuSairESemToken(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"frota":["ver"]`) {
 		t.Fatalf("eu = %d %s", w.Code, w.Body)
 	}
+	// e-mail e nome para a tela (avatar, menu, faixa do "entrar como"): aditivo ao contrato
+	if b := w.Body.String(); !strings.Contains(b, `"email":"a@x.com"`) || !strings.Contains(b, `"nome":null`) {
+		t.Fatalf("eu sem e-mail/nome: %s", b)
+	}
+	p.Exec(context.Background(), `update profiles set name = 'Ana' where id = $1`, uid)
+	if b := chamar(h, "GET", "/auth/eu", "", tok).Body.String(); !strings.Contains(b, `"nome":"Ana"`) {
+		t.Fatalf("eu sem o nome do perfil: %s", b)
+	}
 	if w := chamar(h, "POST", "/auth/sair", "", tok); w.Code != 204 {
 		t.Fatalf("sair = %d", w.Code)
 	}
@@ -264,13 +272,27 @@ func TestIPBloqueadoNaoTrancaContaDaVitima(t *testing.T) {
 	}
 }
 
-func TestLoginDeDesativadoPorProfilesEh401MesmoComSenhaCerta(t *testing.T) {
-	p, _, h := montar(t)
-	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
-	p.Exec(context.Background(), `update profiles set disabled = true where id = $1`, uid)
-	w := chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"certa"}`, "")
-	if w.Code != 401 || !strings.Contains(w.Body.String(), "credenciais_invalidas") {
-		t.Fatalf("= %d %s", w.Code, w.Body)
+// Conta desativada (profiles.disabled ou usuarios.desativado_em): com a senha CERTA, 403
+// conta_desativada e nenhuma sessão; com a senha ERRADA, o mesmo 401 de quem não existe.
+func TestLoginDeDesativadoSoDizQueEstaDesativadoComASenhaCerta(t *testing.T) {
+	for _, como := range []string{`update profiles set disabled = true where id = $1`, `update usuarios set desativado_em = now() where id = $1`} {
+		p, _, h := montar(t)
+		usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+		p.Exec(context.Background(), como, uid)
+		w := chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"certa"}`, "")
+		if w.Code != 403 || strings.TrimSpace(w.Body.String()) != `{"error":"conta_desativada"}` {
+			t.Fatalf("%s: senha certa = %d %s", como, w.Code, w.Body)
+		}
+		w = chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"errada"}`, "")
+		inexistente := chamar(h, "POST", "/auth/entrar", `{"email":"ninguem@x.com","senha":"errada"}`, "")
+		if w.Code != 401 || w.Body.String() != inexistente.Body.String() {
+			t.Fatalf("%s: senha errada = %d %s (inexistente: %s)", como, w.Code, w.Body, inexistente.Body)
+		}
+		var n int
+		p.QueryRow(context.Background(), `select count(*) from sessoes`).Scan(&n)
+		if n != 0 {
+			t.Fatalf("%s: conta desativada ganhou %d sessão(ões)", como, n)
+		}
 	}
 }
 
@@ -288,8 +310,13 @@ func TestLoginDeUsuarioSemProfilesFunciona(t *testing.T) {
 	p, _, h := montar(t)
 	hash, _ := HashDaSenha("s3nha")
 	p.Exec(context.Background(), `insert into usuarios (id, email, senha_hash) values ($1, 'c@x.com', $2)`, uid, hash)
-	if entrar(t, h, "c@x.com", "s3nha") == "" {
+	tok := entrar(t, h, "c@x.com", "s3nha")
+	if tok == "" {
 		t.Fatal("sem token")
+	}
+	// sem perfil: /auth/eu responde com o e-mail e nome null (Ruling 37), nunca 500
+	if w := chamar(h, "GET", "/auth/eu", "", tok); w.Code != 200 || !strings.Contains(w.Body.String(), `"email":"c@x.com"`) || !strings.Contains(w.Body.String(), `"nome":null`) {
+		t.Fatalf("eu sem perfil = %d %s", w.Code, w.Body)
 	}
 }
 

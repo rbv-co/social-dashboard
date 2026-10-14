@@ -17,10 +17,11 @@ import (
 // Tabelas que em produção vêm do dump do Supabase. Aqui só o mínimo que o núcleo lê.
 const legado = `
 create table profiles (
-  id uuid primary key, email text, role text,
+  id uuid primary key, email text, name text, role text,
   is_superadmin boolean default false, permissions jsonb default '{}'::jsonb,
   disabled boolean default false,
-  features text[] default '{banco}', escopo_por_equipe boolean default false
+  features text[] default '{banco}', escopo_por_equipe boolean default false,
+  avatar_url text, allowed_accounts text[], precisa_trocar_senha boolean not null default false
 );
 create table robos_execucoes (
   id bigserial primary key, robo text not null, request_id bigint,

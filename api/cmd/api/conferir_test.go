@@ -11,9 +11,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
+	"github.com/rbv-co/social-dashboard/api/internal/web"
 	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
 
@@ -77,6 +80,28 @@ func esquemaCompleto(t *testing.T, p *pgxpool.Pool, tudoTexto bool) {
 		}
 		ddl = append(ddl, fmt.Sprintf("create function %s(%s) %s language plpgsql as $f$ %s $f$", nome, strings.Join(args, ", "), retorno, corpo))
 	}
+	// As funções de web.FuncoesRPC que as listas acima não criam (as do 5.2), pela PRÓPRIA declaração: Opcional =
+	// DEFAULT null; o retorno segue rpc.Retorno (Plano 5.9). conferirRPC do conferirSchema as confere.
+	criadas := map[string]bool{}
+	for _, item := range append(slices.Clone(funcoesDoWorker), funcoesPorNomeDoWorker...) {
+		criadas[nomeDaFuncao(item)] = true
+	}
+	for _, f := range web.FuncoesRPC {
+		if criadas[f.Nome] {
+			continue
+		}
+		var args []string
+		for _, pr := range f.Params {
+			args = append(args, pr.Nome+" "+pr.Tipo+map[bool]string{true: " default null"}[pr.Opcional])
+		}
+		retorno := map[rpc.Retorno]string{rpc.Valor: "integer", rpc.Conjunto: "setof integer", rpc.Nada: "void"}[f.Retorno]
+		ddl = append(ddl, fmt.Sprintf("create function %s(%s) returns %s language sql as $f$ select null::integer $f$",
+			f.Nome, strings.Join(args, ", "), retorno))
+	}
+	ddl = append(ddl, `create function trg_vazio() returns trigger language plpgsql as $f$ begin return new; end $f$`)
+	for _, g := range gatilhosDoWorker {
+		ddl = append(ddl, fmt.Sprintf("create trigger %s before update on %s for each row execute function trg_vazio()", g[0], g[1]))
+	}
 	for _, s := range ddl {
 		if _, err := p.Exec(context.Background(), s); err != nil {
 			t.Fatalf("%s: %v", s, err)
@@ -130,12 +155,19 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 	for _, quer := range []string{"coluna campaigns.objective", "único campaigns(campaign_id)", "função pegar_da_fila(text,integer,integer,boolean,text[])",
 		"coluna accounts.id", "coluna bling_pedido_nota.nota_situacao", "coluna bling_pedido_ajuste_valor.pedido_id", "coluna bling_pedido_vendedor.pedido_id",
 		"coluna bling_lojas.loja_id", "coluna frota_uso.saida_em", "coluna frota_uso.id", "função registrar_checkout_abandono",
-		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)"} {
+		"coluna equipes_permissoes.chave", "coluna entradas_como_outro_usuario.admin_id", "coluna entradas_como_outro_usuario.criado_em", "coluna equipes.deposito_id",
+		"coluna access_requests.status", "coluna acessos_perfis.permissions", "coluna canais_grupos_membros.concedido_por", "coluna push_preferencias.alterado_por",
+		"único push_subs(endpoint)", "único push_preferencias(user_id,tipo)", "função guard_profiles()", "função equipes_toca_atualizado()", "função impedir_autopromocao()", "função espelhar_rename_do_grupo()", "função espelhar_grupo_do_canal()", "único acessos_perfis(nome)", // Plano 5.1
+		"gatilho equipes_atualizado em equipes (ausente ou desabilitado)", "gatilho trg_espelhar_grupo_do_canal em bling_lojas (ausente ou desabilitado)",
+		"gatilho trg_espelhar_rename_do_grupo em canais_grupos (ausente ou desabilitado)", "gatilho trg_guard_profiles em profiles (ausente ou desabilitado)",
+		"gatilho trg_impedir_autopromocao em profiles (ausente ou desabilitado)",
+		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)",
+		"coluna noticias_concorrentes.rodada", "coluna noticias_panorama.rodada", "coluna ia_execucoes.run_at", "coluna robos_saude.critico"} {
 		if !tem(quer) {
 			t.Errorf("faltou acusar %q", quer)
 		}
 	}
-	for _, nao := range []string{"coluna robos_execucoes.conferido_em", "coluna profiles.features"} {
+	for _, nao := range []string{"coluna robos_execucoes.conferido_em", "coluna profiles.features", "coluna profiles.precisa_trocar_senha", "coluna profiles.allowed_accounts"} {
 		if tem(nao) { // a tabela existe no banco de teste (legado)
 			t.Errorf("acusou o que existe: %q", nao)
 		}
@@ -147,6 +179,22 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 	}
 }
 
+// robos_saude é uma VISÃO em produção (relkind 'v'): a conferência de colunas a enxerga, e acusa a
+// que falta nela (não olha só tabelas).
+func TestConferirEnxergaAVisaoRobosSaude(t *testing.T) {
+	p := testebanco.Novo(t)
+	esquemaCompleto(t, p, false)
+	exec(t, p, `alter table robos_saude rename to robos_saude_base`,
+		`create view robos_saude as select robo, critico from robos_saude_base`)
+	if f := faltamDe(t, p); len(f) > 0 {
+		t.Fatalf("a visão com robo e critico devia conferir:\n%s", strings.Join(f, "\n"))
+	}
+	exec(t, p, `drop view robos_saude`, `create view robos_saude as select robo from robos_saude_base`)
+	if f := faltamDe(t, p); !slices.Equal(f, []string{"coluna robos_saude.critico"}) {
+		t.Fatalf("visão sem critico: %v", f)
+	}
+}
+
 // Toda coluna como text: tipo errado em tudo. Tem de sair 1 e dizer esperado × achado.
 func TestConferirSchemaTudoTextoFalhaPeloTipo(t *testing.T) {
 	p := testebanco.Novo(t)
@@ -154,7 +202,8 @@ func TestConferirSchemaTudoTextoFalhaPeloTipo(t *testing.T) {
 	faltam := faltamDe(t, p)
 	for _, quer := range []string{"tipo accounts.id: esperado uuid, achado text", "tipo daily_snapshots.account_id: esperado uuid, achado text",
 		"tipo bling_pedido_vendedor.pedido_id: esperado bigint|integer, achado text", "tipo bling_pedido_nota.nota_situacao: esperado smallint|integer, achado text",
-		"tipo daily_snapshots.captured_at: esperado date, achado text", "tipo frota_checklist.cadencias: esperado text[], achado text"} {
+		"tipo daily_snapshots.captured_at: esperado date, achado text", "tipo frota_checklist.cadencias: esperado text[], achado text",
+		"tipo noticias_concorrentes.rodada: esperado date, achado text", "tipo noticias_panorama.rodada: esperado date, achado text"} {
 		if !slices.Contains(faltam, quer) {
 			t.Errorf("faltou acusar %q", quer)
 		}
@@ -453,5 +502,234 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 		if got := donoNaTela(esperados, r); got != "coletar-dados" {
 			t.Errorf("%q cai em %q, esperava coletar-dados", r, got)
 		}
+	}
+}
+
+// Plano 5.1: gatilho ausente, na tabela errada ou desabilitado é acusado (a função sozinha existir não basta).
+func TestConferirGatilhosDoPlano51(t *testing.T) {
+	p := testebanco.Novo(t)
+	esquemaCompleto(t, p, false)
+	exec(t, p, `alter table profiles disable trigger trg_guard_profiles`, `drop trigger equipes_atualizado on equipes`,
+		`drop trigger trg_espelhar_rename_do_grupo on canais_grupos`,
+		`create trigger trg_espelhar_rename_do_grupo before update on canais_grupos_membros for each row execute function trg_vazio()`)
+	var gatilhos []string
+	for _, f := range faltamDe(t, p) {
+		if strings.HasPrefix(f, "gatilho ") {
+			gatilhos = append(gatilhos, f)
+		} else {
+			t.Errorf("só gatilho devia faltar: %q", f)
+		}
+	}
+	quer := []string{"gatilho equipes_atualizado em equipes (ausente ou desabilitado)", "gatilho trg_espelhar_rename_do_grupo em canais_grupos (ausente ou desabilitado)",
+		"gatilho trg_guard_profiles em profiles (ausente ou desabilitado)"}
+	if !slices.Equal(gatilhos, quer) {
+		t.Fatalf("gatilhos acusados: %v", gatilhos)
+	}
+}
+
+// Plano 5.1: contra a fatia D0 do esquema de produção, NADA das tabelas, funções e gatilhos do 5.1 é acusado
+// (pega erro de digitação nas listas do conferir). O que é de outros planos fica de fora do filtro.
+func TestConferirNaFatiaD0NaoAcusaOPlano51(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	tabelas51 := []string{"profiles", "equipes", "equipes_membros", "equipes_permissoes", "canais_grupos", "canais_grupos_membros",
+		"bling_lojas", "acessos_perfis", "access_requests", "push_subs", "push_preferencias", "data_integrity_checks"}
+	funcoes51 := []string{"guard_profiles", "impedir_autopromocao", "espelhar_rename_do_grupo", "espelhar_grupo_do_canal", "equipes_toca_atualizado"}
+	do51 := func(f string) bool {
+		if strings.HasPrefix(f, "gatilho ") {
+			return true
+		}
+		for _, fn := range funcoes51 {
+			if strings.HasPrefix(f, "função "+fn+"(") {
+				return true
+			}
+		}
+		for _, tb := range tabelas51 {
+			if strings.Contains(f, " "+tb+".") || strings.Contains(f, " "+tb+"(") {
+				return true
+			}
+		}
+		return false
+	}
+	faltam := faltamDe(t, p)
+	if len(faltam) == 0 {
+		t.Fatal("a fatia D0 não tem o esquema todo: devia sobrar item de outros planos (o filtro não provaria nada)")
+	}
+	for _, f := range faltam {
+		if do51(f) {
+			t.Errorf("a fatia D0 devia satisfazer o 5.1, mas o conferir acusa %q", f)
+		}
+	}
+}
+
+// Plano 5.7 (Ruling 5.7-16): account_id das gt_* e da social_metas é TEXTO. O init só completa com uuid o que
+// a lista não declara: se sobrescrevesse, a conferência acusaria falso no banco restaurado.
+func TestContaEmTextoNaoViraUUID(t *testing.T) {
+	for _, k := range []string{"gt_fila_decisoes.account_id", "gt_budget_analises.account_id", "gt_ad_analises.account_id",
+		"gt_campanhas_rascunho.account_id", "gt_problemas_meta.account_id", "fabrica_marcas.account_id", "social_metas.account_id"} {
+		if tiposDoWorker[k] != "text" {
+			t.Errorf("tiposDoWorker[%q] = %q, esperava text", k, tiposDoWorker[k])
+		}
+	}
+	if tiposDoWorker["campaigns.account_id"] != "uuid" {
+		t.Errorf("campaigns.account_id = %q: o init deixou de completar com uuid o que não é declarado", tiposDoWorker["campaigns.account_id"])
+	}
+}
+
+// Plano 5.7: contra a fatia D0 (as 10 tabelas + fabrica_marcas, os únicos e gt_registrar_problemas), o conferir
+// não acusa nada do 5.7 — pega erro de digitação nas listas. Os presumidos (impactos, limiares_resultado) estão
+// na fatia como jsonb; no banco restaurado quem confere é o `api worker conferir`.
+func TestConferirNaFatiaD0NaoAcusaOPlano57(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	tabelas57 := []string{"gt_config_metricas", "gt_objetivo_interacao", "gt_ponderada_config", "gt_ponderada_config_log",
+		"gt_budget_analises", "gt_ad_analises", "gt_fila_decisoes", "gt_campanhas_rascunho", "gt_problemas_meta",
+		"fabrica_marcas", "interesses_sugeridos"}
+	for _, f := range faltamDe(t, p) {
+		if strings.Contains(f, "gt_registrar_problemas") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.7, mas o conferir acusa %q", f)
+		}
+		for _, tb := range tabelas57 {
+			if strings.Contains(f, " "+tb+".") || strings.Contains(f, " "+tb+"(") {
+				t.Errorf("a fatia D0 devia satisfazer o 5.7, mas o conferir acusa %q", f)
+			}
+		}
+	}
+}
+
+// do52: o que o `conferir` acusa que é do 5.2 (as tabelas, os únicos, as funções-gatilho do bem, os gatilhos
+// e as RPCs). O resto da fatia D0 é de outros planos.
+func do52(f string) bool {
+	if strings.HasPrefix(f, "gatilho ") || strings.HasPrefix(f, "rpc ") || strings.Contains(f, "patrimonio_") {
+		return true
+	}
+	for _, c := range []string{" acessos_setores.", " acessos_pessoas.", " frota_veiculos.", " equipes.local_id", "função bem_de_veiculo_segue_a_frota("} {
+		if strings.Contains(f, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// Plano 5.2: contra a fatia D0 NADA do 5.2 é acusado (pega erro de digitação nas listas do conferir) e as 5
+// RPCs de web.FuncoesRPC batem com o pg_proc da D0 (Ruling do ledger, menor M3 da Task 9: só este teste pega
+// declaração de RPC errada, porque o mundo do pacote patrimonio monta a lista, não a confere).
+func TestConferirNaFatiaD0NaoAcusaOPlano52(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	faltam := faltamDe(t, p)
+	if len(faltam) == 0 {
+		t.Fatal("a fatia D0 não tem o esquema todo: devia sobrar item de outros planos (o filtro não provaria nada)")
+	}
+	for _, f := range faltam {
+		if do52(f) {
+			t.Errorf("a fatia D0 devia satisfazer o 5.2, mas o conferir acusa %q", f)
+		}
+	}
+	for _, c := range []string{"patrimonio_bens.", "patrimonio_posse.", "patrimonio_config(", "trg_patrimonio_espelha_situacao"} { // o que o 5.2 presume está LISTADO
+		achou := false
+		for _, l := range []map[string]string{colunasDoWorker, tiposDoWorker} {
+			for k := range l {
+				achou = achou || strings.HasPrefix(k, c)
+			}
+		}
+		for _, l := range [][]string{unicosDoWorker, funcoesDoWorker} {
+			achou = achou || slices.ContainsFunc(l, func(k string) bool { return strings.HasPrefix(k, c) })
+		}
+		achou = achou || slices.ContainsFunc(gatilhosDoWorker, func(g [2]string) bool { return g[0] == c })
+		if !achou {
+			t.Errorf("o conferir não lista %q (o 5.2 o presume)", c)
+		}
+	}
+	nomes := map[string]bool{}
+	for _, f := range web.FuncoesRPC {
+		nomes[f.Nome] = true
+	}
+	for _, n := range []string{"criar_pessoa_rapida", "criar_setor_rapido", "pessoas_para_escolher", "setores_para_escolher", "sincronizar_carro_e_bem"} {
+		if !nomes[n] {
+			t.Errorf("web.FuncoesRPC não tem %s", n)
+		}
+	}
+	emTx(t, p, func(tx pgx.Tx) {
+		papelAuthenticated(t, p)
+		if f, err := conferirRPC(context.Background(), tx, web.FuncoesRPC); err != nil || len(f) != 0 {
+			t.Errorf("web.FuncoesRPC contra o pg_proc da D0: %v %v", f, err)
+		}
+	})
+}
+
+// Plano 5.2: o conferir ACUSA o que o 5.2 presume quando o banco restaurado diverge: coluna ausente, tipo
+// trocado, único faltando, gatilho desligado, função ausente e declaração de RPC errada.
+func TestConferirAcusaADivergenciaDoPlano52(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	papelAuthenticated(t, p)
+	exec(t, p,
+		`alter table patrimonio_bens drop column etiquetado`,
+		`alter table patrimonio_posse alter column de type text using de::text`,
+		`alter table patrimonio_config drop constraint patrimonio_config_pkey`,
+		`alter table patrimonio_bens disable trigger trg_patrimonio_espelha_situacao`,
+		`drop trigger trg_patrimonio_espelha_responsavel on patrimonio_bens`,
+		`drop function patrimonio_espelha_responsavel_no_veiculo() cascade`)
+	faltam := faltamDe(t, p)
+	for _, quer := range []string{"coluna patrimonio_bens.etiquetado", "tipo patrimonio_posse.de: esperado date",
+		"único patrimonio_config(chave)", "gatilho trg_patrimonio_espelha_situacao em patrimonio_bens (ausente ou desabilitado)",
+		"gatilho trg_patrimonio_espelha_responsavel em patrimonio_bens (ausente ou desabilitado)",
+		"função patrimonio_espelha_responsavel_no_veiculo()"} {
+		if !contem(faltam, quer) {
+			t.Errorf("o conferir não acusou %q", quer)
+		}
+	}
+	// declaração errada: p_nome sem Opcional e o retorno trocado de Conjunto para Valor
+	errada := slices.Clone(web.FuncoesRPC)
+	for i, f := range errada {
+		switch f.Nome {
+		case "sincronizar_carro_e_bem":
+			errada[i].Params = slices.Clone(f.Params)
+			for j := range errada[i].Params {
+				if errada[i].Params[j].Nome == "p_nome" {
+					errada[i].Params[j].Opcional = false
+				}
+			}
+		case "pessoas_para_escolher":
+			errada[i].Retorno = rpc.Valor
+		}
+	}
+	emTx(t, p, func(tx pgx.Tx) {
+		f, err := conferirRPC(context.Background(), tx, errada)
+		if err != nil || !contem(f, "rpc sincronizar_carro_e_bem: parâmetro p_nome") || !contem(f, "rpc pessoas_para_escolher: declarada como Valor") {
+			t.Errorf("declaração errada não acusada: %v %v", f, err)
+		}
+	})
+}
+
+// Plano 5.8: o deposito_id da loja é TEXTO (a Fábrica compara texto com texto). O de gc_estoque_item (bigint)
+// entra com a Task 7, junto das tabelas gc_* do 5.5.
+func TestTiposDaFabrica(t *testing.T) {
+	if tiposDoWorker["fabrica_lojas.deposito_id"] != "text" {
+		t.Errorf("fabrica_lojas.deposito_id = %q, esperava text", tiposDoWorker["fabrica_lojas.deposito_id"])
+	}
+}
+
+// Plano 5.8: contra a fatia D0 (as 8 tabelas da Fábrica, fabrica_marcas e ia_execucoes), o conferir não acusa
+// nada de fabrica_* — pega erro de digitação nas listas. No banco restaurado quem confere é o `api worker conferir`.
+func TestConferirNaFatiaD0NaoAcusaOPlano58(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	for _, f := range faltamDe(t, p) {
+		if strings.Contains(f, " fabrica_") || strings.Contains(f, " ia_execucoes.") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.8, mas o conferir acusa %q", f)
+		}
+	}
+}
+
+// Plano 5.9: contra a fatia D0 (as 9 conteudo_*, o gatilho da aprovação e as 6 RPCs verbatim), o conferir não
+// acusa nada do 5.9 — pega erro de digitação nas listas. conteudo_reivindicar_hora_h é do Plano 4 (o robô da
+// hora H tem banco próprio nos testes) e não está na fatia.
+func TestConferirNaFatiaD0NaoAcusaOPlano59(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	faltam := faltamDe(t, p)
+	for _, f := range faltam {
+		if strings.Contains(f, " conteudo_") && !strings.Contains(f, "conteudo_reivindicar_hora_h") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.9, mas o conferir acusa %q", f)
+		}
+	}
+	if !slices.ContainsFunc(faltam, func(f string) bool { return strings.Contains(f, "conteudo_reivindicar_hora_h") }) {
+		t.Error("conteudo_reivindicar_hora_h não está na fatia: o conferir devia acusá-la (o filtro acima não provaria nada)")
 	}
 }

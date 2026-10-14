@@ -381,6 +381,9 @@ export function fraseDaSenha(codigo) {
       return 'Digite sua senha para confirmar. É a mesma senha com que você entra no aplicativo.'
     case 'sem_sessao':
       return 'Seu acesso expirou. Saia e entre de novo no aplicativo. Nada foi apagado.'
+    case 'entrou_como_outra_pessoa':
+      // API em Go (Plano 7): a aba de "entrar como" não confere senha por ninguém.
+      return 'Nesta aba você entrou como outra pessoa, e a senha que vale é só a dela. Nada foi apagado.'
     default:
       // 'falha_interna', erro de rede, resposta que não deu para ler: todos têm
       // a mesma orientação honesta — não sabemos, e nada foi apagado.

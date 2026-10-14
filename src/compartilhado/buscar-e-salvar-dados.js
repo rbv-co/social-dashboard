@@ -1,6 +1,8 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './conectar-no-banco-de-dados.js'
 import { estado } from './controle-de-login-e-usuario.js'
 import { classificarErro, ERRO_DE_REDE } from './classificar-erro.js'
+import { pedir, erroDaApi } from './api.js'
+import { tabelaNaApi, fetchPostgrest } from './banco-pela-api.js'
 
 // Anexa o erro ao array SEM torná-lo enumerável: quem não sabe do .erro continua
 // vendo um array normal (length 0, map, spread, JSON) — é o que mantém os 53
@@ -27,7 +29,9 @@ export function comErro(array, erro) {
 export async function sb(path) {
   try {
     const token = estado.currentSession?.access_token || SUPABASE_ANON_KEY
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    // Tabela cuja área já fala com a API em Go (Plano 7): a mesma URL do
+    // PostgREST, traduzida para a rota (banco-pela-api.js). O resto é igual.
+    const r = tabelaNaApi(String(path).split('?')[0]) ? await fetchPostgrest(path) : await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
     })
     const json = await r.json().catch(() => null)
@@ -37,4 +41,14 @@ export async function sb(path) {
   } catch (e) {
     return comErro([], ERRO_DE_REDE)
   }
+}
+
+// Leitura de domínio pela API em Go (Plano 7), no MESMO formato de `sb`: array,
+// com `.erro` (não enumerável) quando falha. Sem permissão a API responde
+// `200 []`, como a RLS — continua invisível, igual ao `sb`.
+export async function lerDaApi(caminho, params) {
+  const { data, error } = await pedir('GET', caminho, { params })
+  if (error) return comErro([], error)
+  if (!Array.isArray(data)) return comErro([], erroDaApi(502, null))
+  return data
 }

@@ -7,11 +7,11 @@ package autz
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 )
 
 // Banco é o que CarregarEscopo e Conferir precisam: *pgxpool.Pool e pgx.Tx servem.
@@ -37,8 +37,8 @@ type Escopo struct {
 	Modulos     []string            // profiles.features
 	Chaves      map[string]bool     // chaves do objeto profiles.permissions (operador ? do jsonb)
 	Acoes       map[string][]string // permissions[chave] quando é array: os textos dele
-	SemTrava    bool                // tem perfil e escopo_por_equipe = false
-	TodasContas bool                // allowed_accounts nulo
+	SemTrava    bool                // tem perfil e escopo_por_equipe = false (nulo conta como true: restrito)
+	TodasContas bool                // allowed_accounts nulo ('{}' é nenhuma conta; elemento nulo é descartado)
 	Contas      []string            // allowed_accounts::text[]
 	Vinculos    map[string][]string // meus_vinculos(): equipe -> papéis (inclui a supervisora de grupo)
 	Diretos     map[string][]string // equipes_membros do próprio: equipe -> papéis
@@ -75,12 +75,12 @@ func CarregarEscopo(ctx context.Context, b Banco, usuarioID string) (*Escopo, er
 	e := &Escopo{ID: usuarioID, Ativo: true, Chaves: map[string]bool{}, Acoes: map[string][]string{},
 		Vinculos: map[string][]string{}, Diretos: map[string][]string{}}
 	var perm []byte
-	var desativado, porEquipe bool
+	var desativado, porEquipe bool // porEquipe: escopo_por_equipe, nulo = true (restrito)
 	var contas []string
 	err := b.QueryRow(ctx, `select coalesce(email, ''), coalesce(role::text, ''), coalesce(is_superadmin, false),
-	        coalesce(disabled, false), coalesce(escopo_por_equipe, false),
+	        coalesce(disabled, false), coalesce(escopo_por_equipe, true),
 	        coalesce(array_remove(features, null), '{}'::text[]), coalesce(permissions, '{}'::jsonb),
-	        allowed_accounts::text[]
+	        array_remove(allowed_accounts::text[], null)
 	   from profiles where id = $1::uuid`, usuarioID).
 		Scan(&e.Email, &e.Papel, &e.SuperFicha, &desativado, &porEquipe, &e.Modulos, &perm, &contas)
 	switch {
@@ -91,7 +91,7 @@ func CarregarEscopo(ctx context.Context, b Banco, usuarioID string) (*Escopo, er
 	default:
 		e.TemPerfil, e.Ativo, e.SemTrava = true, !desativado, !porEquipe
 		e.TodasContas, e.Contas = contas == nil, contas
-		lerPermissoes(perm, e)
+		e.Chaves, e.Acoes = auth.LerPermissoes(perm)
 	}
 
 	// meus_vinculos(): os vínculos diretos + 'supervisora' em toda equipe cujo canal é loja de
@@ -166,36 +166,4 @@ func acrescentar(l []string, v string) []string {
 		return l
 	}
 	return append(l, v)
-}
-
-// lerPermissoes é tolerante como o banco: permissions array só serve ao operador ? (casa
-// os elementos texto) e escalar não dá chave nenhuma (o vessel_pode exige objeto); valor que não é array conta para o operador ? mas não tem
-// ações; dentro do array só textos contam (o ? do jsonb só casa elemento texto).
-func lerPermissoes(bruto []byte, e *Escopo) {
-	var obj map[string]json.RawMessage
-	if json.Unmarshal(bruto, &obj) != nil {
-		// array: o ? do jsonb casa os elementos texto (nenhuma ação: vessel_pode exige objeto)
-		var lista []any
-		json.Unmarshal(bruto, &lista)
-		for _, x := range lista {
-			if s, ok := x.(string); ok {
-				e.Chaves[s] = true
-			}
-		}
-		return
-	}
-	for k, v := range obj {
-		e.Chaves[k] = true
-		var lista []any
-		if json.Unmarshal(v, &lista) != nil {
-			continue
-		}
-		acoes := []string{}
-		for _, x := range lista {
-			if s, ok := x.(string); ok {
-				acoes = append(acoes, s)
-			}
-		}
-		e.Acoes[k] = acoes
-	}
 }
