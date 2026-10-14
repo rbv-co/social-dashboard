@@ -527,6 +527,8 @@ import { rotuloDoEncontro } from './edicao-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `vessel` (Plano 7): as funções da Vessel pela API em Go (5.11).
+import { fetchRpcNaArea } from '../../compartilhado/api.js'
 import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import { enderecoDoConvite, dataHoraLegivel, dataLegivel, problemasDoEncontro } from './enderecos-publicos.js'
 // ⚠️ RODADA 1 DE CONSERTO (MENOR 6): `emReais`/`janelaEscrita` ficaram sem uso
@@ -805,7 +807,7 @@ function cabecalho() {
 async function chamar(funcao, corpo) {
   let r
   try {
-    r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
+    r = await fetchRpcNaArea('vessel', `${SUPABASE_URL}/rest/v1/rpc/${funcao}`, funcao, {
       method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
     })
   } catch {
