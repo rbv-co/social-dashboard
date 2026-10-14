@@ -29,6 +29,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/patrimonio"
 	"github.com/rbv-co/social-dashboard/api/internal/redes"
 	"github.com/rbv-co/social-dashboard/api/internal/trafego"
+	"github.com/rbv-co/social-dashboard/api/internal/vendas"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 )
@@ -172,6 +173,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
 			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
 			conteudo.Montar(r, p) // Plano 5.9
+			vendas.Montar(r, p)   // Plano 5.5: Comercial (Bling e Shopify)
 			frota.Montar(r, p)    // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {

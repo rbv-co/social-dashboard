@@ -6,7 +6,7 @@
 
 **Regra da trilha C.** Lê este arquivo do `origin/main` e só troca o que está listado. Se o texto divergir do código, vale `rotas.go`: abra a correção aqui, não improvise no front.
 
-**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.13, 5.6, 5.7, 5.2, 5.8 (SEM `fabrica-candidatos`, que espera o 5.5), 5.9 e 5.3 (o 5.13 não traz rota nova). 198 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, com 14 funções registradas), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Patrimônio e cadastros 30, Frota 27, Fábrica 21 (9 leituras e 12 escritas: 1 de catálogo, 4 edges e 7 de robô), Conteúdo 21 (20 de tabela e o `POST /conteudo-trigger`), Outras 2.
+**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.13, 5.6, 5.7, 5.2, 5.8 (SEM `fabrica-candidatos`, que passa a depender só da Task 7 do 5.8), 5.9, 5.3 e 5.5 (o 5.13 não traz rota nova). 216 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, com 14 funções registradas), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Patrimônio e cadastros 30, Frota 27, Fábrica 21 (9 leituras e 12 escritas: 1 de catálogo, 4 edges e 7 de robô), Conteúdo 21 (20 de tabela e o `POST /conteudo-trigger`), Comercial 18 (14 leituras e 4 escritas), Outras 2.
 
 ## Convenções que valem para todas as rotas
 
@@ -394,6 +394,31 @@ Montagem, `soPainel`, varreduras de vazamento por conta, "entrar como" e sessão
 
 As 2 RPCs (`POST /rpc/{nome}`): `frota_corrente_do_veiculo` (`{p_veiculo}`; portão = Frota; devolve a ficha corrente e as respostas; carro inexistente = `200 []`) e `etiqueta_quem_e` (`{p_numero}`; portão = admin do Patrimônio, Ruling 5.3-10: a função dava `{existe:false}` a quem só tinha a Frota, e a tela mostrava "Número livre"; agora `403`). As duas só leem: a sessão de "entrar como" passa.
 
+## Comercial: Bling e Shopify (5.5)
+
+18 rotas no grupo de domínio de `web.Rotas` (`vendas.Montar`; prefixo `/comercial/`): 14 leituras e 4 escritas. Regra de cada rota = catálogo de produção; as 7 leituras com restritiva (`pode_ver_canal` ×6, `pode_ver_estoque` ×1) só devolvem o que a pessoa vê (outra loja = linha ausente, filtro apontando para ela também, `contar=1` conta só o visível); super pela ficha e "sem trava" veem tudo; papel `admin` COM trava não vê canal (paridade). As outras 7 leituras são `true` em produção: toda sessão lê (achado 2 do plano 5.5). Detalhe em `NOTAS-DA-IMPLANTACAO.md`, "Plano 5.5". Sessão de "entrar como" nas 4 escritas = `403` com a frase, nada gravado. O proxy do Bling e o push de vendas (`internal/comercial`) não mudaram.
+
+| Método e caminho | Substitui (Supabase) | Quem pode | Desvios do II.2 / observações | Commit |
+|---|---|---|---|---|
+| `GET /comercial/notas` | `bling_pedido_nota` (`cp/data-da-venda.js:28`) | restritiva por canal | colunas `pedido_id, pedido_numero, data_pedido, data_da_venda, total, loja_id, nota_situacao`; filtro `janela=[AAAA-MM-DD,AAAA-MM-DD]` (o `.or(and,and)` da tela; malformado = 400) | `546bade4` |
+| `GET /comercial/ajustes-de-valor` | `bling_pedido_ajuste_valor` (`cp/valor-corrigido.js:30`) | restritiva por canal | só `pedido_id, total_corrigido` (sem `motivo` nem `criado_por`) | `546bade4` |
+| `GET /comercial/ajustes-de-vendedor` | `bling_pedido_ajuste_vendedor` (`cp/vendedor-corrigido.js:23`) | restritiva por canal | só `pedido_id, vendor_id_corrigido` | `546bade4` |
+| `GET /comercial/formas-de-pagamento` | `bling_pedido_forma_pagamento` (`cp/valor-liquido-de-troca.js:26`) | restritiva por canal | `pedido_id, valor`; filtro `eh_devolucao=true\|false` | `546bade4` |
+| `GET /comercial/estoque` | `gc_estoque_item` (`gav:970`, `rc:414`) | restritiva por depósito (`pode_ver_estoque`) | filtro `deposito_id=11,12` | `546bade4` |
+| `GET /comercial/vendas-por-item` | `gc_vendas_item` (`rc:402`, `rc:426`) | restritiva por canal | filtro `mes=2026-09-01,…` | `546bade4` |
+| `GET /comercial/pedidos-shopify` | `shopify_pedidos` (`cp/pedidos-shopify.js:42`) | restritiva por canal | só `id, total, criado_em_shopify, status_financeiro`: **nunca** `cliente_nome`, `cliente_email` nem `bruto`; filtros `criado_de`, `criado_ate`, `status_financeiro=a,b` | `546bade4` |
+| `GET /comercial/depositos` | `bling_depositos` (`gav:704`) | toda sessão | `?ordem=nome` | `3cef780f` |
+| `GET /comercial/briefings` | `gestao_comercial_briefings` (`gc:277`) | toda sessão | `?ordem=created_at.desc&limite=20` | `3cef780f` |
+| `GET /comercial/lojas` | `bling_lojas` (`gav:685`, `admin:881, 1229, 4107`, `av:394`) | toda sessão | `grupo` já espelhado pelo gatilho; `?ordem=loja_id` | `3cef780f` |
+| `PATCH /comercial/lojas/{id}` | `bling_lojas` update (`admin:1072` fechar, `admin:1194` agrupar) | **super-admin pela ficha**, sessão própria | `{id}` = `loja_id`; corpo só `{fechado_em?, grupo_id?}` (`nome`, `grupo` = `400`); `200` com a linha depois do gatilho (`grupo` espelhado); grupo inexistente `409`; loja inexistente ou `{id}` não numérico `404` | `3cef780f` |
+| `GET /comercial/metas-lojas` | `bling_metas` (`gav:686`, `admin:4108`, `av:395`) | toda sessão | filtros `ano`, `mes`; loja `0` = "Total geral" | `d704bb8c` |
+| `GET /comercial/metas-vendedoras` | `bling_vendedor_metas` (`admin:4110`) | toda sessão | filtros `ano`, `mes` | `d704bb8c` |
+| `POST /comercial/metas/salvar` | `.update`/`.insert`/`.delete` de metas, uma a uma (`admin:4223-4266`) | papel `admin`, sessão própria (super com papel viewer = `403`) | corpo `{ano, mes, lojas:{gravar:[{loja_id, meta_valor, daily_goals}], apagar:[loja_id]}, vendedoras:{gravar:[{vendor_id,…}], apagar:[vendor_id]}}` → `200 {"gravadas":n,"apagadas":m}`. UMA transação sob trava do mês: qualquer recusa desfaz tudo; `meta_valor` > 0 até 999.999.999,99 (2 casas); `daily_goals` objeto de até 31 dias ou `null`; 1 a 500 metas | `d704bb8c` |
+| `GET /comercial/vendedoras` | `bling_vendedores` (`gav:757`, `admin:559, 4109`, `av:396`) | toda sessão | `?ordem=nome` | `f5e53214` |
+| `GET /comercial/pedidos-vendedor` | `bling_pedido_vendedor` (`gav:758`, `admin:560, 4111`, `av:485`) | toda sessão | filtro `pedido_id=a,b` (até 1000); `?ordem=pedido_data.desc`; **a consulta sem `qtd_itens` (`av:487`) sai** | `f5e53214` |
+| `POST /comercial/vendedoras/gravar` | `.upsert(onConflict)` (`gav:314`) | quem vê vendas (papel `admin`, super ou módulo `sales`), sessão própria | corpo `{linhas:[{vendor_id, nome?, updated_at?}]}` (1 a 1000) → `200 {"gravadas":n}`; coluna ausente não muda; tudo ou nada | `f5e53214` |
+| `POST /comercial/pedidos-vendedor/gravar` | `.upsert(onConflict)` (`gav:264, 293, 313`, `av:641`) | idem | corpo `{linhas:[{pedido_id, vendor_id?, pedido_data?, qtd_itens?, loja_id?}]}` → `200 {"gravadas":n}`. **`vendor_id` é NOT NULL no banco:** linha NOVA sem vendedor e `vendor_id: null` = `400` (como já era) | `f5e53214` |
+
 ## Outras
 
 Sem equivalente no Supabase e sem troca no front; servem à operação (health check do contêiner e do nginx).
@@ -405,4 +430,4 @@ Sem equivalente no Supabase e sem troca no front; servem à operação (health c
 
 ## Ainda NÃO pronto
 
-`POST /fabrica-candidatos` (5.8, Task 7: espera as tabelas `gc_*` do 5.5), 5.4, 5.5, 5.10 e 5.11 (um sub-plano cada, incluindo as 78 RPC pendentes: 5.10 = 16, 5.11 = 62; as do 5.2, 5.3, 5.7 e 5.9 estão registradas) e Plano 6 (Storage, páginas públicas da Vessel, Zoho/Microsoft); consulte o plano-mãe `docs/superpowers/plans/2026-10-11-api-go-plano-5-dominios.md`, seção IV.2, para o dono de cada área e as telas a trocar.
+`POST /fabrica-candidatos` (5.8, Task 7: as tabelas `gc_*` já têm rota no 5.5), 5.4, 5.10 e 5.11 (um sub-plano cada, incluindo as 78 RPC pendentes: 5.10 = 16, 5.11 = 62; as do 5.2, 5.3, 5.7 e 5.9 estão registradas) e Plano 6 (Storage, páginas públicas da Vessel, Zoho/Microsoft); consulte o plano-mãe `docs/superpowers/plans/2026-10-11-api-go-plano-5-dominios.md`, seção IV.2, para o dono de cada área e as telas a trocar.
