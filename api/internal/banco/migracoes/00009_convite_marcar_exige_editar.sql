@@ -4,8 +4,10 @@
 -- o convite). Aqui o portão passa a ser o da situação do atendimento: (atendimentos, editar) ou (private-edit, editar). O resto
 -- do corpo é o de produção (levantamento 02-funções.csv). limpar-dump.mjs tira a versão do dump (regra `substituidas`) para a
 -- de produção não vencer esta no restaurar.sh.
+-- O nome vai sem schema (como na 00007): os testes migram um schema por teste num banco compartilhado, e criar em public.
+-- faria pacotes concorrentes se pisarem ("tuple concurrently updated"); em produção o search_path é public.
 -- +goose StatementBegin
-CREATE OR REPLACE FUNCTION public.vessel_convite_marcar(p_id bigint, p_marca text)
+CREATE OR REPLACE FUNCTION vessel_convite_marcar(p_id bigint, p_marca text)
  RETURNS json
  LANGUAGE plpgsql
  SECURITY DEFINER

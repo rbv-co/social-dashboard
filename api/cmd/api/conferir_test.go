@@ -86,6 +86,8 @@ func esquemaCompleto(t *testing.T, p *pgxpool.Pool, tudoTexto bool) {
 	for _, item := range append(slices.Clone(funcoesDoWorker), funcoesPorNomeDoWorker...) {
 		criadas[nomeDaFuncao(item)] = true
 	}
+	// a migração 00009 já criou esta no schema do teste; o stub abaixo a substitui pela forma que a conferência espera
+	ddl = append(ddl, "drop function if exists vessel_convite_marcar(bigint, text)")
 	for _, f := range web.FuncoesRPC {
 		if criadas[f.Nome] {
 			continue
