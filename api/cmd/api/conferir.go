@@ -54,8 +54,8 @@ var colunasDoWorker = map[string]string{
 	"bling_pedido_nota":           "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
 	"bling_pedido_ajuste_valor":   "pedido_id,total_corrigido",
 	"bling_pedido_vendedor":       "pedido_id,qtd_itens",
-	"acessos_pessoas":             "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id",       // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
-	"frota_veiculos":              "id,placa,nome,marca,fipe_centavos,situacao,pessoa_id,bem_id,atualizado_em", // + Plano 5.2 (sincronizar_carro_e_bem); o 5.3 amplia
+	"acessos_pessoas":             "id,nome,cargo,status,criado_em,atualizado_em,setor_id,email_corporativo,numero_pessoal,numero_corporativo,data_inicio_contrato,data_fim_contrato,motivo_saida,avatar_url,zoho_account_id,email_outlook,conta_apple,organizacao_id,profile_id,marca_id", // Planos 5.2 e 5.4 (a união que as telas leem)
+	"frota_veiculos":              "id,placa,nome,marca,fipe_centavos,situacao,pessoa_id,bem_id,atualizado_em",                                                                                                                                                                             // + Plano 5.2 (sincronizar_carro_e_bem); o 5.3 amplia
 	"frota_checklist_itens":       "cadencia,ordem,ativo",
 	"frota_checklist_config":      "dia_semanal,semana_mensal,dia_mensal",
 	"frota_checklist":             "veiculo_id,feita_em,cadencias",
@@ -107,7 +107,13 @@ var colunasDoWorker = map[string]string{
 	"patrimonio_tipos":      "id,categoria_id,nome,ordem,criado_em",
 	"patrimonio_config":     "chave,valor,atualizado_em",
 	"patrimonio_log":        "id,quem,acao,alvo,resultado,detalhe,quando",
-	"acessos_setores":       "id,nome,ordem",
+	"acessos_setores":       "id,nome,cor,ordem,criado_em,organizacao_id", // Planos 5.2 e 5.4
+	// Plano 5.4 (Colaboradores e Acessos): colunas das rotas /acessos/*. acessos_conexoes NÃO entra: nenhuma rota a lê.
+	"acessos_organizacoes": "id,nome,ordem,criado_em",
+	"acessos_recursos":     "id,tipo,provedor,nome,external_id,drive_id,caminho,criado_em,arquivado_em,arquivado_motivo",
+	"acessos_vinculos":     "id,recurso_id,pessoa_id,papel,estado,observacao,criado_em,feito_em",
+	"acessos_termos":       "id,pessoa_id,titulo,arquivo_path,enviado_em,observacao",
+	"acessos_log":          "id,quando,quem,acao,provedor,alvo,resultado,detalhe",
 	// Plano 5.9 (conteúdo): o que as rotas, as RPCs e o /conteudo-trigger presumem; conteudo_jobs é a fila do vigia
 	// da VPS. Todas com DDL no repositório.
 	"conteudo_arquivos":     "id,peca_id,ordem,bucket,caminho,tipo,mime,bytes,created_at",
@@ -177,6 +183,10 @@ var tiposDoWorker = map[string]string{
 	"patrimonio_bens.pessoa_id": "uuid", "patrimonio_bens.local_id": "uuid", "patrimonio_bens.categoria_id": "uuid",
 	"patrimonio_bens.comodo_id": "uuid", "patrimonio_posse.bem_id": "uuid", "patrimonio_posse.de": "date",
 	"patrimonio_posse.ate": "date", "patrimonio_config.valor": "text", "equipes.local_id": "uuid", "acessos_pessoas.profile_id": "uuid",
+	// Plano 5.4: filtros e a conferência do "ligar" fazem cast nestas colunas
+	"acessos_pessoas.id": "uuid", "acessos_pessoas.status": "text", "acessos_vinculos.recurso_id": "uuid",
+	"acessos_vinculos.pessoa_id": "uuid", "acessos_termos.pessoa_id": "uuid", "acessos_recursos.tipo": "text",
+	"acessos_recursos.arquivado_em": "timestamp with time zone", "acessos_log.quem": "uuid",
 	// Plano 5.9: os casts das rotas, das RPCs e do /conteudo-trigger (account_id das conteudo_* é uuid: o init completa)
 	"conteudo_pecas.criado_por": "uuid", "conteudo_pecas.responsavel": "uuid", "conteudo_arquivos.id": "uuid",
 	"conteudo_arquivos.peca_id": "uuid", "conteudo_arquivos.ordem": "integer", "conteudo_eventos.quem": "uuid",
@@ -219,6 +229,8 @@ var unicosDoWorker = []string{
 	"gt_config_metricas(balde)", "gt_objetivo_interacao(alvo_id)", "gt_problemas_meta(ad_id,codigo)", "interesses_sugeridos(marca_id,objetivo)",
 	"acessos_perfis(nome)",     // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 	"patrimonio_config(chave)", // Plano 5.2: PUT /patrimonio/config/{chave} é upsert por este único
+	// Plano 5.4: os 409 de organização e setor dependem destes únicos completos
+	"acessos_organizacoes(nome)", "acessos_setores(organizacao_id,nome)",
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a

@@ -311,8 +311,19 @@ var rotas59 = []string{
 	"GET /conteudo/jobs",
 }
 
+// Plano 5.4: as 16 rotas de acessos.Montar (6 leituras, 10 escritas), no grupo de DOMÍNIO. Portão = catálogo,
+// provado pela matriz de cada rota em `internal/acessos`; vazamento, impersonado e segredos por
+// `TestNadaVazaParaQuemNaoTemAcessos`, `TestEscritasRecusamImpersonado` e `TestConexoesNuncaSaem`.
+var rotas54 = []string{
+	"GET /acessos/pessoas", "POST /acessos/pessoas", "PATCH /acessos/pessoas/{id}", "DELETE /acessos/pessoas/{id}",
+	"POST /acessos/pessoas/{id}/ligar", "POST /acessos/log",
+	"GET /acessos/organizacoes", "POST /acessos/organizacoes", "DELETE /acessos/organizacoes/{id}",
+	"GET /acessos/setores", "POST /acessos/setores", "DELETE /acessos/setores/{id}",
+	"GET /acessos/recursos", "GET /acessos/vinculos", "POST /acessos/vinculos", "GET /acessos/termos",
+}
+
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas54) {
 		soSessao[c] = true
 	}
 }
@@ -493,7 +504,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2 e 5.9: no grupo de domínio, com o prazo dele
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas54, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9 e 5.4: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -893,6 +904,70 @@ func TestAcessoPelaMontagemReal(t *testing.T) {
 	var n int
 	if err := p.QueryRow(ctx, `select count(*) from access_requests where email = 'fulana@x.com' and status = 'pending'`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("pedidos gravados = %d (%v), esperava 1", n, err)
+	}
+}
+
+// Plano 5.4 pela montagem real: sem sessão é 401, quem não tem a feature lê `[]` e não muda nada, e a feature
+// `acessos` sozinha cadastra mas não exclui (papel viewer). A matriz de cada rota está em internal/acessos;
+// aqui vale a MONTAGEM (grupo de domínio, cadeia, posição).
+func TestAcessosPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const acessos, viewer = "a5400000-0000-4000-a000-0000000000a1", "a5400000-0000-4000-a000-0000000000a2"
+	tok := map[string]string{}
+	for _, u := range []struct{ nome, id, features string }{{"acessos", acessos, "{acessos}"}, {"viewer", viewer, "{}"}} {
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, u.id, u.nome+"-54@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe) values ($1::uuid, $2::text, $2::text, 'viewer', $3::text[], false)`,
+			u.id, u.nome+"-54@x.com", u.features); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if tok[u.nome], err = s.Criar(ctx, u.id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pedir := func(quem, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+tok[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	st, corpo := pedir("acessos", "POST", "/acessos/pessoas", `{"nome":"Teste"}`)
+	if st != 201 {
+		t.Fatalf("acessos cadastra = %d %s", st, corpo)
+	}
+	var id string
+	if err := p.QueryRow(ctx, `select id::text from acessos_pessoas where nome = 'Teste'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		trecho                             string
+	}{
+		{"sem sessão", "", "GET", "/acessos/pessoas", "", 401, "nao_autenticado"},
+		{"viewer lê lista vazia", "viewer", "GET", "/acessos/pessoas", "", 200, "[]"},
+		{"viewer não edita a ficha", "viewer", "PATCH", "/acessos/pessoas/" + id, `{"cargo":"x"}`, 404, "nao_encontrado"},
+		{"acessos lê a ficha", "acessos", "GET", "/acessos/pessoas", "", 200, "Teste"},
+		{"acessos sozinho não exclui", "acessos", "DELETE", "/acessos/pessoas/" + id, "", 403, "Só admin pode excluir."},
+		{"acessos sozinho não liga ficha a login", "acessos", "POST", "/acessos/pessoas/" + id + "/ligar", `{"profile_id":"` + viewer + `"}`, 403, "Só admin pode ligar."},
+	} {
+		if st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo); st != c.status || !strings.Contains(corpo, c.trecho) {
+			t.Errorf("%s: %s %s = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, st, corpo, c.status, c.trecho)
+		}
+	}
+	var cargo *string
+	var n int
+	if err := p.QueryRow(ctx, `select cargo, (select count(*) from acessos_pessoas) from acessos_pessoas where id = $1::uuid`, id).Scan(&cargo, &n); err != nil || cargo != nil || n != 1 {
+		t.Errorf("os pedidos negados mexeram no cadastro (cargo=%v, linhas=%d, %v)", cargo, n, err)
 	}
 }
 

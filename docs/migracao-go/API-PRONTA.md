@@ -363,6 +363,29 @@ Montagem, `soPainel`, varreduras de vazamento por conta, "entrar como" e sessão
 | `GET /conteudo/jobs` | `conteudo_jobs` (`dc:427` `verJob`) | conteudista; restritiva por conta | colunas `id, tipo, account_id, params, status, resultado, erro, created_at, updated_at` (sem `criado_por` nem `github_run_id`); filtros `account_id`, `id`, `status` (lista); padrão `created_at desc` | `d99ed87e` |
 | `POST /conteudo-trigger` | `functions.invoke('conteudo-trigger')` (`dc:364` `_pedirAIA`, de `pedirIdeiasParaIA :353` e `pedirSemanaParaIA :359`; telas `visao-ideias.vue:161`, `painel-semana.vue:182`) | o portão da edge: papel `admin`, super pela ficha, a chave `conteudo` em `permissions` ou o módulo `conteudo`; E conta que a pessoa vê; sessão própria | corpo da edge: `{account_id, quantas?, modo?: "ideias"\|"semana", segunda?: "AAAA-MM-DD"}` (campo a mais = `400 corpo_invalido`). **Só ENFILEIRA** em `conteudo_jobs` (`enfileirado`); NÃO chama o GitHub (quem roda é o vigia da VPS, trilha C). `200 {"job_id", "quantas"}`; `quantas` truncado para inteiro de 1 a 20 (padrão 12; 3.7 vira 3: achado 3). Erros: `400 conta_invalida` (também conta inexistente), `403 sem_permissao` (também conta que não se vê), `409 ja_rodando` com `job_id` (uma rodada por conta em 3 min, também sob clique duplo), `500 insert_falhou` (sem `detail`). Some o `502 dispatch_falhou`. Sessão de "entrar como" = `403` com a frase | `635cd0f3` |
 
+## Colaboradores e Acessos (5.4)
+
+16 rotas no grupo de domínio de `web.Rotas` (`acessos.Montar`: 6 leituras e 10 escritas). Regra de cada rota = catálogo de produção (`is_acessos_admin()`: conta ativa e papel `admin` ou a feature `acessos`). Super-admin sem a feature não vê colaboradores (como hoje). Detalhe em `NOTAS-DA-IMPLANTACAO.md`, "Plano 5.4".
+
+- **Escrita:** sessão de "entrar como" = `403 sem_permissao` + "Quem entrou como outra pessoa não grava em Colaboradores e Acessos.", nada gravado. Quem não tem a feature: leitura `200 []`, criar `403`, linha existente `404`.
+- **Embutidos** (chaves iguais às da tela): `acessos_setores`, `acessos_organizacoes`, `patrimonio_empresas` em pessoas; `acessos_recursos` em vínculos. Tabela que a pessoa não lê sai `null`.
+- **Não existe rota** para `acessos_conexoes` (segredos do Zoho/Microsoft: Plano 6), nem para enviar termo ou foto (arquivo: Plano 6).
+
+| Método e caminho | Substitui (Supabase) | Quem pode | Observações |
+|---|---|---|---|
+| `GET /acessos/pessoas` | `acessos_pessoas` (Colaboradores e Acessos, Frota, Admin) | catálogo | `?status=`; `contar=1&limite=1` → `X-Total-Count`; embutidos acima |
+| `POST /acessos/pessoas` | `.insert` (cadastro e "criar cadastro" do Admin) | catálogo, sessão própria | `nome` obrigatório; nasce `ativo`; aceita `profile_id` na criação |
+| `PATCH /acessos/pessoas/{id}` | `.update` (ficha, desligar, reativar, Zoho, lotação) | catálogo, sessão própria | `profile_id`, `avatar_url`, `id`, `criado_em` → `400` |
+| `POST /acessos/pessoas/{id}/ligar` | `.update({profile_id})` (Admin :3217, Frota :836) | **papel `admin`**, sessão própria | `{profile_id}`; ficha ligada a OUTRO login = `409`; ao mesmo = `200`; só a feature `acessos` = `403 "Só admin pode ligar."` (404 antes, para ficha invisível) |
+| `DELETE /acessos/pessoas/{id}` | `.delete` | **papel `admin`**, sessão própria | `204`, cascata do banco; só a feature = `403 "Só admin pode excluir."` |
+| `POST /acessos/log` | `acessos_log.insert` | catálogo, sessão própria | `quem` = sessão (no corpo = `400`); `resultado` só `ok`/`erro` |
+| `GET/POST /acessos/organizacoes`, `DELETE …/{id}` | `acessos_organizacoes` | catálogo | nome repetido = `409`; apagar em uso zera as referências |
+| `GET/POST /acessos/setores`, `DELETE …/{id}` | `acessos_setores` | catálogo | nome repetido na organização = `409` |
+| `GET /acessos/recursos` | `acessos_recursos` | catálogo | `?tipo=&arquivado=&ordem=`; `contar=1&limite=1` |
+| `GET /acessos/vinculos` | `acessos_vinculos` | catálogo | `?recurso_id=&pessoa_id=` |
+| `POST /acessos/vinculos` | `acessos_vinculos.insert` | catálogo, sessão própria | `papel` e `estado` pelos checks; recurso inexistente = `409` |
+| `GET /acessos/termos` | `acessos_termos` | catálogo | `?pessoa_id=`; enviar/baixar/apagar termo = Plano 6 |
+
 ## Outras
 
 Sem equivalente no Supabase e sem troca no front; servem à operação (health check do contêiner e do nginx).
@@ -374,4 +397,4 @@ Sem equivalente no Supabase e sem troca no front; servem à operação (health c
 
 ## Ainda NÃO pronto
 
-`POST /fabrica-candidatos` (5.8, Task 7: espera as tabelas `gc_*` do 5.5), 5.3 a 5.5, 5.10 e 5.11 (um sub-plano cada, incluindo as 80 RPC pendentes: 5.3 = 2, 5.10 = 16, 5.11 = 62; as do 5.2, 5.7 e 5.9 estão registradas) e Plano 6 (Storage, páginas públicas da Vessel, Zoho/Microsoft); consulte o plano-mãe `docs/superpowers/plans/2026-10-11-api-go-plano-5-dominios.md`, seção IV.2, para o dono de cada área e as telas a trocar.
+`POST /fabrica-candidatos` (5.8, Task 7: espera as tabelas `gc_*` do 5.5), 5.3, 5.5, 5.10 e 5.11 (um sub-plano cada, incluindo as 80 RPC pendentes: 5.3 = 2, 5.10 = 16, 5.11 = 62; as do 5.2, 5.7 e 5.9 estão registradas) e Plano 6 (Storage, páginas públicas da Vessel, Zoho/Microsoft); consulte o plano-mãe `docs/superpowers/plans/2026-10-11-api-go-plano-5-dominios.md`, seção IV.2, para o dono de cada área e as telas a trocar.

@@ -741,3 +741,32 @@ O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` j
 
 ### Achados para o dono
 (ver a seção "Achados para o dono" do plano 5.9)
+
+## Plano 5.4 — Colaboradores e Acessos (cadastro)
+
+### Rotas novas (com sessão; regra = catálogo de produção, `is_acessos_admin()`; escrita de sessão "entrar como" = 403)
+- `/acessos/pessoas` (GET com os embutidos de setor, organização e marca; POST; PATCH `{id}`; DELETE `{id}` só papel admin; POST `{id}/ligar` só papel admin), `POST /acessos/log`, `/acessos/organizacoes` e `/acessos/setores` (GET, POST, DELETE `{id}`), `GET /acessos/recursos`, `/acessos/vinculos` (GET, POST), `GET /acessos/termos`.
+- Nenhuma rota lê ou grava `acessos_conexoes` (Plano 6); `TestConexoesNuncaSaem` planta segredos falsos e varre respostas e log de toda rota de `Montar`.
+
+### Decisão: `ligar` exige papel admin (Ruling 5.4-7, ajustado em 14/10/2026)
+O contrato original deixava a feature `acessos` ligar qualquer ficha a qualquer login, inclusive o próprio, e com isso o login passava a ver no Patrimônio os bens da pessoa (`pode_ver_bem` lê `profile_id`). Decidido exigir papel `admin` como no excluir, com a checagem DEPOIS do `PodeEditar` (ficha invisível continua 404, sem dizer a quem está ligada). **É mudança de comportamento em relação à produção atual** (hoje quem tem só a feature liga pelo PostgREST): os dois sítios do front que ligam (tela-de-admin.vue:3217, só admin; tela-de-frota.vue:836, o convite do dono) são de admin, então a tela não muda; quem tinha só a feature e ligava por fora da tela passa a receber 403. Anotar para o plano 01 (virada).
+
+### Mudanças de contrato que o Plano 7 absorve
+- O elo ficha↔login sai do PATCH: `POST /acessos/pessoas/{id}/ligar {profile_id}` (tela-de-admin.vue:3190, tela-de-frota.vue:829); ficha já ligada a OUTRO login = `409` (a Frota passa a mostrar a pendência que já tem em vez de sobrescrever); quem não é admin recebe `403 "Só admin pode ligar."`.
+- Excluir colaborador: `DELETE /acessos/pessoas/{id}`; quem não é admin recebe `403 "Só admin pode excluir."`.
+- `quem` sai do corpo da trilha (`POST /acessos/log`); `resultado` só `ok`/`erro` (o `parcial` da 1980 vira `erro` ou espera decisão do dono).
+- PATCH de pessoa sem `profile_id` nem `avatar_url` (a foto é gravada pela rota de arquivo do Plano 6).
+- Contagens com `contar=1&limite=1` (`X-Total-Count`); os embutidos chegam com as mesmas chaves (`acessos_setores`, `acessos_organizacoes`, `patrimonio_empresas`, `acessos_recursos`; `json_build_object` devolve `{"nome" : "RH"}` com espaços, JSON equivalente).
+- 15 sítios em código sem caminho na tela (aba Drive antiga, tela de pastas do iCloud, tela antiga do WorkDrive) não ganham rota: apagar o código.
+
+### Achados para o dono
+- Excluir colaborador: só o navegador barrava quem não é admin; pela API do Supabase quem tinha só a feature `acessos` apagava (em cascata). A API fecha.
+- Ligar ficha a login: idem (ver "Decisão" acima).
+- A trilha nunca gravou o `parcial` do provisionamento do OneDrive (tela-de-acessos.vue:1980): o banco só aceita `ok`/`erro` e a tela engole o erro.
+- `quem` da trilha vinha do navegador (falsificável); agora é a sessão.
+- Super-admin sem a feature `acessos` (pela ficha ou por e-mail) não vê colaboradores — nem na lista de usuários do Admin, que lê `acessos_pessoas` (como hoje).
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas, tipos e únicos de `acessos_*`; `acessos_pessoas.profile_id` é `uuid` (presumido: sem DDL no repositório); único `acessos_setores(organizacao_id,nome)` (presumido da 014).
+- `select count(*) from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'acessos\_%'` = 0 no banco restaurado (premissa do D0).
+- `acessos_conexoes` continua sem policy e fora do catálogo; a cópia dos segredos para o servidor novo é do Plano 6.
