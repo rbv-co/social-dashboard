@@ -124,6 +124,9 @@ const fotoDosAcessos = `select md5(string_agg(l, '|' order by l)) from (
   select 'posse:' || t::text from patrimonio_posse t union all
   select 'carro:' || t::text from frota_veiculos t union all
   select 'uso:' || t::text from frota_uso t union all
+  select 'req:' || t::text from frota_requisicoes t union all
+  select 'chk:' || t::text from frota_checklist t union all
+  select 'abs:' || t::text from frota_abastecimentos t union all
   select 'eq:' || t.id || ':' || coalesce(t.setor_id::text, '-') from equipes t) z`
 
 // segredoEm devolve o primeiro segredo plantado que aparece em s ("" = nenhum). Procura o valor exato
