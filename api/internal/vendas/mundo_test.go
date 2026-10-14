@@ -136,3 +136,5 @@ func aoMesmoTempo(f func(lado int)) {
 	close(largada)
 	wg.Wait()
 }
+
+func contem(s, sub string) bool { return strings.Contains(s, sub) }
