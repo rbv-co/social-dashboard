@@ -766,3 +766,6 @@ O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` j
 - `select tgname, pg_get_triggerdef(oid) from pg_trigger where tgname like 'trg_frota%' order by 1` no banco restaurado = as condições da lista `CONFERIDOS` de `api/internal/testebanco/esquema/gerar-gatilhos.mjs`.
 - Plano 6: o consumidor das filas de PDF (`enviar-pdf-checklist`) roda `frota_pdf_aceite_pegar_da_fila`, que não devolve nada sem `is_frota_admin()`: precisa de identidade com a Frota.
 - `02-gatilhos.sql` foi unido à mão no merge com a `main` (só o cabeçalho divergia, as funções vieram idênticas); na próxima regeneração com o levantamento (`gerar-gatilhos.mjs <dir>`), o diff tem de ser vazio.
+
+### Limites conhecidos (revisão do 5.3)
+- `POST /frota/usos/trocar` com `para_estoque` trava a posse e depois o carro; `PATCH /frota/veiculos/{id}` com `pessoa_id: null` trava o carro e depois a posse (gatilho `frota_fechar_posse_orfa`). Os dois ao mesmo tempo podem dar deadlock (`40P01`): a transação é desfeita, nada fica pela metade, e a resposta hoje é `500` (o certo seria pedir para tentar de novo). Mesma janela do PostgREST de hoje; rara (duas pessoas mexendo no MESMO carro no mesmo instante). Tratar `40P01` como `409` em `dados.ErroDoBanco` se aparecer em produção.

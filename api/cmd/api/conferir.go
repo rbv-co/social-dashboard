@@ -236,6 +236,7 @@ var unicosDoWorker = []string{
 	// Plano 5.3: os 409 das rotas da Frota dependem destes únicos completos
 	"frota_veiculos(placa)", "frota_checklist(veiculo_id,feita_em)", "frota_checklist_respostas(checklist_id,ordem)",
 	"frota_checklist_itens(item)", "frota_plano_revisao(item)",
+	"frota_checklist_pdf(checklist_id)", "frota_uso_pdf(uso_id)", // on conflict dos gatilhos das filas de PDF: sem o único a fila não enche e nada acusa
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
