@@ -860,3 +860,11 @@ O contrato original deixava a feature `acessos` ligar qualquer ficha a qualquer 
 - `select count(*) from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'acessos\_%'` = 0 no banco restaurado (premissa do D0).
 - `acessos_pessoas.profile_id`: conferir no banco restaurado se existe FK para `profiles` (o D0 não tem). Se existir, ligar a um uuid inexistente responde 409 em vez de 200 e o teste não reproduz; se não existir, considerar validar o login no `ligar`.
 - `acessos_conexoes` continua sem policy e fora do catálogo; a cópia dos segredos para o servidor novo é do Plano 6.
+
+## Plano 5.11 — as 62 RPCs de atendimentos da Vessel
+
+- Pacote `api/internal/atendimentos`; `RPCPendentes` vazia (92 registradas). Rulings 1 a 6 em `docs/superpowers/plans/2026-10-14-api-go-plano-5-11-rpcs.md`.
+- Esquema de teste gerado, não à mão: `node api/internal/testebanco/esquema/fatia511.mjs <levantamento>` (lê os nomes de `atendimentos/rpc.go`) escreve `01-tabelas-5-11.sql` (create/alter/índice das migrations, ordenados por FK) e `03-funcoes-5-11.sql` (101 funções e os 12 gatilhos vivos verbatim). Quem acrescentar RPC ao pacote roda o gerador de novo.
+- Antes do corte: `pg_dump` do ensaio traz o padrão da coluna `teste` (vessel_pessoas, vessel_atendimentos) que `coletor/limpar-testes-do-cartao.mjs --aprovar` troca fora das migrations; o esquema de teste só tem o DDL. `api worker conferir` passa a exigir as funções e os 12 gatilhos da fatia.
+- O gatilho `vessel_rd_na_fila` (`vessel_origens`) segue no dump de 09/10 e só enfileira; a RD está desligada (#350). O Plano 6 tira `vessel-rd-station` do worker.
+- Pendência de decisão do dono: `vessel_convite_marcar` e `vessel_chave_da_convidada` gravam com `vessel_pode('atendimentos.private-edit','ver')`; paridade mantida.
