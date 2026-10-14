@@ -37,7 +37,8 @@
           <select v-model="novoBloco.tipo" class="ctd-sel" aria-label="Tipo do texto">
             <option v-for="(rot, chave) in TIPOS" :key="chave" :value="chave">{{ rot }}</option>
           </select>
-          <input v-model="novoBloco.nome" class="ctd-in" placeholder="Apelido (opcional)">
+          <!-- O apelido é obrigatório: o banco recusa bloco sem nome (achado 7 do 5.9). -->
+          <input v-model="novoBloco.nome" class="ctd-in" placeholder="Apelido (ex.: Assinatura)" aria-label="Apelido do texto" required>
         </div>
         <textarea
           v-model="novoBloco.texto"
@@ -47,7 +48,7 @@
         ></textarea>
         <button
           class="ctd-btn ctd-btn-primario"
-          :disabled="!novoBloco.texto.trim() || salvando"
+          :disabled="!novoBloco.nome.trim() || !novoBloco.texto.trim() || salvando"
           @click="adicionarBloco"
         >Adicionar texto</button>
       </div>
@@ -197,7 +198,7 @@ const adicionarBloco = () => comGuarda(async () => {
   await dados.salvarBloco({
     account_id: props.accountId,
     tipo: novoBloco.value.tipo,
-    nome: novoBloco.value.nome.trim() || null,
+    nome: novoBloco.value.nome.trim(),
     texto: novoBloco.value.texto.trim(),
   })
   novoBloco.value = { tipo: 'legenda', nome: '', texto: '' }
