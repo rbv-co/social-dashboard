@@ -2,6 +2,7 @@ package patrimonio
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -66,8 +67,15 @@ func TestRPCsDoPatrimonio(t *testing.T) {
 	m := novoMundo(t, montarRPCs)
 	pessoasN, setoresN, carrosN := contar("acessos_pessoas"), contar("acessos_setores"), contar("frota_veiculos")
 	nomeNova := "select count(*)::text from acessos_pessoas where lower(btrim(nome)) = 'nova pessoa'"
-	carroXYZ := "select count(*)::text from frota_veiculos where placa = 'XYZ9A88'"
-	const frasePessoa, fraseSetor, fraseBemDoT1 = "Digite o nome antes de criar.", "Digite o nome antes de criar.", "Cadeira da Tivoli"
+	const fraseNome, fraseBemDoT1 = "Digite o nome antes de criar.", "Cadeira da Tivoli"
+	// as 4 frases do RAISE 42501 das funções de cadastro rápido: um 403 que as traz veio de DENTRO da função
+	// (o portão do Go não barrou). O 403 do portão não tem frase.
+	semFraseDaFuncao := func(nome string, st int, corpo string) {
+		t.Helper()
+		if st == 403 && strings.Contains(corpo, "Sem acesso") {
+			t.Errorf("%s: o 403 veio da função, não do portão: %s", nome, corpo)
+		}
+	}
 	rpcURL := func(n string) string { return "/rpc/" + n }
 	igual := func(nome, sql string) func() {
 		antes := m.Um(t, sql)
@@ -88,10 +96,10 @@ func TestRPCsDoPatrimonio(t *testing.T) {
 		}
 	}
 	m.Rodar(t, []caso{
-		{Nome: "pessoas_para_escolher viewer", Quem: "viewer", Metodo: "POST", Caminho: rpcURL("pessoas_para_escolher"), Status: 403, NaoTem: "Motorista"},
+		{Nome: "pessoas_para_escolher viewer", Quem: "viewer", Metodo: "POST", Caminho: rpcURL("pessoas_para_escolher"), Status: 403, NaoTem: "Sem acesso"},
 		{Nome: "pessoas_para_escolher sem sessão", Quem: "", Metodo: "POST", Caminho: rpcURL("pessoas_para_escolher"), Status: 401},
 		{Nome: "setores_para_escolher frota", Quem: "frota", Metodo: "POST", Caminho: rpcURL("setores_para_escolher"), Status: 200, Tem: "Administrativo"},
-		{Nome: "setores_para_escolher viewer", Quem: "viewer", Metodo: "POST", Caminho: rpcURL("setores_para_escolher"), Status: 403, NaoTem: "Administrativo"},
+		{Nome: "setores_para_escolher viewer", Quem: "viewer", Metodo: "POST", Caminho: rpcURL("setores_para_escolher"), Status: 403, NaoTem: "Sem acesso"},
 		// quem entrou como outra pessoa só LÊ a lista (ver o que ela vê)
 		{Nome: "pessoas_para_escolher impersonado", Quem: "impersonado", Metodo: "POST", Caminho: rpcURL("pessoas_para_escolher"), Status: 200, Tem: "Motorista"},
 	})
@@ -118,7 +126,7 @@ func TestRPCsDoPatrimonio(t *testing.T) {
 		nome, quem, corpo, tem string
 		st                     int
 	}{
-		{"nome em branco", "patT1", `{"p_nome":"   "}`, frasePessoa, 400},
+		{"nome em branco", "patT1", `{"p_nome":"   "}`, fraseNome, 400},
 		{"parâmetro desconhecido", "patT1", `{"p_nome":"X","p_email":"y"}`, "", 400},
 		{"sem p_nome", "patT1", `{}`, "", 400},
 		{"viewer", "viewer", `{"p_nome":"Outra Pessoa"}`, "", 403},
@@ -128,6 +136,7 @@ func TestRPCsDoPatrimonio(t *testing.T) {
 		if st != c.st || !strings.Contains(corpo, c.tem) || (c.st == 400 && c.tem != "" && !strings.Contains(corpo, "regra_de_negocio")) {
 			t.Errorf("criar_pessoa_rapida %s: %d %s; esperava %d com %q", c.nome, st, corpo, c.st, c.tem)
 		}
+		semFraseDaFuncao("criar_pessoa_rapida "+c.nome, st, corpo)
 		igualPessoas()
 	}
 	// o portão é o da função: frota e acessos podem; o viewer (e a sessão de outra pessoa) não
@@ -150,12 +159,14 @@ func TestRPCsDoPatrimonio(t *testing.T) {
 		nome, quem, corpo, tem string
 		st                     int
 	}{
-		{"em branco", "frota", `{"p_nome":""}`, fraseSetor, 400},
+		{"em branco", "frota", `{"p_nome":""}`, fraseNome, 400},
 		{"viewer", "viewer", `{"p_nome":"Compras"}`, "", 403},
 		{"impersonado", "impersonado", `{"p_nome":"Compras"}`, "Quem entrou como outra pessoa", 403},
 	} {
 		if st, corpo := m.Pedir(t, c.quem, "POST", rpcURL("criar_setor_rapido"), c.corpo); st != c.st || !strings.Contains(corpo, c.tem) {
 			t.Errorf("criar_setor_rapido %s: %d %s; esperava %d com %q", c.nome, st, corpo, c.st, c.tem)
+		} else {
+			semFraseDaFuncao("criar_setor_rapido "+c.nome, st, corpo)
 		}
 		igualSetores()
 	}
@@ -204,7 +215,41 @@ func TestRPCsDoPatrimonio(t *testing.T) {
 	if st, corpo = sinc("frota", `{"p_etiqueta":11,"p_placa":"XYZ9A88"}`); st != 200 || !strings.Contains(corpo, "ja_ligados") {
 		t.Errorf("sincronizar frota: %d %s", st, corpo)
 	}
-	if got := m.Um(t, carroXYZ); got != "1" {
+	if got := m.Um(t, "select count(*)::text from frota_veiculos where placa = 'XYZ9A88'"); got != "1" {
 		t.Errorf("XYZ9A88: %s carros", got)
+	}
+}
+
+// sincronizar_carro_e_bem com o corpo COMPLETO que cada tela manda (tela-de-patrimonio.vue:1699 e
+// tela-de-frota.vue:3399, com p_marca e p_valor_centavos) e a resposta objeto que fraseDaSincronia lê.
+func TestRPCSincronizarComOCorpoDasTelas(t *testing.T) {
+	m := novoMundo(t, montarRPCs)
+	pedir := func(corpo string) map[string]any {
+		t.Helper()
+		st, resp := m.Pedir(t, "patGeral", "POST", "/rpc/sincronizar_carro_e_bem", corpo)
+		var obj map[string]any
+		if st != 200 || json.Unmarshal([]byte(resp), &obj) != nil {
+			t.Fatalf("%s: %d %s (esperava 200 com um objeto)", corpo, st, resp)
+		}
+		return obj
+	}
+	// tela do Patrimônio: o bem já existe (BV2), o carro nasce
+	r := pedir(`{"p_bem_id":"` + BV2 + `","p_placa":"MMM1M11","p_nome":"Duster","p_marca":"Renault","p_valor_centavos":9500000}`)
+	if r["fez"] != "criou_carro" || r["placa"] != "MMM1M11" || r["bem_id"] != BV2 || r["etiqueta"] != float64(11) || r["carro_id"] == nil {
+		t.Errorf("tela do Patrimônio: resposta %v", r)
+	}
+	if got := m.Um(t, "select marca || '|' || fipe_centavos from frota_veiculos where placa = 'MMM1M11'"); got != "Renault|9500000" {
+		t.Errorf("carro criado: marca|fipe = %s", got)
+	}
+	// tela da Frota: o carro vira o da placa e a etiqueta 777 não existe, o bem nasce com marca e valor
+	r = pedir(`{"p_placa":"FRO1F11","p_etiqueta":777,"p_nome":"Strada","p_marca":"Fiat","p_valor_centavos":8000000}`)
+	if r["fez"] != "criou_os_dois" || r["etiqueta"] != float64(777) {
+		t.Errorf("tela da Frota: resposta %v", r)
+	}
+	if got := m.Um(t, "select b.marca || '|' || b.valor_centavos || '|' || b.nome from patrimonio_bens b where b.numero = 777"); got != "Fiat|8000000|Strada" {
+		t.Errorf("bem criado: marca|valor|nome = %s", got)
+	}
+	if got := m.Um(t, "select (v.bem_id = b.id)::text from frota_veiculos v, patrimonio_bens b where v.placa = 'FRO1F11' and b.numero = 777"); got != "true" {
+		t.Errorf("carro e bem não ficaram ligados: %s", got)
 	}
 }

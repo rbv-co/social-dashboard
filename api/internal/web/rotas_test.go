@@ -275,9 +275,67 @@ var rotas57 = []string{
 	"GET /gestao-trafego/regua", "PUT /gestao-trafego/regua", "GET /gestao-trafego/interesses-sugeridos",
 }
 
+// Plano 5.2: as 30 rotas de patrimonio.Montar (22 escritas + 8 leituras), no grupo de DOMÍNIO. Portão =
+// catálogo, provado pela matriz de cada rota em `internal/patrimonio`; escrita de impersonado recusada por
+// `TestEscritasRecusamImpersonado`. As 5 RPCs entram por POST /rpc/{nome} (lista branca), não aqui.
+var rotas52 = func() []string {
+	r := []string{"GET /patrimonio/bens", "POST /patrimonio/bens", "PATCH /patrimonio/bens/{id}", "DELETE /patrimonio/bens/{id}",
+		"POST /patrimonio/bens/em-massa", "POST /patrimonio/bens/apagar-em-massa",
+		"GET /patrimonio/posses", "POST /patrimonio/posses", "PATCH /patrimonio/posses/{id}"}
+	for _, x := range []string{"empresas", "locais", "comodos", "categorias"} {
+		r = append(r, "GET /patrimonio/"+x, "POST /patrimonio/"+x, "PATCH /patrimonio/"+x+"/{id}", "DELETE /patrimonio/"+x+"/{id}")
+	}
+	return append(r, "GET /patrimonio/tipos", "POST /patrimonio/tipos", "GET /patrimonio/config", "PUT /patrimonio/config/{chave}", "POST /patrimonio/log")
+}()
+
+// Plano 5.8: as 10 rotas de catálogo da Fábrica. Portão = catálogo, provado pela matriz de cada rota em
+// `internal/fabrica`; vazamento e impersonado pelas varreduras de lá. As 4 edges (soFabricante) e as 7 de robô
+// (auth.SoServico) NÃO entram: o TestNenhumaRotaNovaFicaAberta prova que sessão sem módulo = 403 nelas.
+var rotas58 = []string{
+	"GET /fabrica/lojas", "GET /fabrica/objetivos", "GET /fabrica/marcas", "GET /fabrica/looks", "GET /fabrica/publicos",
+	"GET /fabrica/campanhas", "GET /fabrica/criativos", "GET /fabrica/jobs", "GET /fabrica/meta-jobs",
+	"POST /fabrica/criativos/escolher",
+}
+
+// Plano 5.9: as 20 rotas de tabela de conteudo.Montar (7 leituras, 13 escritas), no grupo de DOMÍNIO. Portão =
+// catálogo, provado pela matriz de cada rota em `internal/conteudo`; vazamento e impersonado por
+// `TestNadaVazaEntreContas` e `TestEscritasRecusamImpersonado`. O `POST /conteudo-trigger` NÃO entra: tem o
+// portão da edge (PedeIA: sessão sem módulo = 403, TestNenhumaRotaNovaFicaAberta).
+var rotas59 = []string{
+	"GET /conteudo/pecas", "POST /conteudo/pecas", "PATCH /conteudo/pecas/{id}", "DELETE /conteudo/pecas/{id}",
+	"GET /conteudo/arquivos", "POST /conteudo/arquivos", "PATCH /conteudo/arquivos/{id}", "DELETE /conteudo/arquivos/{id}",
+	"GET /conteudo/eventos", "POST /conteudo/eventos",
+	"GET /conteudo/ideias", "POST /conteudo/ideias", "PATCH /conteudo/ideias/{id}",
+	"GET /conteudo/blocos", "POST /conteudo/blocos", "PATCH /conteudo/blocos/{id}",
+	"GET /conteudo/concorrentes", "POST /conteudo/concorrentes", "PATCH /conteudo/concorrentes/{id}",
+	"GET /conteudo/jobs",
+}
+
 func init() {
-	for _, c := range append(slices.Clone(rotas51), rotas57...) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59) {
 		soSessao[c] = true
+	}
+}
+
+// Quem soma rotas ao grupo de domínio sem declarar aqui é pego: `rotas52` tem de ser EXATAMENTE as rotas
+// /patrimonio/ montadas (nem mais, nem menos).
+func TestRotasDoPatrimonioSaoAsDeclaradas(t *testing.T) {
+	p := testebanco.Novo(t)
+	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
+	var montadas []string
+	if err := chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if strings.HasPrefix(rota, "/patrimonio/") {
+			montadas = append(montadas, metodo+" "+rota)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(montadas)
+	quer := slices.Clone(rotas52)
+	slices.Sort(quer)
+	if len(rotas52) != 30 || !slices.Equal(montadas, quer) {
+		t.Errorf("rotas /patrimonio/ montadas = %d: %v\nesperadas (30): %v", len(montadas), montadas, quer)
 	}
 }
 
@@ -435,7 +493,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
-	for _, c := range append(slices.Clone(rotas51), rotas57...) { // Planos 5.1 e 5.7: no grupo de domínio, com o prazo dele
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2 e 5.9: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -449,7 +507,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 				}
 			})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil))
 		}
-		if strings.HasPrefix(rota, "/redes/") { // Plano 5.6: o grupo de domínio inteiro herda o prazo
+		if strings.HasPrefix(rota, "/redes/") || strings.HasPrefix(rota, "/fabrica") { // Planos 5.6 e 5.8: o grupo de domínio inteiro herda o prazo
 			if achado != PrazoDominio {
 				t.Errorf("%s: prazo %v, esperava %v (PrazoDominio)", chave, achado, PrazoDominio)
 			}
@@ -900,5 +958,213 @@ func TestTrafegoPelaMontagemReal(t *testing.T) {
 		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
 			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
 		}
+	}
+}
+
+// Plano 5.2 pela montagem real: a cadeia do grupo de domínio (sessão, escopo, prazo) nas rotas do Patrimônio e
+// o registro das RPCs em web.FuncoesRPC. A matriz de cada rota está em internal/patrimonio; aqui vale a
+// MONTAGEM (grupo, cadeia, posição). `pat` tem o módulo; `viewer` não tem nada.
+func TestPatrimonioPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	tok := map[string]string{}
+	for _, u := range []struct{ id, nome, features string }{
+		{"5e200000-0000-4000-a000-0000000010a1", "pat", "{patrimonio}"}, {"5e200000-0000-4000-a000-0000000010a2", "viewer", "{}"},
+	} {
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, u.id, u.nome+"-52@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe) values ($1::uuid, $2::text, $3::text, 'viewer', $4::text[], false)`,
+			u.id, u.nome+"-52@x.com", u.nome, u.features); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if tok[u.nome], err = s.Criar(ctx, u.id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pedir := func(quem, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+tok[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	empresas := func() string {
+		var n int
+		if err := p.QueryRow(ctx, `select count(*) from patrimonio_empresas`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprint(n)
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem                                string
+		empresas                           string // linhas em patrimonio_empresas DEPOIS do caso
+	}{
+		{"leitura sem sessão", "", "GET", "/patrimonio/bens", "", 401, "nao_autenticado", "0"},
+		{"viewer lê a lista vazia (a regra devolve 200 [])", "viewer", "GET", "/patrimonio/bens", "", 200, "[]", "0"},
+		{"viewer não cria empresa", "viewer", "POST", "/patrimonio/empresas", `{"nome":"Vessel"}`, 403, "sem_permissao", "0"},
+		{"viewer não chama a RPC (portão antes da função)", "viewer", "POST", "/rpc/pessoas_para_escolher", ``, 403, "sem_permissao", "0"},
+		{"pat cria empresa", "pat", "POST", "/patrimonio/empresas", `{"nome":"Vessel"}`, 201, `"nome":"Vessel"`, "1"},
+		{"pat chama a RPC registrada em web.FuncoesRPC", "pat", "POST", "/rpc/pessoas_para_escolher", ``, 200, "[]", "1"},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem)
+		}
+		if n := empresas(); n != c.empresas {
+			t.Errorf("%s: patrimonio_empresas = %s linhas depois, esperava %s", c.nome, n, c.empresas)
+		}
+	}
+}
+
+// Plano 5.8: a Fábrica pela montagem real (sem GITHUB_PAT: não há para onde despachar). Portão de catálogo,
+// portão da edge (chave meta.fabrica), conta de serviço do robô e a recusa da conta de serviço no painel.
+func TestFabricaPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{ArquivosDir: t.TempDir()})
+	ctx := context.Background()
+	quem := map[string]string{}
+	for i, u := range []struct{ nome, features, permissoes string }{
+		{"fabricante", "{meta}", `{"meta.fabrica": ["ver"]}`}, {"so-meta", "{meta}", `{}`},
+	} {
+		id := fmt.Sprintf("a5810000-0000-4000-a000-00000000020%d", i)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, u.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, permissions, escopo_por_equipe)
+			values ($1::uuid, $2::text, $2::text, 'viewer', $3::text[], $4::jsonb, false)`, id, u.nome+"@x.com", u.features, u.permissoes); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if quem[u.nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// o robô como o 5.13 o cria (api servico criar), com a chave de permissions dada à parte (como no NOTAS)
+	tok, err := s.CriarContaDeServico(ctx, "robo-fabrica", "robo-fabrica@x.com", []string{"meta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quem["robo-fabrica"] = tok
+	if _, err := p.Exec(ctx, `update profiles set permissions = '{"meta.fabrica": ["ver", "editar"]}' where email = 'robo-fabrica@x.com'`); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(nome, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if nome != "" {
+			r.Header.Set("Authorization", "Bearer "+quem[nome])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	const campanhaInexistente = "a5830000-0000-4000-a000-0000000000ff"
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem                                string
+	}{
+		{"leitura sem sessão", "", "GET", "/fabrica/lojas", "", 401, "nao_autenticado"},
+		{"leitura com qualquer módulo", "so-meta", "GET", "/fabrica/lojas", "", 200, "["},
+		{"disparo sem a chave", "so-meta", "POST", "/fabrica-trigger", `{"tipo":"preview","params":{}}`, 403, "sem_permissao"},
+		{"disparo passa o portão e para sem token", "fabricante", "POST", "/fabrica-trigger", `{"tipo":"preview","params":{}}`, 503, "github_nao_configurado"},
+		{"disparo recusa conta de serviço", "robo-fabrica", "POST", "/fabrica-trigger", `{"tipo":"preview","params":{}}`, 403, "sem_permissao"},
+		{"rota de robô recusa painel", "fabricante", "POST", "/fabrica/robo/execucoes", `{"robo":"fabrica","acao":"teste"}`, 403, "sem_permissao"},
+		{"rota de robô aceita o robô", "robo-fabrica", "POST", "/fabrica/robo/execucoes", `{"robo":"fabrica","acao":"teste"}`, 201, `"id"`},
+		{"apagar com rodada inexistente", "fabricante", "POST", "/fabrica-apagar", `{"campanhaId":"` + campanhaInexistente + `"}`, 200, `"ok":true`},
+		{"apagar recusa conta de serviço", "robo-fabrica", "POST", "/fabrica-apagar", `{"campanhaId":"` + campanhaInexistente + `"}`, 403, "sem_permissao"},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem)
+		}
+	}
+	var jobs int
+	if err := p.QueryRow(ctx, `select count(*) from fabrica_jobs`).Scan(&jobs); err != nil || jobs != 0 {
+		t.Errorf("jobs = %d (%v): sem token nada deveria nascer", jobs, err)
+	}
+}
+
+// Plano 5.9 pela montagem real: as rotas do Conteúdo no grupo de domínio (sessão, escopo, conta), as 6 RPCs na
+// lista branca e o /conteudo-trigger com o portão da edge. A matriz de cada rota está em internal/conteudo;
+// aqui vale a MONTAGEM (grupo, cadeia, posição, FuncoesRPC).
+func TestConteudoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const a1, a2 = "a5900000-0000-4000-a000-0000000000a1", "a5900000-0000-4000-a000-0000000000a2"
+	const p1, p2 = "a5930000-0000-4000-a000-0000000000c1", "a5930000-0000-4000-a000-0000000000c2"
+	quem := map[string]string{}
+	for i, u := range []struct{ nome, papel, features, contas string }{
+		{"editor-a1", "viewer", "{conteudo}", "{" + a1 + "}"}, {"aprovador-a1", "viewer", "{conteudo,conteudo.aprovar}", "{" + a1 + "}"},
+		{"admin", "admin", "{}", ""}, {"nenhum", "viewer", "{}", ""},
+	} {
+		id := fmt.Sprintf("a5910000-0000-4000-a000-00000000020%d", i)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, u.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe, allowed_accounts)
+			values ($1::uuid, $2::text, $2::text, $3::text, $4::text[], false, nullif($5::text, '')::uuid[])`,
+			id, u.nome+"@x.com", u.papel, u.features, u.contas); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if quem[u.nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.Exec(ctx, `insert into accounts (id, name) values ($1::uuid, 'Vessel'), ($2::uuid, 'Mantova')`, a1, a2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em) values
+		($1::uuid, $2::uuid, 'Da A1', 'feed', 'em_aprovacao', now() + interval '1 day'),
+		($3::uuid, $4::uuid, 'Da A2', 'feed', 'em_aprovacao', now() + interval '1 day')`, p1, a1, p2, a2); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(nome, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if nome != "" {
+			r.Header.Set("Authorization", "Bearer "+quem[nome])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem, naoTem                        string
+	}{
+		{"leitura sem sessão", "", "GET", "/conteudo/pecas", "", 401, "nao_autenticado", ""},
+		{"editor com lista só vê a própria conta", "editor-a1", "GET", "/conteudo/pecas", "", 200, a1, a2},
+		{"admin vê as duas", "admin", "GET", "/conteudo/pecas", "", 200, a2, ""},
+		{"sem módulo lê lista vazia (catálogo)", "nenhum", "GET", "/conteudo/pecas", "", 200, "[]", ""},
+		{"RPC com peça de conta que não se vê", "aprovador-a1", "POST", "/rpc/conteudo_decidir", `{"p_peca":"` + p2 + `","p_decisao":"aprovada"}`, 403, "sem_permissao", ""},
+		{"RPC na própria conta", "aprovador-a1", "POST", "/rpc/conteudo_decidir", `{"p_peca":"` + p1 + `","p_decisao":"aprovada"}`, 200, `"status":"aprovada"`, ""},
+		{"RPC sem o portão da função", "editor-a1", "POST", "/rpc/conteudo_aprovar_e_agendar", `{"p_peca":"` + p1 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA sem o módulo", "nenhum", "POST", "/conteudo-trigger", `{"account_id":"` + a1 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA para conta que não se vê", "editor-a1", "POST", "/conteudo-trigger", `{"account_id":"` + a2 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA na própria conta: o job na fila", "editor-a1", "POST", "/conteudo-trigger", `{"account_id":"` + a1 + `","quantas":5}`, 200, `"quantas":5`, ""},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
+		}
+	}
+	var fila string
+	if err := p.QueryRow(ctx, `select count(*)::text || '|' || min(status) from conteudo_jobs`).Scan(&fila); err != nil || fila != "1|enfileirado" {
+		t.Errorf("a fila = %q %v, esperava 1|enfileirado", fila, err)
 	}
 }

@@ -1,9 +1,12 @@
 package patrimonio
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -18,6 +21,7 @@ type recurso struct {
 	corpo        func(nome string) string // POST válido
 	semPai       string                   // POST sem o pai
 	frase        string                   // a frase da tela para o pai que falta
+	colunas      []string                 // as colunas EXATAS de cada linha da lista (as telas dependem delas)
 }
 
 var todosOsAtores = []string{"patGeral", "patT1", "frota", "superFicha", "acessos", "viewer"}
@@ -26,17 +30,17 @@ func recursos() []recurso {
 	frotaLe := []string{"patGeral", "patT1", "frota", "superFicha"}
 	soPatrimonio := []string{"patGeral", "patT1"}
 	return []recurso{
-		{rota: "/patrimonio/empresas", tabela: "patrimonio_empresas", todos: []string{E1, E2}, leem: frotaLe, criam: frotaLe, alvo: E2,
+		{rota: "/patrimonio/empresas", tabela: "patrimonio_empresas", colunas: []string{"id", "nome", "ordem", "criado_em"}, todos: []string{E1, E2}, leem: frotaLe, criam: frotaLe, alvo: E2,
 			corpo: func(n string) string { return `{"nome":"` + n + `","ordem":3}` }},
-		{rota: "/patrimonio/locais", tabela: "patrimonio_locais", todos: []string{L1, L2, L3}, leem: frotaLe, criam: frotaLe, alvo: L1,
+		{rota: "/patrimonio/locais", tabela: "patrimonio_locais", colunas: []string{"id", "nome", "ordem", "criado_em", "empresa_id"}, todos: []string{L1, L2, L3}, leem: frotaLe, criam: frotaLe, alvo: L1,
 			corpo:  func(n string) string { return `{"nome":"` + n + `","empresa_id":"` + E1 + `"}` },
 			semPai: `{"nome":"Sem marca"}`, frase: "Escolha a marca antes de criar um local novo."},
-		{rota: "/patrimonio/comodos", tabela: "patrimonio_comodos", todos: []string{C1}, leem: frotaLe, criam: frotaLe, alvo: C1,
+		{rota: "/patrimonio/comodos", tabela: "patrimonio_comodos", colunas: []string{"id", "nome", "ordem", "criado_em", "local_id"}, todos: []string{C1}, leem: frotaLe, criam: frotaLe, alvo: C1,
 			corpo:  func(n string) string { return `{"nome":"` + n + `","local_id":"` + L1 + `"}` },
 			semPai: `{"nome":"Sem local"}`, frase: "Escolha o local antes de criar um ambiente novo."},
-		{rota: "/patrimonio/categorias", tabela: "patrimonio_categorias", todos: []string{CatM, CatV}, leem: soPatrimonio, criam: soPatrimonio, alvo: CatM,
+		{rota: "/patrimonio/categorias", tabela: "patrimonio_categorias", colunas: []string{"id", "nome", "vida_util_anos", "ordem", "criado_em"}, todos: []string{CatM, CatV}, leem: soPatrimonio, criam: soPatrimonio, alvo: CatM,
 			corpo: func(n string) string { return `{"nome":"` + n + `"}` }},
-		{rota: "/patrimonio/tipos", tabela: "patrimonio_tipos", todos: []string{TpM}, leem: soPatrimonio, criam: soPatrimonio,
+		{rota: "/patrimonio/tipos", tabela: "patrimonio_tipos", colunas: []string{"id", "categoria_id", "nome", "ordem", "criado_em"}, todos: []string{TpM}, leem: soPatrimonio, criam: soPatrimonio,
 			corpo:  func(n string) string { return `{"nome":"` + n + `","categoria_id":"` + CatM + `"}` },
 			semPai: `{"nome":"Sem categoria"}`, frase: "Escolha a categoria antes de criar um tipo novo."},
 	}
@@ -58,6 +62,16 @@ func TestCadastrosLeitura(t *testing.T) {
 				t.Errorf("%s: %s vê %v (%d), esperava %v", r.rota, quem, got, st, want)
 			}
 		}
+		// o formato: as colunas exatas de cada linha (tela-de-patrimonio.vue:2066-2069, tela-de-frota.vue:1234-1235)
+		_, corpo := m.Pedir(t, "patGeral", "GET", r.rota, "")
+		var linhas []map[string]any
+		if err := json.Unmarshal([]byte(corpo), &linhas); err != nil || len(linhas) != len(r.todos) {
+			t.Fatalf("%s: %v %s", r.rota, err, corpo)
+		}
+		quemColunas := slices.Sorted(maps.Keys(linhas[0]))
+		if !slices.Equal(quemColunas, slices.Sorted(slices.Values(r.colunas))) {
+			t.Errorf("%s: colunas %v, esperava %v", r.rota, quemColunas, r.colunas)
+		}
 		m.Rodar(t, []caso{
 			{Nome: r.rota + " sem sessão", Metodo: "GET", Caminho: r.rota, Status: 401},
 			{Nome: r.rota + " ordem permitida", Quem: "patGeral", Metodo: "GET", Caminho: r.rota + "?ordem=nome", Status: 200},
@@ -74,22 +88,19 @@ func TestCadastrosLeitura(t *testing.T) {
 		{Nome: "a ordem padrão é ordem, nome", Quem: "patGeral", Metodo: "GET", Caminho: "/patrimonio/categorias", Status: 200, Tem: "Móveis e Utensílios"},
 	})
 	// ordem,nome (não nome): Vessel (ordem 1) antes de RBV Company (ordem 2), que alfabeticamente viria antes
-	if _, c := m.Pedir(t, "patGeral", "GET", "/patrimonio/empresas", ""); !(indice(c, "Vessel") < indice(c, "RBV Company")) {
+	if _, c := m.Pedir(t, "patGeral", "GET", "/patrimonio/empresas", ""); !antes(c, "Vessel", "RBV Company") {
 		t.Errorf("ordem padrão das empresas errada (tem de ser ordem, nome): %s", c)
 	}
 	// ordem,nome: Móveis (2) antes de Veículos (6)
-	if _, c := m.Pedir(t, "patGeral", "GET", "/patrimonio/categorias", ""); !(indice(c, "Móveis") < indice(c, "Veículos")) {
+	if _, c := m.Pedir(t, "patGeral", "GET", "/patrimonio/categorias", ""); !antes(c, "Móveis", "Veículos") {
 		t.Errorf("ordem padrão errada: %s", c)
 	}
 }
 
-func indice(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return len(s)
+// antes: a e b aparecem em s e a vem primeiro.
+func antes(s, a, b string) bool {
+	ia, ib := strings.Index(s, a), strings.Index(s, b)
+	return ia >= 0 && ib >= 0 && ia < ib
 }
 
 // Criar: quem pode (regra só de ator) pelo handler real, inclusive entrando como outra pessoa; a
@@ -116,6 +127,9 @@ func TestCadastrosCriar(t *testing.T) {
 				Efeito: contar(r.tabela), Quer: strconv.Itoa(total)},
 			{Nome: r.rota + ": coluna que a tela não grava", Quem: "patGeral", Metodo: "POST", Caminho: r.rota,
 				Corpo: `{"nome":"X","criado_em":"2020-01-01T00:00:00Z"}`, Status: 400, Tem: "corpo_invalido",
+				Efeito: contar(r.tabela), Quer: strconv.Itoa(total)},
+			{Nome: r.rota + ": id escolhido no corpo", Quem: "patGeral", Metodo: "POST", Caminho: r.rota,
+				Corpo: `{"nome":"Com id","id":"` + bemInexistente + `"}`, Status: 400, Tem: "corpo_invalido",
 				Efeito: contar(r.tabela), Quer: strconv.Itoa(total)},
 			{Nome: r.rota + ": nome repetido no mesmo pai", Quem: "patGeral", Metodo: "POST", Caminho: r.rota,
 				Corpo: r.corpo("Novo 0"), Status: 409, Tem: "conflito", Efeito: contar(r.tabela), Quer: strconv.Itoa(total)},
@@ -167,6 +181,8 @@ func TestCadastrosRenomearEApagar(t *testing.T) {
 		}
 		m.Rodar(t, []caso{
 			{Nome: r.rota + ": só o nome muda (ordem é 400)", Quem: "patGeral", Metodo: "PATCH", Caminho: u, Corpo: `{"ordem":2}`,
+				Status: 400, Tem: "corpo_invalido", Efeito: col(r.tabela, "nome", r.alvo), Quer: nome},
+			{Nome: r.rota + ": o id não muda por PATCH", Quem: "patGeral", Metodo: "PATCH", Caminho: u, Corpo: `{"id":"` + bemInexistente + `","nome":"Mudou"}`,
 				Status: 400, Tem: "corpo_invalido", Efeito: col(r.tabela, "nome", r.alvo), Quer: nome},
 			{Nome: r.rota + ": o pai não muda por PATCH", Quem: "patGeral", Metodo: "PATCH", Caminho: u,
 				Corpo: `{"nome":"Mudou","empresa_id":"` + E2 + `","local_id":"` + L2 + `"}`, Status: 400, Tem: "corpo_invalido",
@@ -244,8 +260,15 @@ func TestCadastrosRecusasNaoMudamNada(t *testing.T) {
 		if r.alvo == "" {
 			continue
 		}
+		statusDaFrota := 404
+		if slices.Contains(r.leem, "frota") {
+			statusDaFrota = 403
+		}
 		casos = append(casos,
-			caso{Nome: r.rota + " frota/viewer PATCH", Quem: "viewer", Metodo: "PATCH", Caminho: r.rota + "/" + r.alvo, Corpo: `{"nome":"x"}`, Status: 404},
+			caso{Nome: r.rota + " viewer PATCH", Quem: "viewer", Metodo: "PATCH", Caminho: r.rota + "/" + r.alvo, Corpo: `{"nome":"x"}`, Status: 404},
+			// a Frota vê marca, local e ambiente mas não edita (403); categoria ela nem vê (404)
+			caso{Nome: r.rota + " frota PATCH", Quem: "frota", Metodo: "PATCH", Caminho: r.rota + "/" + r.alvo, Corpo: `{"nome":"x"}`, Status: statusDaFrota},
+			caso{Nome: r.rota + " frota DELETE", Quem: "frota", Metodo: "DELETE", Caminho: r.rota + "/" + r.alvo, Status: statusDaFrota},
 			caso{Nome: r.rota + " viewer DELETE", Quem: "viewer", Metodo: "DELETE", Caminho: r.rota + "/" + r.alvo, Status: 404},
 			caso{Nome: r.rota + " impersonado DELETE", Quem: "impersonado", Metodo: "DELETE", Caminho: r.rota + "/" + r.alvo, Status: 403})
 	}

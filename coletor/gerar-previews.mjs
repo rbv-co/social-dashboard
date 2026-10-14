@@ -9,6 +9,9 @@ import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { TEMPLATES, DIM } from './templates-criativos/templates.mjs';
 import { variacoesProduto, variacoesPromo } from './lib/criativo-modelo.mjs';
 import { subirStorageResiliente } from './lib/storage-upload.mjs';
+// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
+// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
+import { vaiParaApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
 
 const URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SK = process.env.SUPABASE_SERVICE_KEY;
@@ -29,6 +32,7 @@ export function dadosAmostra() {
 }
 
 async function sbPatch(p, body) {
+  if (vaiParaApi(p)) return escreverFabrica('PATCH', p, body);
   const r = await fetch(REST + p, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
   if (!r.ok && ![200, 204].includes(r.status)) throw new Error('PATCH ' + p + ' ' + r.status);
 }

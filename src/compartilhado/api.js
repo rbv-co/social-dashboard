@@ -41,7 +41,16 @@ export function lerAreas(texto) {
 // `import.meta.env` só existe no Vite; no `node --test` é undefined.
 const ENV = import.meta.env || {}
 const LIGADAS = lerAreas(ENV.VITE_API_AREAS)
-export const BASE_DA_API = ENV.VITE_API_BASE || '/api'
+export let BASE_DA_API = ENV.VITE_API_BASE || '/api'
+
+// FORA DO NAVEGADOR (os robôs do `coletor/`, Plano 7): não há armazenamento da
+// aba nem `/api` relativo. O robô diz o endereço da API e o token de serviço
+// (`srv_…`) explicitamente; no navegador ninguém chama isto.
+let _tokenFixo = null
+export function configurarApi({ base, token }) {
+  if (base) BASE_DA_API = String(base).replace(/\/+$/, '')
+  _tokenFixo = token || null
+}
 
 /** Esta área já fala com a API em Go? */
 export function areaNaApi(area) {
@@ -65,6 +74,7 @@ function armazenamento() {
 }
 
 export function lerToken() {
+  if (_tokenFixo) return _tokenFixo
   try { return armazenamento()?.getItem(CHAVE_DO_TOKEN) || null } catch { return null }
 }
 export function guardarToken(token) {
@@ -185,11 +195,24 @@ export async function invocar(nome, corpo) {
  * usam: `mensagem` (núcleo), `error` em texto (edge; código como `sem_permissao`
  * NÃO conta), `error.message` (Meta repassada), `meta_erro`, `erro`.
  */
+// Códigos de erro das rotas portadas que não trazem frase (a tela mostraria o
+// código cru). Só os que a pessoa pode encontrar; o resto cai na classificação.
+const FRASES_DOS_CODIGOS = {
+  github_nao_configurado: 'O disparo dos robôs não está configurado no servidor. Avise quem administra a Central.',
+  dispatch_incerto: 'Não deu para confirmar se o robô foi acordado. Confira em alguns minutos antes de disparar de novo.',
+  tipo_invalido: 'Esta ação não está disponível.',
+  campanhaId_invalido: 'Não achei esta campanha.',
+  acao_invalida: 'Esta ação não está disponível.',
+}
+
 export function fraseDoCorpo(corpo) {
   if (!corpo || typeof corpo !== 'object') return null
   if (typeof corpo.mensagem === 'string' && corpo.mensagem) return corpo.mensagem
+  if (typeof corpo.error === 'string' && FRASES_DOS_CODIGOS[corpo.error]) return FRASES_DOS_CODIGOS[corpo.error]
   if (typeof corpo.error === 'string' && corpo.error && !/^[a-z_]+$/.test(corpo.error)) return corpo.error
   if (corpo.error && typeof corpo.error.message === 'string') return corpo.error.message
+  // `detail` do `dispatch_falhou` (5.8) é frase da API
+  if (typeof corpo.detail === 'string' && corpo.detail) return corpo.detail
   for (const k of ['meta_erro', 'erro']) if (typeof corpo[k] === 'string' && corpo[k] && !/^[a-z_]+$/.test(corpo[k])) return corpo[k]
   return null
 }

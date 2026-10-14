@@ -124,7 +124,7 @@ function geoParaListas() {
   })
 }
 async function buscarNoMapa(termo) {
-  const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'buscar', termo } })
+  const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'buscar', termo } })
   // O motivo vai pra tela: busca que falha não pode virar "nada encontrado".
   if (error || data?.error) throw new Error(data?.error || error?.message || 'a recepção do mapa não respondeu')
   return data
@@ -152,7 +152,7 @@ async function montarLugares() {
     // O ponto se apresenta: nasce na hora, e o endereço chega em seguida.
     aoPorPonto: async (ponto) => {
       try {
-        const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } })
+        const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } })
         if (error || data?.error) throw new Error(data?.error || error?.message || 'sem resposta')
         const achado = enderecoDeOndeCaiu(data)
         ponto.nome = achado.nome; ponto.endereco = achado.endereco
@@ -293,7 +293,7 @@ async function salvarPreset() {
   const nome = prompt('Nome do preset:', publico.nome || ''); if (!nome) return
   const preset = { ...publicoParaEnvio(), nome }
   if (publico.presetId) preset.id = publico.presetId
-  const { data, error } = await sbClient.functions.invoke('fabrica-publicos', { body: { acao: 'salvar', preset } })
+  const { data, error } = await invocarNaArea('fabrica', sbClient, 'fabrica-publicos', { body: { acao: 'salvar', preset } })
   if (error) { adminToast('Não consegui salvar o preset: ' + error.message, false); return }
   publico.nome = nome; await carregarPresets(); if (data?.id) publico.presetId = data.id
   // Salvar não mudava nada visível: o mesmo público continuava na tela, e a
@@ -302,7 +302,7 @@ async function salvarPreset() {
 }
 async function apagarPreset() {
   if (!publico.presetId) return; if (!confirm('Apagar este preset?')) return
-  const { error } = await sbClient.functions.invoke('fabrica-publicos', { body: { acao: 'apagar', id: publico.presetId } })
+  const { error } = await invocarNaArea('fabrica', sbClient, 'fabrica-publicos', { body: { acao: 'apagar', id: publico.presetId } })
   if (error) { adminToast('Não consegui apagar o preset: ' + error.message, false); return }
   publico.presetId = ''; await carregarPresets()
   adminToast('Preset apagado.')
@@ -380,7 +380,7 @@ async function subir() {
         publico: publicoParaEnvio(publicoPorLoja[slug] || publico),
         orcamento: orcamentoParaEnvio(orcamentoPorLoja[slug] || orcamento),
       })) } }
-  const { data, error } = await sbClient.functions.invoke('fabrica-trigger', { body: { tipo: 'subir', params } })
+  const { data, error } = await invocarNaArea('fabrica', sbClient, 'fabrica-trigger', { body: { tipo: 'subir', params } })
   if (error) return alert('Falha: ' + error.message)
   if (!data?.job_id) return alert('Sem job_id na resposta')
   start(data.job_id)

@@ -280,3 +280,18 @@ func TestChaveDaIATrafego(t *testing.T) {
 		t.Fatalf("%q %v", c.IATrafego, c.Segredos())
 	}
 }
+
+func TestCarregarGitHubPAT(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("GITHUB_PAT", "  SEGREDO-x  ")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.GitHubPAT != "SEGREDO-x" {
+		t.Fatalf("GitHubPAT = %q", c.GitHubPAT)
+	}
+	if !slices.Contains(c.Segredos(), "SEGREDO-x") {
+		t.Fatal("GITHUB_PAT fora de Segredos()")
+	}
+}

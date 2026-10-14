@@ -1,8 +1,10 @@
 package patrimonio
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -85,6 +87,50 @@ func TestConfigELog(t *testing.T) {
 		{Nome: "patGeral cria", Quem: "patGeral", Metodo: "PUT", Caminho: "/patrimonio/config/numero_maximo", Corpo: `{"valor":"400"}`,
 			Status: http.StatusOK, Tem: `"chave":"numero_maximo"`, Efeito: cfgNumero, Quer: "400"},
 	})
+}
+
+// TestConfigAdminPorPapelSemModulo: is_patrimonio_admin() vale também para o PAPEL admin, sem o módulo (e a
+// trava de time não tira nada: a configuração é da empresa). O papel viewer com trava e sem módulo não passa.
+func TestConfigAdminPorPapelSemModulo(t *testing.T) {
+	m := novoMundo(t, montarConfig)
+	m.Rodar(t, []caso{
+		{Nome: "lê", Quem: "adminT1", Metodo: "GET", Caminho: "/patrimonio/config", Status: http.StatusOK, Tem: `"numero_maximo"`},
+		{Nome: "grava", Quem: "adminT1", Metodo: "PUT", Caminho: "/patrimonio/config/numero_maximo", Corpo: `{"valor":"700"}`,
+			Status: http.StatusOK, Tem: `"valor":"700"`, Efeito: cfgNumero, Quer: "700"},
+		{Nome: "registra no log", Quem: "adminT1", Metodo: "POST", Caminho: "/patrimonio/log", Corpo: `{"acao":"x"}`, Status: http.StatusCreated},
+		{Nome: "viewer sem módulo não grava", Quem: "viewer", Metodo: "PUT", Caminho: "/patrimonio/config/numero_maximo", Corpo: `{"valor":"1"}`,
+			Status: http.StatusForbidden, Efeito: cfgNumero, Quer: "700"},
+	})
+}
+
+// TestConfigConcorrente: o upsert é atômico (ON CONFLICT): 20 PUT simultâneos, com a linha ausente e depois
+// com ela presente, terminam todos em 200 e com uma só linha (um select-depois-insert daria 409 na corrida).
+func TestConfigConcorrente(t *testing.T) {
+	m := novoMundo(t, montarConfig)
+	if _, err := m.P.Exec(t.Context(), "delete from patrimonio_config"); err != nil {
+		t.Fatal(err)
+	}
+	for rodada := range 2 {
+		var wg sync.WaitGroup
+		falhas := make(chan string, 20)
+		for i := range 20 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if st, corpo := m.Pedir(t, "patGeral", "PUT", "/patrimonio/config/numero_maximo", fmt.Sprintf(`{"valor":"%d"}`, 100+i)); st != http.StatusOK {
+					falhas <- fmt.Sprintf("rodada %d, PUT %d: %d %s", rodada, i, st, corpo)
+				}
+			}()
+		}
+		wg.Wait()
+		close(falhas)
+		for f := range falhas {
+			t.Error(f)
+		}
+		if got := m.Um(t, cfgLinhas); got != "1" {
+			t.Errorf("rodada %d: %s linhas, esperava 1", rodada, got)
+		}
+	}
 }
 
 func contem(corpo string, partes ...string) bool {

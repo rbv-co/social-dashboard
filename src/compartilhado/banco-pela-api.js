@@ -37,6 +37,10 @@ const instante = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v + 'T00:00:00Z' : v)
 // O teto de linhas da API (o `max_rows` do Supabase). Pedido acima disso é
 // recusado na tradução: cortar calado devolveria número menor sem aviso.
 export const TETO_DE_LINHAS = 1000
+// `col=is.null` / `col=not.is.null` viram um parâmetro booleano da rota; outro
+// valor (`is.true`, `not.eq.x`) não tem tradução.
+const nulo = (sim) => (v) => { if (v !== 'null') throw new ErroDeTraducao(`is.${v} sem tradução`); return sim }
+const naoNulo = (sim) => (v) => { if (v !== 'is.null') throw new ErroDeTraducao(`not.${v} sem tradução`); return sim }
 const ROTAS = {
   // ── 5.1 — admin, equipes e acesso ──
   profiles: {
@@ -128,6 +132,90 @@ const ROTAS = {
       const [l] = linhas
       return { metodo: 'PUT', caminho: `/redes/filtros-de-campanha/${encodeURIComponent(l.account_id)}`, corpo: { selected_ids: l.selected_ids } }
     },
+  },
+  // ── 5.8 — Fábrica de anúncios (leituras; as escritas do painel são as 4 edges e o
+  // `escolher`, feitos na tela; as do robô são as rotas `/fabrica/robo/*`) ──
+  fabrica_lojas: { area: 'fabrica', rota: '/fabrica/lojas', filtros: { ativo: eq('ativo') }, ordens: [] },
+  fabrica_objetivos: { area: 'fabrica', rota: '/fabrica/objetivos', filtros: { ativo: eq('ativo'), chave: eq('chave') }, ordens: [] },
+  fabrica_marcas: { area: 'fabrica', rota: '/fabrica/marcas', filtros: { account_id: eq('account_id'), ativo: eq('ativo') }, ordens: [] },
+  fabrica_looks: { area: 'fabrica', rota: '/fabrica/looks', filtros: { ativo: eq('ativo') }, ordens: [] },
+  fabrica_publicos: { area: 'fabrica', rota: '/fabrica/publicos', filtros: { ativo: eq('ativo') }, ordens: [] },
+  fabrica_campanhas: {
+    area: 'fabrica', rota: '/fabrica/campanhas',
+    filtros: {
+      id: eq('id'), status: { eq: 'status', in: 'status' },
+      // `fechada_em=is.null` = aberta; `purgado_em=is.null` = não purgada
+      fechada_em: { is: ['aberta', nulo('true')], not: ['aberta', naoNulo('false')] },
+      purgado_em: { is: ['purgada', nulo('false')], not: ['purgada', naoNulo('true')] },
+    },
+    ordens: ['created_at', 'fechada_em'],
+  },
+  fabrica_criativos: {
+    area: 'fabrica', rota: '/fabrica/criativos',
+    filtros: {
+      campanha_id: eq('campanha_id'), escolhido: eq('escolhido'), arquetipo: eq('arquetipo'),
+      purgado_em: { is: ['purgado', nulo('false')], not: ['purgado', naoNulo('true')] },
+    },
+    ordens: [],
+  },
+  fabrica_jobs: {
+    area: 'fabrica', rota: '/fabrica/jobs',
+    // `params->>campanhaId` = `campanha_id` na rota
+    filtros: { id: eq('id'), tipo: eq('tipo'), status: eq('status'), 'params->>campanhaId': eq('campanha_id') },
+    ordens: ['created_at'],
+  },
+  fabrica_meta_jobs: {
+    area: 'fabrica', rota: '/fabrica/meta-jobs',
+    filtros: {
+      tipo: eq('tipo'), 'payload->>campanhaId': { eq: 'campanha_id', in: 'campanha_id' },
+      meta_campaign_id: { not: ['com_campanha_meta', naoNulo('true')] },
+    },
+    ordens: ['created_at'],
+  },
+  // ── 5.7 — Gestão de tráfego ──
+  gt_budget_analises: {
+    area: 'trafego', rota: '/gestao-trafego/analises-de-orcamento',
+    filtros: { account_id: eq('account_id'), veredito: eq('veredito') }, ordens: [],
+  },
+  gt_ad_analises: {
+    area: 'trafego', rota: '/gestao-trafego/analises-de-anuncio',
+    filtros: { account_id: eq('account_id'), veredito: eq('veredito'), campaign_id: eq('campaign_id') }, ordens: [],
+  },
+  gt_fila_decisoes: {
+    area: 'trafego', rota: '/gestao-trafego/decisoes',
+    filtros: { account_id: eq('account_id'), campaign_id: eq('campaign_id'), escopo: eq('escopo') }, ordens: ['decidido_em'],
+    // quem decidiu vem da sessão; o silêncio de 7 dias o servidor calcula (Ruling 5.7-17)
+    autoria: ['decidido_por', 'silenciar_ate', 'decidido_em'],
+  },
+  gt_campanhas_rascunho: {
+    area: 'trafego', rota: '/gestao-trafego/rascunhos',
+    filtros: { account_id: eq('account_id'), status: eq('status') }, ordens: ['updated_at'],
+    autoria: ['criado_por', 'created_at', 'updated_at'],
+  },
+  gt_config_metricas: {
+    area: 'trafego', rota: '/gestao-trafego/config-metricas', filtros: {}, ordens: [], autoria: ['updated_at'],
+    upsert: (linhas) => {
+      if (linhas.length !== 1) throw new ErroDeTraducao('gt_config_metricas: um balde por vez')
+      return { metodo: 'PUT', caminho: `/gestao-trafego/config-metricas/${encodeURIComponent(linhas[0].balde)}`, corpo: { metricas: linhas[0].metricas } }
+    },
+  },
+  gt_objetivo_interacao: {
+    area: 'trafego', rota: '/gestao-trafego/objetivos',
+    filtros: { alvo_id: eq('alvo_id'), conta_id: eq('conta_id'), nivel: eq('nivel') }, ordens: [],
+    autoria: ['updated_by', 'updated_at'],
+    upsert: (linhas) => {
+      if (linhas.length !== 1) throw new ErroDeTraducao('gt_objetivo_interacao: um alvo por vez')
+      const [l] = linhas
+      return { metodo: 'PUT', caminho: `/gestao-trafego/objetivos/${encodeURIComponent(l.alvo_id)}`, corpo: { nivel: l.nivel, interacao: l.interacao, conta_id: l.conta_id ?? null } }
+    },
+    // 204 também sem linha (Ruling 5.7-8)
+    apagarPor: { alvo_id: (v) => ({ metodo: 'DELETE', caminho: `/gestao-trafego/objetivos/${encodeURIComponent(v)}` }) },
+  },
+  // a escrita da régua é UM `PUT /gestao-trafego/regua` com o histórico junto: feita na tela
+  gt_ponderada_config: { area: 'trafego', rota: '/gestao-trafego/regua', filtros: {}, ordens: [] },
+  interesses_sugeridos: {
+    area: 'trafego', rota: '/gestao-trafego/interesses-sugeridos',
+    filtros: { account_id: eq('account_id'), marca_id: eq('marca_id'), objetivo: eq('objetivo') }, ordens: [],
   },
   data_integrity_checks: {
     area: 'admin', rota: '/saude/conferencias',
@@ -236,7 +324,9 @@ function ordenarNaTela(linhas, ordem) {
 
 function erroDoSupabase(error, corpo) {
   // o formato que as telas leem do supabase-js/PostgREST: `message`, `code`
-  return { message: fraseDoCorpo(corpo) || error.message, code: error.codigo || String(error.status), status: error.status, details: null, hint: null }
+  // `details` = a frase do SERVIDOR (quando veio): a tela que traduz "sem permissão"
+  // para a frase dela sabe que, aqui, a do servidor diz mais (ex.: "entrar como").
+  return { message: fraseDoCorpo(corpo) || error.message, code: error.codigo || String(error.status), status: error.status, details: corpo?.mensagem || null, hint: null }
 }
 
 /**
@@ -352,9 +442,12 @@ export async function escreverPelaApi(operacao, partes, corpo) {
     const f = partes.filtros
     const atalho = f.length === 1 && f[0].op === 'eq' && def.apagarPor?.[f[0].col]
     if (atalho) {
-      const p = atalho(valorDoEq(f[0].val))
+      const v = valorDoEq(f[0].val)
+      const p = atalho(v)
       const r = await um(p.metodo, p.caminho, p.corpo)
-      return r.erro ? { data: null, error: r.erro } : { data: null, error: null }
+      // A rota responde 204 também quando não havia linha: o que se sabe é que a
+      // linha daquela chave NÃO EXISTE mais — e é isso que a tela pergunta.
+      return r.erro ? { data: null, error: r.erro } : { data: [{ [f[0].col]: v }], error: null }
     }
     let ids
     if (f.length === 1 && f[0].col === 'id' && f[0].op === 'eq') ids = [valorDoEq(f[0].val)]
@@ -419,7 +512,10 @@ class ConsultaPelaApi {
     try {
       if (this.recusa) throw new ErroDeTraducao(this.recusa)
       if (this.op === 'ler') {
-        const r = await lerPelaApi(this.p, { contar: this.contar })
+        // `head: true` só conta: uma linha basta (o `X-Total-Count` traz o total);
+        // sem isto a leitura sem limite baixava a tabela inteira para contar
+        const p = this.soContar && this.p.limite == null ? { ...this.p, limite: 1 } : this.p
+        const r = await lerPelaApi(p, { contar: this.contar })
         if (r.error) return { data: null, error: r.error, count: null }
         if (this.soContar) return { data: null, error: null, count: r.count }
         if (this.unico) {

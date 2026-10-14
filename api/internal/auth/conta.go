@@ -137,8 +137,10 @@ func (c *Conta) EsqueciSenha(w http.ResponseWriter, r *http.Request) {
 		ctx, cancela := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancela()
 		var id string
+		// sem robô: quem tem linha em tokens_de_servico (ativo ou revogado) nunca ganha senha
 		err := c.Pool.QueryRow(ctx, `select u.id::text from usuarios u left join profiles p on p.id = u.id
-		   where lower(u.email) = $1::text and u.desativado_em is null and not coalesce(p.disabled, false)`, email).Scan(&id)
+		   where lower(u.email) = $1::text and u.desativado_em is null and not coalesce(p.disabled, false)
+		     and not exists (select 1 from tokens_de_servico ts where ts.usuario_id = u.id)`, email).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return
 		}
@@ -203,6 +205,7 @@ func (c *Conta) DefinirSenha(w http.ResponseWriter, r *http.Request) {
 		     join usuarios u on u.id = t.usuario_id left join profiles p on p.id = u.id
 		    where t.token_hash = $1::text and t.usado_em is null and t.expira_em > now()
 		      and u.desativado_em is null and not coalesce(p.disabled, false)
+		      and not exists (select 1 from tokens_de_servico ts where ts.usuario_id = u.id)
 		    for update of t`, hashDoToken(in.Token)).Scan(&id); err != nil {
 			return err
 		}
@@ -243,6 +246,10 @@ func (c *Conta) TrocarSenha(w http.ResponseWriter, r *http.Request) {
 	a := AtorDoContexto(r.Context())
 	if a.ImpersonadorID != nil {
 		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Quem entrou como outra pessoa não troca a senha dela.")
+		return
+	}
+	if a.Tipo == "servico" { // robô não tem senha; sem isto o 401 abaixo faria o robô achar que o token morreu
+		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Conta de serviço não tem senha.")
 		return
 	}
 	var in struct {

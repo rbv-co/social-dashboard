@@ -6,7 +6,7 @@
 // Sem deps externas — fetch nativo (Node 18+).
 
 import fs from 'fs';
-import { loginServico, blingProxy, blingPedidos, blingProdutos, blingSaldoFoco, classificarItem, DEP_FOCO } from './lib/bling-comercial.mjs';
+import { loginServico, robosNaApi, blingProxy, blingPedidos, blingProdutos, blingSaldoFoco, classificarItem, DEP_FOCO } from './lib/bling-comercial.mjs';
 import { CANAIS, realPorCanalDe, canaisFocoDe } from './lib/comercial-canais.mjs';
 import { bcgClass } from './lib/classificacao-comercial.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
@@ -25,7 +25,7 @@ const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 const MODEL = process.env.GESTOR_MODEL || 'claude-opus-4-8';
 
-if (!ANTHROPIC_API_KEY || !SERVICE_KEY || !GESTOR_EMAIL || !GESTOR_PASS) {
+if (!ANTHROPIC_API_KEY || !SERVICE_KEY || (!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
   console.error('✗ Faltam segredos: ANTHROPIC_API_KEY_GESTOR, SUPABASE_SERVICE_KEY, GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
   process.exit(1);
 }
@@ -389,7 +389,7 @@ async function main() {
   let _totIn = 0, _totOut = 0, _chamadas = 0; // uso da API p/ calcular o custo da rodada
 
   // 1) faturamento real por canal (mês corrente) via bling-proxy
-  const token = await loginServico();
+  const token = await loginServico({ naApi: true });
   const pedidos = await blingPedidos(token, di, df);
   const realPorCanal = realPorCanalDe(pedidos);
 

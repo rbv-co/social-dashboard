@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 const CONFERIDOS = {
   'bling_lojas.trg_espelhar_grupo_do_canal': { de: 'grupo_id, grupo' },                // db/migrations/2026-08-27-espelho-do-grupo-nos-dois-sentidos.sql:117-119
   'canais_grupos.trg_espelhar_rename_do_grupo': {},                                     // db/migrations/2026-08-21-canal-pai-e-supervisora-de-grupo.sql:88-90
+  'conteudo_pecas.conteudo_pecas_guarda': {},                                          // db/migrations/2026-07-29-conteudo-01-fundacao.sql:164-167 (BEFORE UPDATE … FOR EACH ROW; o 03-funcoes-5-09.sql o repete com create or replace)
   'equipes.equipes_atualizado': {},                                                     // db/migrations/2026-08-04-equipes-e-escopo.sql:246-247
   'gt_campanhas_rascunho.gt_rascunho_updated_at': {},                                   // db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql (BEFORE UPDATE … FOR EACH ROW; fatia do 5.7)
   'profiles.trg_guard_profiles': {},                                                    // sem migration no repositório; o corpo usa new/old (Ruling 5.1-1)
@@ -22,8 +23,8 @@ const CONFERIDOS = {
   'frota_uso.trg_frota_uso_enfileirar_pdf': { de: 'aceite_em' },                        // db/migrations/2026-08-18-fila-do-pdf-do-aceite.sql:76-78
   'frota_veiculos.trg_frota_espelha_responsavel': { de: 'pessoa_id' },                  // db/migrations/acessos/043_frota_patrimonio_responsavel.sql:50-52
   'frota_veiculos.trg_frota_espelha_situacao': { de: 'situacao' },                      // db/migrations/acessos/042_frota_patrimonio_situacao.sql:86-88
-  'frota_veiculos.trg_frota_espelha_situacao_no_bem': {},                               // db/migrations/acessos/051_status_do_veiculo_vale_nos_dois.sql:102-104
-  'frota_veiculos.trg_frota_fechar_posse_orfa': { de: 'pessoa_id', quando: 'new.pessoa_id is null' }, // db/migrations/acessos/029_frota_posse_invariante.sql:34-37
+  'frota_veiculos.trg_frota_espelha_situacao_no_bem': {},                               // db/migrations/acessos/051_status_do_veiculo_vale_nos_dois.sql:102-105
+  'frota_veiculos.trg_frota_fechar_posse_orfa': { de: 'pessoa_id', quando: 'new.pessoa_id is null' }, // db/migrations/acessos/029_frota_posse_invariante.sql:34-38
   'patrimonio_bens.trg_bem_de_veiculo_segue_a_frota': {},                               // db/migrations/acessos/051_status_do_veiculo_vale_nos_dois.sql:135-138
   'patrimonio_bens.trg_patrimonio_espelha_responsavel': { de: 'pessoa_id' },            // db/migrations/acessos/043_frota_patrimonio_responsavel.sql:69-71
   'patrimonio_bens.trg_patrimonio_espelha_situacao': { de: 'situacao' },                // db/migrations/acessos/042_frota_patrimonio_situacao.sql:110-112
@@ -91,6 +92,14 @@ for (const g of gatilhos.values()) {
     console.error(`gatilho ${g.chave} sem conferência: leia a migration (UPDATE OF? WHEN?) e acrescente em CONFERIDOS`);
     process.exit(1);
   }
+}
+
+// checagem inversa: entrada de CONFERIDOS que nenhum gatilho gerado usa é entrada obsoleta (a tabela saiu das
+// fatias 01-tabelas-*.sql, o gatilho foi apagado ou renomeado em produção): sem isto ela apodrece calada
+const obsoletas = Object.keys(CONFERIDOS).filter((k) => !gatilhos.has(k));
+if (obsoletas.length) {
+  console.error(`CONFERIDOS tem entrada sem gatilho gerado: ${obsoletas.join(', ')} (tabela fora das fatias 01-tabelas-*.sql ou gatilho que não existe mais no levantamento: apague a linha)`);
+  process.exit(1);
 }
 
 const chamadas = (texto) => [...funcoes.keys()].filter((n) => new RegExp(`\\b${n}\\(`).test(texto));

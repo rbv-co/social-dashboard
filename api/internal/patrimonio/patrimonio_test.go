@@ -52,6 +52,7 @@ func TestMundoDoPatrimonio(t *testing.T) {
 		"patGeral":    "[]|[]|true|false",
 		"impersonado": "[]|[]|true|true",
 		"viewer":      "[]|[]|false|false",
+		"adminT1":     "[" + L1 + "]|[]|false|false", // admin sem módulo, com trava: o time dele
 	} {
 		// igualdade exata, não só "contém"
 		if st, corpo := m.Pedir(t, quem, "GET", "/eco", ""); st != http.StatusOK || corpo != quer {
@@ -86,7 +87,7 @@ func TestSoSessaoPropria(t *testing.T) {
 // pessoas_para_escolher() (02-gatilhos.sql), então validar o pessoa_id contra a regra de Ler
 // impediria pôr responsável num bem (regressão) e o PostgREST de hoje já devolve esse erro. O custo,
 // se a decisão estivesse errada, é um oráculo de existência de uuid (não adivinhável) para quem já vê
-// a lista. A matriz do POST/PATCH está em TestBensEscrita.
+// a lista. A matriz do POST/PATCH está em TestBensPessoaDeAcessos (bens_test.go).
 func TestPessoaDosBensForaDaRegraDeLerDeAcessosPessoas(t *testing.T) {
 	m := novoMundo(t, montarSondas)
 	for quem, quer := range map[string]string{"patGeral": "0", "patT1": "0", "patT2": "0", "frota": "0", "viewer": "0", "acessos": "2", "superFicha": "0", "adminT1": "2"} {
