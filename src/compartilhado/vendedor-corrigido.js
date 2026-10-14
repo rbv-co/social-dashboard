@@ -5,6 +5,7 @@
 // logado. Mesmo arranjo de `valor-corrigido.js`, e pelo mesmo motivo.
 import { aplicarVendedorCorrigido } from '../../supabase/functions/_shared/vendedor-corrigido.js'
 
+import { deOnde } from './banco-pela-api.js';
 export { aplicarVendedorCorrigido }
 
 // ── Busca os ajustes ──────────────────────────────────────────────────────
@@ -19,7 +20,7 @@ export async function buscarAjustesDeVendedor(sbClient) {
   const PAGINA = 1000; // o PostgREST corta em 1000 sem avisar — paginar sempre
   try {
     for (let inicio = 0; ; inicio += PAGINA) {
-      const { data, error } = await sbClient
+      const { data, error } = await deOnde(sbClient)
         .from('bling_pedido_ajuste_vendedor')
         .select('pedido_id,vendor_id_corrigido')
         .range(inicio, inicio + PAGINA - 1);

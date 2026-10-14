@@ -6,6 +6,7 @@
 // Mesmo arranjo de `data-da-venda.js`, e pelo mesmo motivo.
 import { aplicarValorCorrigido } from '../../supabase/functions/_shared/valor-corrigido.js'
 
+import { deOnde } from './banco-pela-api.js';
 export { aplicarValorCorrigido }
 
 // ── Busca os ajustes ──────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ export async function buscarAjustesDeValor(sbClient) {
     // seria a coisa que trunca esta tabela, que é documentada como exceção
     // (pequena), diferente da tabela grande de onde esse teto foi copiado.
     for (let inicio = 0; ; inicio += PAGINA) {
-      const { data, error } = await sbClient
+      const { data, error } = await deOnde(sbClient)
         .from('bling_pedido_ajuste_valor')
         .select('pedido_id,total_corrigido')
         .range(inicio, inicio + PAGINA - 1);
