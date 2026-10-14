@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lerPelaPg, conexaoPelaPg, passo, ROBO } from './espelho-da-vessel-na-vps.mjs';
+import { lerPelaPg, conexaoPelaPg, passo, semResposta, ROBO } from './espelho-da-vessel-na-vps.mjs';
 
 test('a leitura recusa tabela e colunas fora do formato (nada de SQL vindo da consulta)', async () => {
   const cli = { query: async () => { throw new Error('não devia consultar'); } };
@@ -66,6 +66,24 @@ test('o passo atende o pedido uma vez, respeita o intervalo e não repete falha'
     falha = null;
     await passo(m.cli, executar);
     assert.equal((await m.cli.query(`select count(*)::int n from disparos_pendentes where situacao = 'incerto'`)).rows[0].n, 1);
+  } finally { await m.fim(); }
+});
+
+test('timeout ou queda de rede vira incerto (nunca presume falha) e a mensagem chega a aoErro; pedido de 30+ dias sai', { skip: !process.env.TEST_DATABASE_URL }, async () => {
+  const m = await mundo();
+  try {
+    const msgs = [];
+    const aoErro = (e) => msgs.push(e);
+    await m.pede(1);
+    const t = new Error('prazo'); t.name = 'TimeoutError';
+    assert.equal(await passo(m.cli, async () => { throw t; }, { aoErro }), 'incerto');
+    assert.equal((await m.cli.query(`select count(*)::int n from disparos_pendentes where situacao = 'incerto'`)).rows[0].n, 1);
+    assert.deepEqual(msgs, ['prazo']);
+    assert.equal(semResposta(new TypeError('fetch failed')), true);
+    assert.equal(semResposta(new Error('zoho recusou')), false);
+    await m.cli.query(`update disparos_pendentes set atualizado_em = now() - interval '31 days'`);
+    await passo(m.cli, async () => {});
+    assert.equal((await m.cli.query(`select count(*)::int n from disparos_pendentes`)).rows[0].n, 0);
   } finally { await m.fim(); }
 });
 

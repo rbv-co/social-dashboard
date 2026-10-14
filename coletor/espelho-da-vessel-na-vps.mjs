@@ -40,10 +40,16 @@ export function conexaoPelaPg(cli) {
   };
 }
 
-/** Um passo: devolve 'sem_pedido' | 'cedo' | 'feito' | 'falhou'. `executar` roda a rodada (injetável no teste). */
-export async function passo(cli, executar, { intervaloMin = INTERVALO_MIN } = {}) {
+/** Timeout ou queda de rede: a chamada ao Zoho pode ter chegado e a resposta não (nunca presumir que falhou). */
+export const semResposta = (x) => ['AbortError', 'TimeoutError'].includes(x?.name) || (x instanceof TypeError && /fetch failed/i.test(x.message));
+
+/** Um passo: devolve 'sem_pedido' | 'cedo' | 'feito' | 'falhou' | 'incerto'. `executar` roda a rodada (injetável no teste);
+ *  `aoErro` recebe a mensagem quando falhou/incerto (a linha de saúde precisa dela). */
+export async function passo(cli, executar, { intervaloMin = INTERVALO_MIN, aoErro = () => {} } = {}) {
   await cli.query(`update disparos_pendentes set situacao = 'incerto', atualizado_em = now(), erro = 'atendimento interrompido: sem resultado em 30 min'
      where robo = $1 and situacao = 'atendendo' and atualizado_em < now() - interval '30 minutes'`, [ROBO]);
+  await cli.query(`delete from disparos_pendentes where robo = $1 and situacao in ('feito', 'falhou', 'incerto')
+     and atualizado_em < now() - interval '30 days'`, [ROBO]);
   const { rows: [e] } = await cli.query(`select
       exists (select 1 from disparos_pendentes where robo = $1 and situacao = 'pendente') as espera,
       exists (select 1 from disparos_pendentes where robo = $1 and situacao in ('atendendo', 'feito', 'falhou', 'incerto')
@@ -54,11 +60,15 @@ export async function passo(cli, executar, { intervaloMin = INTERVALO_MIN } = {}
      where d.id = (select id from disparos_pendentes where robo = $1 and situacao = 'pendente' order by id limit 1 for update skip locked)
      returning d.id`, [ROBO]);
   if (!p) return 'sem_pedido'; // outro atendente pegou
-  let erro = null;
-  try { await executar(); } catch (x) { erro = String(x?.message ?? x).slice(0, 400); }
-  await cli.query(`update disparos_pendentes set situacao = $2, erro = $3, atualizado_em = now() where id = $1 and situacao = 'atendendo'`,
-    [p.id, erro ? 'falhou' : 'feito', erro]);
-  return erro ? 'falhou' : 'feito';
+  let erro = null, estado = 'feito';
+  try { await executar(); } catch (x) { erro = String(x?.message ?? x).slice(0, 400); estado = semResposta(x) ? 'incerto' : 'falhou'; }
+  const { rowCount } = await cli.query(`update disparos_pendentes set situacao = $2, erro = $3, atualizado_em = now() where id = $1 and situacao = 'atendendo'`,
+    [p.id, estado, erro]);
+  if (!rowCount) { // passou de 30 min: a reconciliação já a marcou 'incerto' e o resultado se perderia calado
+    erro = `pedido ${p.id} já não estava atendendo (reconciliado como incerto); resultado '${estado}' não gravado`; estado = 'incerto';
+  }
+  if (erro) aoErro(erro);
+  return estado;
 }
 
 async function registrar(cli, inicio, estado, erro) {
@@ -79,15 +89,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   const { rows: [{ ok }] } = await cli.query(`select pg_try_advisory_lock(hashtext('robo:vessel-espelhar-lista')) as ok`);
   if (!ok) { console.error('outro processo já é o espelho deste banco'); process.exit(2); }
+  // Sem prazo, uma chamada travada do Zoho prende o único processo (e quem leva 'atendendo' a 'incerto' é ele mesmo).
+  const fetchOriginal = globalThis.fetch;
+  globalThis.fetch = (u, o = {}) => fetchOriginal(u, { signal: AbortSignal.timeout(120_000), ...o });
   const executar = () => rodada({ ler: lerPelaPg(cli), conexao: conexaoPelaPg(cli), log: () => {} });
   let parar = false;
   for (const s of ['SIGTERM', 'SIGINT']) process.on(s, () => { parar = true; });
+  // pg.Client não reconecta e o advisory lock vai com a conexão: cair é melhor que girar em falso (systemd: Restart=always)
+  cli.on('error', (x) => { console.error(`conexão com o banco caiu: ${x.message}`); process.exit(1); });
+  cli.on('end', () => { if (!parar) process.exit(1); });
   do {
     const inicio = new Date();
     let estado = null, erro = null;
-    try { estado = await passo(cli, executar); } catch (x) { erro = String(x?.message ?? x); }
+    try { estado = await passo(cli, executar, { aoErro: (m) => { erro = m; } }); } catch (x) { erro = String(x?.message ?? x); }
     try { await registrar(cli, inicio, estado, erro); } catch { /* a linha de saúde não derruba o robô */ }
-    if (estado === 'falhou' || erro) console.error(`${new Date().toISOString()} ${erro ?? 'falhou'}`);
+    if (erro) console.error(`${new Date().toISOString()} ${erro}`);
     if (process.argv.includes('--uma-vez')) break;
     for (let i = 0; i < 60 && !parar; i++) await new Promise((r) => setTimeout(r, 1000));
   } while (!parar);

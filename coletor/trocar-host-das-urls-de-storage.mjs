@@ -11,7 +11,7 @@
 // de outro tipo; imprime contagens, nunca o conteúdo das linhas.
 // `pg` só é carregado quando o script roda de verdade (o teste das funções puras não precisa dele nem do coletor/node_modules).
 
-const ANTIGO = String.raw`https://[a-z0-9-]+\.supabase\.co(/storage/v1/object/)`;
+const ANTIGO = String.raw`https://[a-z0-9-]+\.supabase\.co(/storage/v1/object/(?:public|sign)/)`;
 
 export function parseHostNovo(h) {
   let u;
