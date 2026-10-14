@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/rpc"
@@ -79,14 +80,22 @@ func esquemaCompleto(t *testing.T, p *pgxpool.Pool, tudoTexto bool) {
 		}
 		ddl = append(ddl, fmt.Sprintf("create function %s(%s) %s language plpgsql as $f$ %s $f$", nome, strings.Join(args, ", "), retorno, corpo))
 	}
-	// as funções de web.FuncoesRPC (que conferirRPC confere) pela PRÓPRIA declaração: Opcional = DEFAULT (Plano 5.9)
+	// As funções de web.FuncoesRPC que as listas acima não criam (as do 5.2), pela PRÓPRIA declaração: Opcional =
+	// DEFAULT null; o retorno segue rpc.Retorno (Plano 5.9). conferirRPC do conferirSchema as confere.
+	criadas := map[string]bool{}
+	for _, item := range append(slices.Clone(funcoesDoWorker), funcoesPorNomeDoWorker...) {
+		criadas[nomeDaFuncao(item)] = true
+	}
 	for _, f := range web.FuncoesRPC {
+		if criadas[f.Nome] {
+			continue
+		}
 		var args []string
 		for _, pr := range f.Params {
 			args = append(args, pr.Nome+" "+pr.Tipo+map[bool]string{true: " default null"}[pr.Opcional])
 		}
 		retorno := map[rpc.Retorno]string{rpc.Valor: "integer", rpc.Conjunto: "setof integer", rpc.Nada: "void"}[f.Retorno]
-		ddl = append(ddl, fmt.Sprintf("create or replace function %s(%s) returns %s language sql as $f$ select null::integer $f$",
+		ddl = append(ddl, fmt.Sprintf("create function %s(%s) returns %s language sql as $f$ select null::integer $f$",
 			f.Nome, strings.Join(args, ", "), retorno))
 	}
 	ddl = append(ddl, `create function trg_vazio() returns trigger language plpgsql as $f$ begin return new; end $f$`)
@@ -584,6 +593,110 @@ func TestConferirNaFatiaD0NaoAcusaOPlano57(t *testing.T) {
 			}
 		}
 	}
+}
+
+// do52: o que o `conferir` acusa que é do 5.2 (as tabelas, os únicos, as funções-gatilho do bem, os gatilhos
+// e as RPCs). O resto da fatia D0 é de outros planos.
+func do52(f string) bool {
+	if strings.HasPrefix(f, "gatilho ") || strings.HasPrefix(f, "rpc ") || strings.Contains(f, "patrimonio_") {
+		return true
+	}
+	for _, c := range []string{" acessos_setores.", " acessos_pessoas.", " frota_veiculos.", " equipes.local_id", "função bem_de_veiculo_segue_a_frota("} {
+		if strings.Contains(f, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// Plano 5.2: contra a fatia D0 NADA do 5.2 é acusado (pega erro de digitação nas listas do conferir) e as 5
+// RPCs de web.FuncoesRPC batem com o pg_proc da D0 (Ruling do ledger, menor M3 da Task 9: só este teste pega
+// declaração de RPC errada, porque o mundo do pacote patrimonio monta a lista, não a confere).
+func TestConferirNaFatiaD0NaoAcusaOPlano52(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	faltam := faltamDe(t, p)
+	if len(faltam) == 0 {
+		t.Fatal("a fatia D0 não tem o esquema todo: devia sobrar item de outros planos (o filtro não provaria nada)")
+	}
+	for _, f := range faltam {
+		if do52(f) {
+			t.Errorf("a fatia D0 devia satisfazer o 5.2, mas o conferir acusa %q", f)
+		}
+	}
+	for _, c := range []string{"patrimonio_bens.", "patrimonio_posse.", "patrimonio_config(", "trg_patrimonio_espelha_situacao"} { // o que o 5.2 presume está LISTADO
+		achou := false
+		for _, l := range []map[string]string{colunasDoWorker, tiposDoWorker} {
+			for k := range l {
+				achou = achou || strings.HasPrefix(k, c)
+			}
+		}
+		for _, l := range [][]string{unicosDoWorker, funcoesDoWorker} {
+			achou = achou || slices.ContainsFunc(l, func(k string) bool { return strings.HasPrefix(k, c) })
+		}
+		achou = achou || slices.ContainsFunc(gatilhosDoWorker, func(g [2]string) bool { return g[0] == c })
+		if !achou {
+			t.Errorf("o conferir não lista %q (o 5.2 o presume)", c)
+		}
+	}
+	nomes := map[string]bool{}
+	for _, f := range web.FuncoesRPC {
+		nomes[f.Nome] = true
+	}
+	for _, n := range []string{"criar_pessoa_rapida", "criar_setor_rapido", "pessoas_para_escolher", "setores_para_escolher", "sincronizar_carro_e_bem"} {
+		if !nomes[n] {
+			t.Errorf("web.FuncoesRPC não tem %s", n)
+		}
+	}
+	emTx(t, p, func(tx pgx.Tx) {
+		papelAuthenticated(t, p)
+		if f, err := conferirRPC(context.Background(), tx, web.FuncoesRPC); err != nil || len(f) != 0 {
+			t.Errorf("web.FuncoesRPC contra o pg_proc da D0: %v %v", f, err)
+		}
+	})
+}
+
+// Plano 5.2: o conferir ACUSA o que o 5.2 presume quando o banco restaurado diverge: coluna ausente, tipo
+// trocado, único faltando, gatilho desligado, função ausente e declaração de RPC errada.
+func TestConferirAcusaADivergenciaDoPlano52(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	papelAuthenticated(t, p)
+	exec(t, p,
+		`alter table patrimonio_bens drop column etiquetado`,
+		`alter table patrimonio_posse alter column de type text using de::text`,
+		`alter table patrimonio_config drop constraint patrimonio_config_pkey`,
+		`alter table patrimonio_bens disable trigger trg_patrimonio_espelha_situacao`,
+		`drop trigger trg_patrimonio_espelha_responsavel on patrimonio_bens`,
+		`drop function patrimonio_espelha_responsavel_no_veiculo() cascade`)
+	faltam := faltamDe(t, p)
+	for _, quer := range []string{"coluna patrimonio_bens.etiquetado", "tipo patrimonio_posse.de: esperado date",
+		"único patrimonio_config(chave)", "gatilho trg_patrimonio_espelha_situacao em patrimonio_bens (ausente ou desabilitado)",
+		"gatilho trg_patrimonio_espelha_responsavel em patrimonio_bens (ausente ou desabilitado)",
+		"função patrimonio_espelha_responsavel_no_veiculo()"} {
+		if !contem(faltam, quer) {
+			t.Errorf("o conferir não acusou %q", quer)
+		}
+	}
+	// declaração errada: p_nome sem Opcional e o retorno trocado de Conjunto para Valor
+	errada := slices.Clone(web.FuncoesRPC)
+	for i, f := range errada {
+		switch f.Nome {
+		case "sincronizar_carro_e_bem":
+			errada[i].Params = slices.Clone(f.Params)
+			for j := range errada[i].Params {
+				if errada[i].Params[j].Nome == "p_nome" {
+					errada[i].Params[j].Opcional = false
+				}
+			}
+		case "pessoas_para_escolher":
+			errada[i].Retorno = rpc.Valor
+		}
+	}
+	emTx(t, p, func(tx pgx.Tx) {
+		f, err := conferirRPC(context.Background(), tx, errada)
+		if err != nil || !contem(f, "rpc sincronizar_carro_e_bem: parâmetro p_nome") || !contem(f, "rpc pessoas_para_escolher: declarada como Valor") {
+			t.Errorf("declaração errada não acusada: %v %v", f, err)
+		}
+	})
 }
 
 // Plano 5.8: o deposito_id da loja é TEXTO (a Fábrica compara texto com texto). O de gc_estoque_item (bigint)

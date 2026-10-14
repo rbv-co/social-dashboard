@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
-	"github.com/rbv-co/social-dashboard/api/internal/autz"
-	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
 )
 
 // Pessoas e linhas do mundo de teste do 5.1 (ids fixos). E-mails da lista de is_superadmin() só onde a
@@ -118,63 +116,40 @@ const fotoDoMundo = `select md5(string_agg(l, '|' order by l)) from (
   select 'audit_log:' || t::text from audit_log t) z`
 
 type mundo struct {
+	*mundoteste.Mundo
 	p   *pgxpool.Pool
 	h   http.Handler
 	tok map[string]string
 }
 
-// novoMundo: a fatia de produção, as pessoas e as linhas acima, uma sessão por pessoa (+ "impersonado":
-// a sessão do admin aberta pelo super, e as de "entrar como" num super-admin; + "semPerfil": usuário com sessão de painel e sem linha em
-// profiles) e as rotas de `montar` atrás da mesma cadeia de autorização do grupo de domínio de
-// web.Rotas: auth.Exigir → autz.ComEscopo. Sem o comPrazo, que só limita o tempo (montagem real: Task 11;
-// Ruling 5.1-12).
+// novoMundo: o mundo do 5.1 sobre o mundoteste (Task 3 do 5.2): a fatia de produção, as pessoas e as
+// linhas acima, uma sessão por pessoa (+ "impersonado": a sessão do admin aberta pelo super; as de
+// "entrar como" num super-admin: impersonadoSuper = alvo super pela ficha, superImpersonado = alvo
+// super por e-mail (breno@), entrando um super como outro super; + "semPerfil": usuário com sessão de
+// painel e sem linha em profiles, que o mundoteste.Pessoa não expressa) e as rotas de `montar` atrás
+// da mesma cadeia de autorização do grupo de domínio de web.Rotas: auth.Exigir → autz.ComEscopo. Sem o
+// comPrazo, que só limita o tempo (montagem real: Task 11; Ruling 5.1-12).
 func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundo {
 	t.Helper()
-	p := testebanco.ComEsquemaDeProducao(t)
-	ctx := context.Background()
-	s := auth.NovoStore(p)
-	m := &mundo{p: p, tok: map[string]string{}}
-	for _, x := range pessoas {
-		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, x.id, x.email); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, is_superadmin, escopo_por_equipe, allowed_accounts)
-			values ($1::uuid, $2::text, $3::text, $4::text, $5::boolean, $6::boolean, $7::uuid[])`,
-			x.id, x.email, x.chave, x.papel, x.super, x.trava, x.contas); err != nil {
-			t.Fatal(err)
-		}
-		tok, err := s.Criar(ctx, x.id, "painel", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		m.tok[x.chave] = tok
+	ps := make([]mundoteste.Pessoa, len(pessoas))
+	for i, x := range pessoas {
+		ps[i] = mundoteste.Pessoa{Chave: x.chave, ID: x.id, Email: x.email, Papel: x.papel, Super: x.super, Trava: x.trava, Contas: x.contas}
 	}
-	if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, 'semperfil@x.com')`, idSemPerfil); err != nil {
+	w := mundoteste.Novo(t, mundoteste.Opcoes{Pessoas: ps, Linhas: linhasDoMundo,
+		Impersonadas: map[string][2]string{
+			"impersonado":      {idAdmin, idSuper},
+			"impersonadoSuper": {idSuperFicha, idSuper},
+			"superImpersonado": {idSuper, idSuperFicha},
+		}}, montar...)
+	m := &mundo{Mundo: w, p: w.P, h: w.H, tok: w.Tok}
+	if _, err := m.p.Exec(context.Background(), `insert into usuarios (id, email) values ($1::uuid, 'semperfil@x.com')`, idSemPerfil); err != nil {
 		t.Fatal(err)
 	}
-	tokSP, err := s.Criar(ctx, idSemPerfil, "painel", nil)
+	tok, err := auth.NovoStore(m.p).Criar(context.Background(), idSemPerfil, "painel", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.tok["semPerfil"] = tokSP
-	m.entrarComo(t, "impersonado", idAdmin, idSuper)
-	// o ALVO é super-admin: a regra do catálogo deixaria escrever, só o portão soSessaoPropria recusa.
-	// impersonadoSuper = alvo super pela ficha; superImpersonado = alvo super por e-mail (breno@), entrando
-	// um super como outro super.
-	m.entrarComo(t, "impersonadoSuper", idSuperFicha, idSuper)
-	m.entrarComo(t, "superImpersonado", idSuper, idSuperFicha)
-	if _, err := p.Exec(ctx, linhasDoMundo); err != nil {
-		t.Fatal(err)
-	}
-	r := chi.NewRouter()
-	r.Group(func(r chi.Router) {
-		r.Use(auth.Exigir(p, s))
-		r.Use(autz.ComEscopo(p))
-		for _, f := range montar {
-			f(r, p)
-		}
-	})
-	m.h = r
+	m.tok["semPerfil"] = tok
 	return m
 }
 
@@ -188,43 +163,22 @@ func (m *mundo) entrarComo(t *testing.T, chave, alvo, impersonador string) {
 	m.tok[chave] = tok
 }
 
-// resposta faz a requisição como `quem` ("" = sem sessão).
 func (m *mundo) resposta(t testing.TB, quem, metodo, caminho, corpo string) *httptest.ResponseRecorder {
 	t.Helper()
-	r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
-	if quem != "" {
-		tok, ok := m.tok[quem]
-		if !ok {
-			t.Fatalf("pessoa %q fora do mundo", quem)
-		}
-		r.Header.Set("Authorization", "Bearer "+tok)
-	}
-	w := httptest.NewRecorder()
-	m.h.ServeHTTP(w, r)
-	return w
+	return m.Resposta(t, quem, metodo, caminho, corpo)
 }
 
 func (m *mundo) pedir(t testing.TB, quem, metodo, caminho, corpo string) (int, string) {
 	t.Helper()
-	w := m.resposta(t, quem, metodo, caminho, corpo)
-	return w.Code, w.Body.String()
+	return m.Pedir(t, quem, metodo, caminho, corpo)
 }
 
-// um roda uma consulta de UMA coluna ::text (nulo = "<nulo>").
 func (m *mundo) um(t testing.TB, sql string, args ...any) string {
 	t.Helper()
-	var v *string
-	if err := m.p.QueryRow(context.Background(), sql, args...).Scan(&v); err != nil {
-		t.Fatalf("%s: %v", sql, err)
-	}
-	if v == nil {
-		return "<nulo>"
-	}
-	return *v
+	return m.Um(t, sql, args...)
 }
 
-// caso: uma requisição e o que tem de sair dela. efeito/quer: consulta rodada DEPOIS (o "negado não
-// grava"); caso sem metodo só confere o efeito.
+// caso: uma requisição e o que tem de sair dela (o mundoteste.Caso com os nomes do 5.1).
 type caso struct {
 	nome, quem, metodo, caminho, corpo string
 	status                             int
@@ -234,19 +188,12 @@ type caso struct {
 
 func (m *mundo) rodar(t testing.TB, casos []caso) {
 	t.Helper()
-	for _, c := range casos {
-		if c.metodo != "" {
-			st, corpo := m.pedir(t, c.quem, c.metodo, c.caminho, c.corpo)
-			if st != c.status || (c.tem != "" && !strings.Contains(corpo, c.tem)) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
-				t.Errorf("%s: %s %s como %q = %d %s; esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
-			}
-		}
-		if c.efeito != "" {
-			if v := m.um(t, c.efeito); v != c.quer {
-				t.Errorf("%s: efeito %q = %q, esperava %q", c.nome, c.efeito, v, c.quer)
-			}
-		}
+	cs := make([]mundoteste.Caso, len(casos))
+	for i, c := range casos {
+		cs[i] = mundoteste.Caso{Nome: c.nome, Quem: c.quem, Metodo: c.metodo, Caminho: c.caminho, Corpo: c.corpo,
+			Status: c.status, Tem: c.tem, NaoTem: c.naoTem, Efeito: c.efeito, Quer: c.quer}
 	}
+	m.Rodar(t, cs)
 }
 
 // gravaErros troca o testing.T para o teste do `rodar` ver o que ele reprova.

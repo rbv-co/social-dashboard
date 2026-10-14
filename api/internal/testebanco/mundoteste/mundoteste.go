@@ -95,7 +95,7 @@ func Novo(t *testing.T, o Opcoes, montar ...func(chi.Router, *pgxpool.Pool)) *Mu
 }
 
 // Resposta faz a requisição como `quem` ("" = sem sessão).
-func (m *Mundo) Resposta(t *testing.T, quem, metodo, caminho, corpo string) *httptest.ResponseRecorder {
+func (m *Mundo) Resposta(t testing.TB, quem, metodo, caminho, corpo string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
 	if quem != "" {
@@ -110,14 +110,14 @@ func (m *Mundo) Resposta(t *testing.T, quem, metodo, caminho, corpo string) *htt
 	return w
 }
 
-func (m *Mundo) Pedir(t *testing.T, quem, metodo, caminho, corpo string) (int, string) {
+func (m *Mundo) Pedir(t testing.TB, quem, metodo, caminho, corpo string) (int, string) {
 	t.Helper()
 	w := m.Resposta(t, quem, metodo, caminho, corpo)
 	return w.Code, w.Body.String()
 }
 
 // Um roda uma consulta de UMA coluna ::text (nulo = "<nulo>").
-func (m *Mundo) Um(t *testing.T, sql string, args ...any) string {
+func (m *Mundo) Um(t testing.TB, sql string, args ...any) string {
 	t.Helper()
 	var v *string
 	if err := m.P.QueryRow(context.Background(), sql, args...).Scan(&v); err != nil {
@@ -138,7 +138,7 @@ type Caso struct {
 	Efeito, Quer                       string
 }
 
-func (m *Mundo) Rodar(t *testing.T, casos []Caso) {
+func (m *Mundo) Rodar(t testing.TB, casos []Caso) {
 	t.Helper()
 	for _, c := range casos {
 		if c.Metodo != "" {

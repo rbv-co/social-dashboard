@@ -26,6 +26,10 @@ func TestMundoTeste(t *testing.T) {
 	}, func(r chi.Router, _ *pgxpool.Pool) {
 		r.Get("/eco", func(w http.ResponseWriter, r *http.Request) {
 			e, a := autz.EscopoDo(r.Context()), auth.AtorDoContexto(r.Context())
+			if e == nil || a == nil { // rota fora de ComEscopo/Exigir: erro legível, não pânico
+				http.Error(w, "sem escopo", http.StatusInternalServerError)
+				return
+			}
 			_, _ = w.Write([]byte(strings.Join(e.Modulos, ",") + "|" + strconv.FormatBool(a.ImpersonadorID != nil)))
 		})
 	})
