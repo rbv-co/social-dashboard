@@ -133,6 +133,36 @@ const ROTAS = {
       return { metodo: 'PUT', caminho: `/redes/filtros-de-campanha/${encodeURIComponent(l.account_id)}`, corpo: { selected_ids: l.selected_ids } }
     },
   },
+  // ── 5.2 — Patrimônio e cadastros (`/patrimonio/*`; Frota e Acessos leem as mesmas rotas) ──
+  patrimonio_bens: {
+    area: 'patrimonio', rota: '/patrimonio/bens', filtros: { pessoa_id: eq('pessoa_id') }, ordens: ['numero', 'nome'],
+    // os 3 embutidos `{nome}|null` que a rota devolve fixos (substituem `patrimonio_categorias(nome),…` do select)
+    embutidos: ['patrimonio_categorias', 'patrimonio_locais', 'patrimonio_comodos'],
+    autoria: ['criado_em'],
+  },
+  patrimonio_posse: {
+    area: 'patrimonio', rota: '/patrimonio/posses',
+    // `ate is null` = posse aberta; `de` com faixa em datas
+    filtros: { bem_id: eq('bem_id'), ate: { is: ['aberta', nulo('true')] }, de: { gte: 'de_desde', lte: 'de_ate' } },
+    ordens: ['de'],
+  },
+  patrimonio_empresas: { area: 'patrimonio', rota: '/patrimonio/empresas', filtros: {}, ordens: ['nome', 'ordem'], autoria: ['criado_em'] },
+  patrimonio_locais: { area: 'patrimonio', rota: '/patrimonio/locais', filtros: {}, ordens: ['nome', 'ordem'], autoria: ['criado_em'] },
+  patrimonio_comodos: { area: 'patrimonio', rota: '/patrimonio/comodos', filtros: {}, ordens: ['nome', 'ordem'], autoria: ['criado_em'] },
+  patrimonio_categorias: {
+    area: 'patrimonio', rota: '/patrimonio/categorias',
+    filtros: { nome: { ilike: ['nome_como', null, true] } }, ordens: ['nome', 'ordem'], autoria: ['criado_em'],
+  },
+  patrimonio_tipos: { area: 'patrimonio', rota: '/patrimonio/tipos', filtros: {}, ordens: ['nome', 'ordem'], autoria: ['criado_em'] },
+  patrimonio_config: {
+    area: 'patrimonio', rota: '/patrimonio/config', filtros: {}, ordens: ['chave'], autoria: ['atualizado_em'], // o servidor carimba
+    upsert: (linhas) => {
+      if (linhas.length !== 1) throw new ErroDeTraducao('patrimonio_config: uma chave por vez')
+      return { metodo: 'PUT', caminho: `/patrimonio/config/${encodeURIComponent(linhas[0].chave)}`, corpo: { valor: linhas[0].valor } }
+    },
+  },
+  // só escreve (nenhuma tela lê o log); `quem` vem da sessão
+  patrimonio_log: { area: 'patrimonio', rota: '/patrimonio/log', filtros: {}, ordens: [], autoria: ['quem'] },
   // ── 5.8 — Fábrica de anúncios (leituras; as escritas do painel são as 4 edges e o
   // `escolher`, feitos na tela; as do robô são as rotas `/fabrica/robo/*`) ──
   fabrica_lojas: { area: 'fabrica', rota: '/fabrica/lojas', filtros: { ativo: eq('ativo') }, ordens: [] },
@@ -172,6 +202,28 @@ const ROTAS = {
     },
     ordens: ['created_at'],
   },
+  // ── 5.9 — Conteúdo ── (`da_marca` = "desta marca OU de todas", o `.or(account_id.eq.X,account_id.is.null)`)
+  conteudo_pecas: {
+    area: 'conteudo', rota: '/conteudo/pecas',
+    filtros: { account_id: eq('account_id'), id: eq('id'), status: { eq: 'status', in: 'status' } },
+    ordens: ['publicar_em', 'created_at'], autoria: ['criado_por'],
+  },
+  conteudo_arquivos: { area: 'conteudo', rota: '/conteudo/arquivos', filtros: { peca_id: eq('peca_id'), account_id: eq('account_id') }, ordens: [] },
+  conteudo_eventos: {
+    area: 'conteudo', rota: '/conteudo/eventos', filtros: { peca_id: eq('peca_id'), account_id: eq('account_id') }, ordens: [],
+    autoria: ['quem', 'quando'],
+  },
+  conteudo_ideias: {
+    area: 'conteudo', rota: '/conteudo/ideias',
+    filtros: { account_id: eq('account_id'), da_marca: eq('da_marca'), situacao: { eq: 'situacao', in: 'situacao' }, descartada: eq('descartada') },
+    ordens: [], autoria: ['criado_por', 'origem'],
+  },
+  conteudo_blocos: {
+    area: 'conteudo', rota: '/conteudo/blocos',
+    filtros: { account_id: eq('account_id'), da_marca: eq('da_marca'), ativo: eq('ativo') }, ordens: [], autoria: ['criado_por'],
+  },
+  conteudo_concorrentes: { area: 'conteudo', rota: '/conteudo/concorrentes', filtros: { account_id: eq('account_id'), ativo: eq('ativo') }, ordens: [] },
+  conteudo_jobs: { area: 'conteudo', rota: '/conteudo/jobs', filtros: { id: eq('id'), account_id: eq('account_id'), status: { eq: 'status', in: 'status' } }, ordens: [] },
   // ── 5.7 — Gestão de tráfego ──
   gt_budget_analises: {
     area: 'trafego', rota: '/gestao-trafego/analises-de-orcamento',
@@ -272,10 +324,11 @@ function parametrosDosFiltros(def, tabela, filtros) {
   for (const f of filtros) {
     const alvo = def.filtros[f.col]?.[f.op]
     if (!alvo) throw new ErroDeTraducao(`${tabela}: a rota ${def.rota} não filtra por ${f.col}=${f.op}`)
-    const [p, converter] = Array.isArray(alvo) ? alvo : [alvo, null]
+    const [p, converter, padrao] = Array.isArray(alvo) ? alvo : [alvo, null, false]
     let v
     if (f.op === 'eq') v = valorDoEq(f.val)
-    else if (f.op === 'ilike') v = valorDoIlike(f.val)
+    // `padrao`: a rota recebe o PADRÃO do ILIKE como valor (`nome_como=%ve%cul%`), curinga e tudo (Ruling 5.2-14)
+    else if (f.op === 'ilike') v = padrao ? f.val : valorDoIlike(f.val)
     else if (f.op === 'in') {
       // valor com aspas pode ter vírgula dentro: o split quebraria errado — recusa.
       if (f.val.includes('"')) throw new ErroDeTraducao(`${tabela}: in com aspas não tem tradução: ${f.val}`)
@@ -290,11 +343,26 @@ function parametrosDosFiltros(def, tabela, filtros) {
 }
 
 /** As colunas pedidas em `select` (null = todas). Recurso embutido não tem rota. */
-function colunasDoSelect(select) {
+function colunasDoSelect(select, def = {}) {
   if (!select || select.trim() === '*') return null
-  if (/[()]/.test(select)) throw new ErroDeTraducao(`select com recurso embutido não tem rota: ${select}`)
-  const cols = select.split(',').map((s) => s.trim()).filter(Boolean)
-  return cols.includes('*') ? null : cols
+  // `tabela(col)` só passa quando a rota devolve esse embutido FIXO (`def.embutidos`, ex.: os 3 de `/patrimonio/bens`);
+  // o `{nome}` do embutido vem pronto da rota, então o que fica é o nome dele. Qualquer outro recurso embutido recusa.
+  const cols = []
+  let fundo = 0, ini = 0
+  for (let i = 0; i <= select.length; i++) {
+    const c = select[i]
+    if (c === '(') fundo++
+    else if (c === ')') fundo--
+    else if ((c === ',' && fundo === 0) || i === select.length) { cols.push(select.slice(ini, i).trim()); ini = i + 1 }
+  }
+  const nomes = cols.filter(Boolean).map((c) => {
+    const m = /^([a-z_]+)\(([a-z_,\s]*)\)$/.exec(c)
+    if (!m) { if (/[()]/.test(c)) throw new ErroDeTraducao(`select com recurso embutido não tem rota: ${select}`); return c }
+    if (!def.embutidos?.includes(m[1])) throw new ErroDeTraducao(`select com recurso embutido não tem rota: ${select}`)
+    if (m[2].trim() !== 'nome') throw new ErroDeTraducao(`${m[1]}: a rota só devolve {nome} no embutido`)
+    return m[1]
+  })
+  return nomes.includes('*') ? null : nomes
 }
 
 function projetar(linhas, cols, tabela) {
@@ -348,7 +416,7 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
     throw new ErroDeTraducao(`${partes.tabela}: a rota ${def.rota} não filtra por ${naTela.map((f) => f.col + '=' + f.op).join(', ')}`)
   }
   const params = parametrosDosFiltros(def, partes.tabela, partes.filtros.filter((f) => !naTela.includes(f)))
-  const cols = colunasDoSelect(partes.select)
+  const cols = colunasDoSelect(partes.select, def)
   // A ordem pedida vai para a rota quando ela a declara (UMA coluna: o `ordem` da
   // API aceita um campo só); senão, a tela ordena — e isso só é certo se NADA foi
   // cortado antes (sem limite).
@@ -493,6 +561,7 @@ class ConsultaPelaApi {
   }
   eq(col, val) { this.p.filtros.push({ col, op: 'eq', val: String(val) }); return this }
   ilike(col, val) { this.p.filtros.push({ col, op: 'ilike', val: String(val) }); return this }
+  is(col, val) { this.p.filtros.push({ col, op: 'is', val: String(val) }); return this }
   in(col, vals) { this.p.filtros.push({ col, op: 'in', val: vals.join(',') }); return this }
   gte(col, val) { this.p.filtros.push({ col, op: 'gte', val: String(val) }); return this }
   lte(col, val) { this.p.filtros.push({ col, op: 'lte', val: String(val) }); return this }
