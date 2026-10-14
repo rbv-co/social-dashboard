@@ -319,7 +319,7 @@
       <template v-else-if="visao === 'relatorios'">
         <aba-de-relatorios
           :relatorios="RELATORIOS_DO_PATRIMONIO"
-          :contexto="{ sbClient, linhasAchatadas }"
+          :contexto="{ sbClient: db, linhasAchatadas }"
           :empresas="empresas"
           :locais="locais"
           :comodos="comodos"
@@ -932,6 +932,8 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
+import { areaNaApi, pedir, rpcNaArea } from '../../compartilhado/api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
@@ -967,6 +969,12 @@ import { normalizarPlaca, fraseDaSincronia } from '../frota/etiqueta-do-veiculo.
 // Trava a rolagem do fundo enquanto um destes 4 modais estiver aberto (bronca
 // do dono: "abro um modal e a tela atrás continua rolando").
 import { vTravaRolagem } from '../../compartilhado/travar-rolagem-de-fundo.js'
+
+// Patrimônio pela API em Go quando `VITE_API_AREAS` inclui `patrimonio`; senão, o Supabase de sempre.
+// Tabela que ainda não mora na API (frota_veiculos) cai no `sbClient` dentro do `deOnde`.
+const db = deOnde(sbClient)
+// Nome repetido: 23505 no Supabase, 409 `conflito` na API.
+const ehNomeRepetido = (e) => e.code === '23505' || e.status === 409 || /duplicate key|unique/i.test(e.message)
 import EscolhaDePessoa from '../../compartilhado/escolha-de-pessoa.vue'
 import { mesclarPessoas, apenasAtivas, comSelecionada } from '../../compartilhado/pessoas-para-escolher.js'
 
@@ -1293,7 +1301,7 @@ function fecharCriarVeiculoDoBem() { criandoVeiculoDoBem.value = false }
 async function ligarVeiculoExistente() {
   if (gravandoLigacaoFrota.value || !ligandoVeiculoId.value || !bemAberto.value) return
   gravandoLigacaoFrota.value = true
-  const { error } = await sbClient.from('frota_veiculos')
+  const { error } = await db.from('frota_veiculos')
     .update({ bem_id: bemAberto.value.id, atualizado_em: new Date().toISOString() })
     .eq('id', ligandoVeiculoId.value)
   gravandoLigacaoFrota.value = false
@@ -1309,7 +1317,7 @@ async function ligarVeiculoExistente() {
 async function desfazerLigacaoFrota() {
   if (gravandoLigacaoFrota.value || !veiculoDoBem.value) return
   gravandoLigacaoFrota.value = true
-  const { error } = await sbClient.from('frota_veiculos')
+  const { error } = await db.from('frota_veiculos')
     .update({ bem_id: null, atualizado_em: new Date().toISOString() })
     .eq('id', veiculoDoBem.value.id)
   gravandoLigacaoFrota.value = false
@@ -1325,7 +1333,7 @@ async function criarVeiculoDoBem() {
     return
   }
   gravandoLigacaoFrota.value = true
-  const { error } = await sbClient.from('frota_veiculos').insert({
+  const { error } = await db.from('frota_veiculos').insert({
     nome: novoVeiculoForm.nome.trim(),
     placa: String(novoVeiculoForm.placa).toUpperCase().replace(/[^A-Z0-9]/g, ''),
     marca: novoVeiculoForm.marca.trim() || null,
@@ -1433,7 +1441,7 @@ async function confirmarNovaOpcao() {
   }
 
   salvandoNovaOpcao.value = true
-  const { data, error } = await sbClient.from(def.tabela)
+  const { data, error } = await db.from(def.tabela)
     .insert({ nome: r.nome, ordem: lista.length + 1, ...vinculo })
     .select('id, nome')
     .single()
@@ -1443,7 +1451,7 @@ async function confirmarNovaOpcao() {
     // unique(nome) violado por uma corrida com outra pessoa: a opção passou a
     // existir entre o "resolver" e o "gravar". Recarrega e avisa — não finge
     // que criou o que não criou.
-    const jaExiste = /duplicate key|unique/i.test(error.message)
+    const jaExiste = ehNomeRepetido(error)
     if (jaExiste) {
       await carregar()
       const { lista: listaAtualizada } = listaEVinculoDoCampo(chave)
@@ -1484,7 +1492,7 @@ async function criarPessoaRapida({ nome, cargo, marcaId, setorId }, campo) {
   avisoDeCriacao.value = ''
   campoDeCriacao.value = campo
 
-  const { data, error } = await sbClient.rpc('criar_pessoa_rapida', {
+  const { data, error } = await rpcNaArea('patrimonio', sbClient, 'criar_pessoa_rapida', {
     p_nome: nome, p_cargo: cargo, p_marca_id: marcaId, p_setor_id: setorId,
   })
   criandoPessoa.value = false
@@ -1516,7 +1524,7 @@ async function criarSetorRapido({ nome }, campo) {
   criandoPessoa.value = true
   erroDePessoa.value = ''
   campoDeCriacao.value = campo
-  const { error } = await sbClient.rpc('criar_setor_rapido', { p_nome: nome })
+  const { error } = await rpcNaArea('patrimonio', sbClient, 'criar_setor_rapido', { p_nome: nome })
   criandoPessoa.value = false
   if (error) { erroDePessoa.value = 'Não consegui cadastrar o setor. Tente de novo.'; return }
   campoDeCriacao.value = ''
@@ -1530,7 +1538,7 @@ async function criarMarcaRapida({ nome }, campo) {
   criandoPessoa.value = true
   erroDePessoa.value = ''
   campoDeCriacao.value = campo
-  const { error } = await sbClient.from('patrimonio_empresas')
+  const { error } = await db.from('patrimonio_empresas')
     .insert({ nome, ordem: empresas.value.length + 1 })
   criandoPessoa.value = false
   if (error) { erroDePessoa.value = 'Não consegui cadastrar a marca. Tente de novo.'; return }
@@ -1559,7 +1567,7 @@ function fecharFicha() {
 }
 
 async function carregarHistorico(bemId) {
-  const { data } = await sbClient
+  const { data } = await db
     .from('patrimonio_posse').select('*').eq('bem_id', bemId).order('de', { ascending: false })
   historico.value = data || []
 }
@@ -1601,14 +1609,14 @@ watch(bemAberto, async (bem) => {
 })
 
 async function registrarLog(acao, alvo, detalhe) {
-  await sbClient.from('patrimonio_log').insert({ acao, alvo, resultado: 'ok', detalhe: detalhe || null })
+  await db.from('patrimonio_log').insert({ acao, alvo, resultado: 'ok', detalhe: detalhe || null })
 }
 
 // Toda troca de dono passa por aqui: fecha o registro do dono anterior e abre o
 // do novo. A decisão do que gravar é da função pura fecharEAbrirHistorico, que
 // já tem teste — aqui só se executa o plano que ela devolve.
 async function sincronizarPosse(bemId, novoDonoId) {
-  const { data: atual } = await sbClient.from('patrimonio_posse').select('*').eq('bem_id', bemId)
+  const { data: atual } = await db.from('patrimonio_posse').select('*').eq('bem_id', bemId)
   const pessoa = pessoas.value.find((p) => p.id === novoDonoId)
   const plano = fecharEAbrirHistorico({
     historicoAtual: atual || [],
@@ -1617,11 +1625,11 @@ async function sincronizarPosse(bemId, novoDonoId) {
     hoje: hojeLocal(),
   })
   if (plano.aFechar) {
-    await sbClient.from('patrimonio_posse').update({ ate: plano.aFechar.ate }).eq('id', plano.aFechar.id)
+    await db.from('patrimonio_posse').update({ ate: plano.aFechar.ate }).eq('id', plano.aFechar.id)
   }
   // Sem dono novo: só fecha o anterior, não abre registro de "ninguém".
   if (plano.aAbrir && novoDonoId) {
-    await sbClient.from('patrimonio_posse').insert({
+    await db.from('patrimonio_posse').insert({
       bem_id: bemId,
       pessoa_id: plano.aAbrir.pessoa_id,
       pessoa_nome: plano.aAbrir.pessoa_nome,
@@ -1679,11 +1687,11 @@ async function salvarBem() {
 
   let bemId = bemAberto.value.novo ? null : bemAberto.value.id
   if (bemId) {
-    const { error } = await sbClient.from('patrimonio_bens').update(linha).eq('id', bemId)
+    const { error } = await db.from('patrimonio_bens').update(linha).eq('id', bemId)
     if (error) { adminToast('Erro ao salvar: ' + error.message, false); salvando.value = false; return }
     await registrarLog('bem.editar', 'bem:' + bemId, nome)
   } else {
-    const { data, error } = await sbClient.from('patrimonio_bens').insert(linha).select('id').single()
+    const { data, error } = await db.from('patrimonio_bens').insert(linha).select('id').single()
     if (error) { adminToast('Erro ao criar: ' + error.message, false); salvando.value = false; return }
     bemId = data.id
     await registrarLog('bem.criar', 'bem:' + bemId, nome)
@@ -1696,7 +1704,7 @@ async function salvarBem() {
   // Só depois do item existir, porque a função precisa do `bem_id` gravado.
   let seloDaFrota = null
   if (ehVeiculo && placa) {
-    const { data: sinc, error: erroSinc } = await sbClient.rpc('sincronizar_carro_e_bem', {
+    const { data: sinc, error: erroSinc } = await rpcNaArea('patrimonio', sbClient, 'sincronizar_carro_e_bem', {
       p_bem_id: bemId,
       p_placa: placa,
       p_nome: nome,
@@ -1733,7 +1741,7 @@ const numeros = computed(() => mapaDeNumeros(bens.value, teto.value))
 async function ampliarNumeracao() {
   salvandoTeto.value = true
   const novo = aumentarTeto(teto.value, 100)
-  const { error } = await sbClient.from('patrimonio_config')
+  const { error } = await db.from('patrimonio_config')
     .upsert({ chave: 'numero_maximo', valor: String(novo), atualizado_em: new Date().toISOString() })
   salvandoTeto.value = false
   if (error) { adminToast('Erro ao ampliar: ' + error.message, false); return }
@@ -1893,18 +1901,21 @@ async function salvarEmMassa() {
   const { alteracao } = montarAlteracaoEmMassa(massa, { quantidade: ids.length })
   if (!Object.keys(alteracao).length || !ids.length) return
   salvandoMassa.value = true
-  const { error } = await sbClient.from('patrimonio_bens')
-    .update({ ...alteracao, atualizado_em: new Date().toISOString() }).in('id', ids)
+  const corpoMassa = { ...alteracao, atualizado_em: new Date().toISOString() }
+  // Pela API o lote é UMA transação e a posse acompanha a troca de dono NO SERVIDOR (Ruling 5.2-5): um bem negado derruba o lote.
+  const { error } = areaNaApi('patrimonio')
+    ? await pedir('POST', '/patrimonio/bens/em-massa', { corpo: { ids, alteracao: corpoMassa } })
+    : await db.from('patrimonio_bens').update(corpoMassa).in('id', ids)
   if (error) { adminToast('Erro ao alterar: ' + error.message, false); salvandoMassa.value = false; return }
 
   // Trocou o dono de todo mundo: o histórico de posse tem que acompanhar, senão
   // a base passa a dizer quem tem o quê sem registrar quando mudou.
-  if ('pessoa_id' in alteracao) {
+  if ('pessoa_id' in alteracao && !areaNaApi('patrimonio')) {
     const hoje = hojeLocal()
-    await sbClient.from('patrimonio_posse').update({ ate: hoje }).in('bem_id', ids).is('ate', null)
+    await db.from('patrimonio_posse').update({ ate: hoje }).in('bem_id', ids).is('ate', null)
     if (alteracao.pessoa_id) {
       const p = pessoas.value.find((x) => x.id === alteracao.pessoa_id)
-      await sbClient.from('patrimonio_posse').insert(ids.map((bemId) => ({
+      await db.from('patrimonio_posse').insert(ids.map((bemId) => ({
         bem_id: bemId, pessoa_id: p.id, pessoa_nome: p.nome, de: hoje, motivo: 'alteração em massa',
       })))
     }
@@ -1923,7 +1934,9 @@ async function apagarEmMassa() {
   if (!ids.length) return
   const total = formatarValor(resumoSelecao.value.totalCentavos)
   if (!(await _confirmar(`Apagar ${ids.length} itens (${total}) do patrimônio. O histórico de posse deles some junto.`))) return
-  const { error } = await sbClient.from('patrimonio_bens').delete().in('id', ids)
+  const { error } = areaNaApi('patrimonio')
+    ? await pedir('POST', '/patrimonio/bens/apagar-em-massa', { corpo: { ids } })
+    : await db.from('patrimonio_bens').delete().in('id', ids)
   if (error) { adminToast('Erro ao apagar: ' + error.message, false); return }
   await registrarLog('bem.apagar_em_massa', ids.length + ' bens', total)
   massaAberta.value = false
@@ -1971,9 +1984,9 @@ async function criarFilho(def, vinculo, mapaDeNovos, chaveDoPai) {
     const [campo, valor] = Object.entries(vinculo)[0]
     return x[campo] === valor
   })
-  const { error } = await sbClient.from(def.tabela).insert({ nome, ordem: irmaos.length + 1, ...vinculo })
+  const { error } = await db.from(def.tabela).insert({ nome, ordem: irmaos.length + 1, ...vinculo })
   if (error) {
-    const jaExiste = /duplicate key|unique/i.test(error.message)
+    const jaExiste = ehNomeRepetido(error)
     adminToast(jaExiste ? `"${nome}" já existe aqui` : 'Erro: ' + error.message, false)
     return
   }
@@ -1985,10 +1998,10 @@ async function criarFilho(def, vinculo, mapaDeNovos, chaveDoPai) {
 async function criarItem(def) {
   const nome = (novos[def.tabela] || '').trim()
   if (!nome) return
-  const { error } = await sbClient.from(def.tabela).insert({ nome, ordem: def.ref.value.length + 1 })
+  const { error } = await db.from(def.tabela).insert({ nome, ordem: def.ref.value.length + 1 })
   if (error) {
     // unique(nome) violado = a opção já existe. Dizer isso, não vomitar o erro do banco.
-    const jaExiste = /duplicate key|unique/i.test(error.message)
+    const jaExiste = ehNomeRepetido(error)
     adminToast(jaExiste ? `"${nome}" já está na lista` : 'Erro: ' + error.message, false)
     return
   }
@@ -2000,7 +2013,7 @@ async function criarItem(def) {
 async function renomearItem(def, item, novoNome) {
   const nome = (novoNome || '').trim()
   if (!nome || nome === item.nome) return
-  const { error } = await sbClient.from(def.tabela).update({ nome }).eq('id', item.id)
+  const { error } = await db.from(def.tabela).update({ nome }).eq('id', item.id)
   if (error) { adminToast('Erro ao renomear: ' + error.message, false); await carregar(); return }
   await carregar()
 }
@@ -2027,7 +2040,7 @@ async function apagarItem(def, item) {
   }
   if (aviso && !(await _confirmar(aviso))) return
 
-  const { error } = await sbClient.from(def.tabela).delete().eq('id', item.id)
+  const { error } = await db.from(def.tabela).delete().eq('id', item.id)
   if (error) { adminToast('Erro ao apagar: ' + error.message, false); return }
   await carregar()
 }
@@ -2049,7 +2062,7 @@ function responderConfirmacao(ok) {
 async function excluirBem() {
   const id = bemAberto.value.id
   const nome = form.nome
-  const { error } = await sbClient.from('patrimonio_bens').delete().eq('id', id)
+  const { error } = await db.from('patrimonio_bens').delete().eq('id', id)
   if (error) { adminToast('Erro ao excluir: ' + error.message, false); return }
   await registrarLog('bem.excluir', 'bem:' + id, nome)
   fecharFicha()
@@ -2061,19 +2074,19 @@ async function carregar() {
   carregando.value = true
   erro.value = ''
   const [rBens, rEmp, rLoc, rCom, rCat, rTip, rPes, rSet, rCfg, rFrota] = await Promise.all([
-    sbClient.from('patrimonio_bens').select('*').order('numero', { ascending: true, nullsFirst: false }),
-    sbClient.from('patrimonio_empresas').select('id,nome').order('ordem').order('nome'),
-    sbClient.from('patrimonio_locais').select('id,nome,empresa_id').order('ordem').order('nome'),
-    sbClient.from('patrimonio_comodos').select('id,nome,local_id').order('ordem').order('nome'),
-    sbClient.from('patrimonio_categorias').select('id,nome,vida_util_anos').order('ordem').order('nome'),
-    sbClient.from('patrimonio_tipos').select('id,nome,categoria_id').order('ordem').order('nome'),
+    db.from('patrimonio_bens').select('*').order('numero', { ascending: true }),
+    db.from('patrimonio_empresas').select('id,nome').order('ordem').order('nome'),
+    db.from('patrimonio_locais').select('id,nome,empresa_id').order('ordem').order('nome'),
+    db.from('patrimonio_comodos').select('id,nome,local_id').order('ordem').order('nome'),
+    db.from('patrimonio_categorias').select('id,nome,vida_util_anos').order('ordem').order('nome'),
+    db.from('patrimonio_tipos').select('id,nome,categoria_id').order('ordem').order('nome'),
     // PORTA ESTREITA (13/08/2026): a leitura direta de `acessos_pessoas` só
     // abre para quem tem Colaboradores e Acessos, e devolvia lista VAZIA para
     // os demais. A função do banco entrega nome/cargo/situação para quem mexe
     // no Patrimônio, sem abrir e-mail nem telefone de ninguém.
-    sbClient.rpc('pessoas_para_escolher'),
-    sbClient.rpc('setores_para_escolher'),
-    sbClient.from('patrimonio_config').select('chave,valor'),
+    rpcNaArea('patrimonio', sbClient, 'pessoas_para_escolher'),
+    rpcNaArea('patrimonio', sbClient, 'setores_para_escolher'),
+    db.from('patrimonio_config').select('chave,valor'),
     // A ligação com a Frota (Bronca 2): id/nome/placa/bem_id de cada carro,
     // só o bastante pra saber quem está ligado a qual bem. A tabela é da
     // Frota (RLS `is_frota_admin()`), então quem não tem essa feature recebe
@@ -2081,7 +2094,7 @@ async function carregar() {
     // ligado" olhando só pra esse resultado; ela pergunta antes, com
     // `temAcessoFrota()`, se faz sentido interpretar o vazio como "nada
     // ligado" ou como "eu não vejo esse dado".
-    sbClient.from('frota_veiculos').select('id,nome,placa,bem_id').order('nome'),
+    db.from('frota_veiculos').select('id,nome,placa,bem_id').order('nome'),
   ])
   if (rBens.error) {
     erro.value = rBens.error.message

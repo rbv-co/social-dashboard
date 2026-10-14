@@ -22,7 +22,7 @@ import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/c
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 // Chave `conta` (Plano 7): invite-user e conferir-senha (5.0) pela API em Go.
 // Chave `edges-core` (Plano 7): avisar-decisao-de-reserva (Plano 4).
-import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi, fetchDaApi } from '../../compartilhado/api.js'
+import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi, fetchDaApi, rpcNaArea } from '../../compartilhado/api.js'
 // Chave `admin` (Plano 7): `profiles` pela API (5.1).
 import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
@@ -1081,9 +1081,9 @@ async function carregar() {
     // vazio pra eles. Esta função entrega os nomes (e o `profile_id`, que é
     // como pessoaDoUsuario() acha a ficha de quem está logado), sem abrir
     // e-mail nem telefone.
-    sbClient.rpc('pessoas_para_escolher'),
+    rpcNaArea('patrimonio', sbClient, 'pessoas_para_escolher'),
     deOnde(sbClient).from('profiles').select('id,name'),
-    sbClient.rpc('setores_para_escolher'),
+    rpcNaArea('patrimonio', sbClient, 'setores_para_escolher'),
     // A agenda de reservas: quem vê a Frota vê a agenda inteira. Saber que o
     // carro está reservado é o que evita o conflito de viagens — esconder isso
     // de quem dirige recriaria no app o problema que o papel tem.
@@ -1094,7 +1094,7 @@ async function carregar() {
     // categoria, como já era) e, com os campos extras, a matéria-prima pra
     // "Acrescentar veículo" puxar dados de um bem (F9). Pode falhar sem
     // derrubar nada: quem não tem Patrimônio ainda gere a frota.
-    sbClient.from('patrimonio_bens')
+    deOnde(sbClient).from('patrimonio_bens')
       .select('id,nome,numero,categoria_id,marca,valor_centavos').order('nome').limit(500),
     sbClient.from('frota_checklist_itens').select('*').order('ordem'),
     sbClient.from('frota_checklist_config').select('*').limit(1),
@@ -1107,7 +1107,7 @@ async function carregar() {
     // bensLivresParaFrota — sem ela o seletor de "puxar de um bem" fica vazio
     // de propósito, em vez de listar bem de qualquer categoria (cadeira,
     // notebook…) como se fosse candidato a virar carro.
-    sbClient.from('patrimonio_categorias').select('id,nome').ilike('nome', '%ve%cul%').limit(1),
+    deOnde(sbClient).from('patrimonio_categorias').select('id,nome').ilike('nome', '%ve%cul%').limit(1),
     // OS ABASTECIMENTOS (D40). Entram no mesmo molde das irmãs `frota_revisoes`
     // e `frota_checklist`: leitura que pode falhar sozinha sem derrubar a tela.
     // A ordem é a do índice da tabela — do mais novo para o mais velho —, que é
@@ -1232,9 +1232,9 @@ async function carregarCopiasNoZoho() {
  * de resposta certa. Devolve `true` só quando as três vieram. */
 async function carregarArvoreDeLocais() {
   const [emp, loc, com] = await Promise.all([
-    sbClient.from('patrimonio_empresas').select('id,nome').order('ordem').order('nome'),
-    sbClient.from('patrimonio_locais').select('id,nome,empresa_id').order('ordem').order('nome'),
-    sbClient.from('patrimonio_comodos').select('id,nome,local_id').order('ordem').order('nome'),
+    deOnde(sbClient).from('patrimonio_empresas').select('id,nome').order('ordem').order('nome'),
+    deOnde(sbClient).from('patrimonio_locais').select('id,nome,empresa_id').order('ordem').order('nome'),
+    deOnde(sbClient).from('patrimonio_comodos').select('id,nome,local_id').order('ordem').order('nome'),
   ])
   if (emp.error || loc.error || com.error) { falhaArvore.value = true; return false }
   falhaArvore.value = false
@@ -3193,7 +3193,7 @@ async function criarNaArvore({ nivel, nome, empresaId, localId }) {
     return
   }
 
-  const { error } = await sbClient.from(pedido.tabela).insert(pedido.dados)
+  const { error } = await deOnde(sbClient).from(pedido.tabela).insert(pedido.dados)
   if (error) {
     criandoNaArvore.value = false
     erroDaArvore.value = 'Não consegui cadastrar. Tente de novo; se continuar falhando, '
@@ -3233,7 +3233,7 @@ async function criarPessoaRapida({ nome, cargo, marcaId, setorId }, campo) {
   avisoDeCriacao.value = ''
   campoDeCriacao.value = campo
 
-  const { data, error } = await sbClient.rpc('criar_pessoa_rapida', {
+  const { data, error } = await rpcNaArea('patrimonio', sbClient, 'criar_pessoa_rapida', {
     p_nome: nome, p_cargo: cargo, p_marca_id: marcaId, p_setor_id: setorId,
   })
   criandoPessoa.value = false
@@ -3264,7 +3264,7 @@ async function criarSetorRapido({ nome }, campo) {
   criandoPessoa.value = true
   erroDePessoa.value = ''
   campoDeCriacao.value = campo
-  const { error } = await sbClient.rpc('criar_setor_rapido', { p_nome: nome })
+  const { error } = await rpcNaArea('patrimonio', sbClient, 'criar_setor_rapido', { p_nome: nome })
   criandoPessoa.value = false
   if (error) { erroDePessoa.value = 'Não consegui cadastrar o setor. Tente de novo.'; return }
   campoDeCriacao.value = ''
@@ -3276,7 +3276,7 @@ async function criarMarcaRapida({ nome }, campo) {
   criandoPessoa.value = true
   erroDePessoa.value = ''
   campoDeCriacao.value = campo
-  const { error } = await sbClient.from('patrimonio_empresas')
+  const { error } = await deOnde(sbClient).from('patrimonio_empresas')
     .insert({ nome, ordem: (empresasPat.value || []).length + 1 })
   criandoPessoa.value = false
   if (error) { erroDePessoa.value = 'Não consegui cadastrar a marca. Tente de novo.'; return }
@@ -3396,7 +3396,7 @@ async function salvarVeiculo() {
     // existir, e RECUSA número que seja de outra coisa — ver migration 050.
     const et = validarEtiqueta(vForm.etiqueta, { obrigatoria: false })
     const { data: sinc, error: erroSinc } = et.numero === null ? { data: null, error: null }
-      : await sbClient.rpc('sincronizar_carro_e_bem', {
+      : await rpcNaArea('patrimonio', sbClient, 'sincronizar_carro_e_bem', {
         p_placa: dados.placa,
         p_etiqueta: et.numero,
         p_nome: dados.nome,
