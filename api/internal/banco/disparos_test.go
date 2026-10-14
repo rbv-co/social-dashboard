@@ -181,9 +181,17 @@ func TestAtenderDisparo(t *testing.T) {
 	// oito atendentes ao mesmo tempo, um pedido: roda uma vez (várias rodadas: a corrida é de microssegundos)
 	// o pool abre conexões sob demanda: sem aquecê-lo, o primeiro atendente termina antes de os outros conectarem
 	// e a corrida nunca acontece (a mutação "select e depois update" passaria)
+	// pool próprio de 8: o padrão do pgxpool é max(4, NumCPU) e o Acquire de 8 travava no runner de 4 CPUs do CI
+	cfg := p.Config().Copy()
+	cfg.MaxConns = 8
+	pc, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
 	var quentes []*pgxpool.Conn
 	for range 8 {
-		c, err := p.Acquire(ctx)
+		c, err := pc.Acquire(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +211,7 @@ func TestAtenderDisparo(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-comeca
-				banco.AtenderDisparo(ctx, p, "espelho", func(context.Context, banco.Disparo) error {
+				banco.AtenderDisparo(ctx, pc, "espelho", func(context.Context, banco.Disparo) error {
 					vezes.Add(1)
 					time.Sleep(50 * time.Millisecond)
 					return nil
