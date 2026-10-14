@@ -68,6 +68,9 @@ func ipDe(r *http.Request) string {
 	return ip.String()
 }
 
+// IPDe: o IP do cliente para quem está fora do pacote (rotas públicas). Mesma regra de ipDe.
+func IPDe(r *http.Request) string { return ipDe(r) }
+
 func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email string `json:"email"`

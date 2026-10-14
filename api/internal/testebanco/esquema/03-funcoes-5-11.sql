@@ -1,6 +1,116 @@
 -- VERBATIM de levantamento/02-funções.csv (gerado por fatia511.mjs, Plano 5.11): as 62 RPCs de atendimentos da
--- Vessel e o fecho do que elas chamam que as outras fatias ainda não carregam (101 funções).
+-- Vessel e o fecho do que elas chamam que as outras fatias ainda não carregam (159 funções).
 set check_function_bodies = off;
+
+CREATE OR REPLACE FUNCTION public.is_vessel_atendimentos()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select public.conta_ativa() and coalesce(
+    (select p.is_superadmin
+         or exists (select 1 from unnest(coalesce(p.features, '{}'::text[])) f
+                     where f = 'atendimentos' or left(f, 13) = 'atendimentos.')
+       from public.profiles p where p.id = auth.uid()),
+    false);
+$function$;
+
+CREATE OR REPLACE FUNCTION public.unaccent_simples(p text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select translate(coalesce(p, ''),
+                   'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ',
+                   'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC');
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_abrir_convite(p_codigo text, p_praca text DEFAULT NULL::text, p_client_advisor text DEFAULT NULL::text, p_via text DEFAULT 'qr'::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_ip text := public.vessel_hash_de_origem(); v_recentes int;
+begin
+  select count(*) into v_recentes from public.vessel_convite_aberturas
+   where ip_hash = v_ip and momento > now() - interval '1 hour';
+  if v_recentes >= 30 then return json_build_object('ok', true); end if;
+  insert into public.vessel_convite_aberturas
+    (convite_codigo, praca, client_advisor, via, ip_hash, teste)
+  values (nullif(trim(p_codigo), ''), upper(nullif(trim(p_praca), '')),
+          nullif(trim(p_client_advisor), ''),
+          case when p_via in ('qr', 'texto') then p_via else 'qr' end, v_ip, p_teste);
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_abrir_pedido_de_registro(p_codigo text, p_nome text, p_cpf text, p_whatsapp text, p_onde text DEFAULT NULL::text, p_comprado_em date DEFAULT NULL::date, p_nascimento date DEFAULT NULL::date)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_codigo text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_cpf    text := regexp_replace(coalesce(p_cpf, ''), '\D', '', 'g');
+  v_zap    text := regexp_replace(coalesce(p_whatsapp, ''), '\D', '', 'g');
+  v_nome   text := left(trim(coalesce(p_nome, '')), 120);
+  v_sku    text;
+  v_dono   record;
+  v_id     uuid;
+begin
+  select l.sku into v_sku
+    from public.vessel_pecas p join public.vessel_lotes l on l.id = p.lote_id
+   where p.codigo = v_codigo;
+  if not found then
+    return json_build_object('ok', false, 'motivo', 'nao_existe');
+  end if;
+
+  if v_nome = '' or length(v_zap) not in (10, 11) then
+    return json_build_object('ok', false, 'motivo', 'dados_invalidos');
+  end if;
+  if not public.vessel_cpf_valido(v_cpf) then
+    return json_build_object('ok', false, 'motivo', 'cpf_invalido');
+  end if;
+  -- Data de compra no futuro nao existe, e data de compra anterior a fabricacao
+  -- da peca tambem nao. As duas sao erro de digitacao — ou tentativa de esticar
+  -- a garantia, que conta dois anos a partir dela.
+  if p_comprado_em is not null and p_comprado_em > current_date then
+    return json_build_object('ok', false, 'motivo', 'compra_no_futuro');
+  end if;
+
+  -- ⚠️ NASCIMENTO TEM DE SER PLAUSIVEL. Sem isto, um erro de digitacao ("2026"
+  -- no lugar de "1926") entra e vai parar NO CADASTRO DO BLING, sobrescrevendo
+  -- o que a loja tinha. 120 anos e o limite; nascer no futuro nao existe.
+  if p_nascimento is not null
+     and (p_nascimento > current_date or p_nascimento < current_date - interval '120 years')
+  then
+    return json_build_object('ok', false, 'motivo', 'nascimento_invalido');
+  end if;
+
+  select r.nome, r.codigo into v_dono from public.vessel_registros r where r.codigo = v_codigo;
+
+  select id into v_id from public.vessel_pedidos_de_registro
+   where codigo = v_codigo and cpf = v_cpf and estado = 'pendente'
+   order by criado_em desc limit 1;
+
+  if v_id is null then
+    insert into public.vessel_pedidos_de_registro
+      (codigo, nome, cpf, whatsapp, onde_comprou, comprado_em, nascimento)
+    values (v_codigo, v_nome, v_cpf, v_zap,
+            left(nullif(trim(coalesce(p_onde, '')), ''), 120), p_comprado_em, p_nascimento)
+    returning id into v_id;
+  end if;
+
+  return json_build_object(
+    'ok', true, 'pedido', v_id, 'sku', v_sku,
+    'ja_tem_dono', v_dono.codigo is not null,
+    'dono_curto', case when v_dono.codigo is null then null
+                       else public.vessel_nome_curto(v_dono.nome) end);
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.vessel_achatar_cidade(p_texto text)
  RETURNS text
@@ -529,6 +639,205 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_candidatar_vaga(p_vaga text, p_nome text, p_whatsapp text, p_cidade text, p_experiencia text, p_fim_de_semana boolean, p_curriculo text DEFAULT NULL::text, p_origem jsonb DEFAULT NULL::jsonb, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip        text := public.vessel_hash_de_origem();
+  v_fone      text := public.vessel_telefone_canonico(p_whatsapp);
+  v_recentes  int;
+  v_cv        text := nullif(trim(coalesce(p_curriculo, '')), '');
+begin
+  -- Robô que preencheu o campo escondido recebe "ok" e não grava nada.
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  -- ⚠️ LISTA FECHADA DE VAGAS. Vaga nova entra aqui E na política da pasta.
+  if coalesce(p_vaga, '') not in ('consultor-tivoli', 'consultor-brasilia') then
+    return json_build_object('ok', false, 'situacao', 'vaga_desconhecida',
+      'erro', 'Esta vaga nao esta mais aberta.');
+  end if;
+
+  if length(trim(coalesce(p_nome, ''))) < 2 or v_fone is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e o WhatsApp com DDD.');
+  end if;
+  if length(trim(coalesce(p_cidade, ''))) < 2 or length(p_cidade) > 80
+     or length(p_nome) > 120 then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e sua cidade.');
+  end if;
+  if coalesce(p_experiencia, '') not in ('luxo', 'varejo', 'nao')
+     or p_fim_de_semana is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Responda as duas perguntas.');
+  end if;
+
+  -- ⚠️ O CURRÍCULO TEM DE SER UM ARQUIVO QUE ESTÁ NA PASTA DESTA VAGA. Sem esta
+  -- conferência, qualquer texto viraria "currículo" e o robô tentaria baixá-lo.
+  if v_cv is not null and not exists (
+    select 1 from storage.objects
+     where bucket_id = 'vessel-curriculos' and name = v_cv
+       and (storage.foldername(name))[1] = p_vaga
+  ) then
+    return json_build_object('ok', false, 'situacao', 'curriculo_nao_chegou',
+      'erro', 'O curriculo nao chegou. Anexe de novo ou envie sem ele.');
+  end if;
+
+  -- Teto por hora do mesmo endereço: acima dele finge que recebeu.
+  select count(*) into v_recentes from public.vessel_candidaturas
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+  if v_recentes >= 10 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  insert into public.vessel_candidaturas
+    (vaga, nome, whatsapp, cidade, experiencia, fim_de_semana, curriculo,
+     origem, ip_hash, teste)
+  values
+    (p_vaga, regexp_replace(trim(p_nome), '\s+', ' ', 'g'), v_fone,
+     regexp_replace(trim(p_cidade), '\s+', ' ', 'g'), p_experiencia,
+     p_fim_de_semana, v_cv, coalesce(p_origem, '{}'::jsonb), v_ip,
+     coalesce(p_teste, false));
+
+  return json_build_object('ok', true, 'situacao', 'recebido');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_candidatos_de_presente(p_sku text)
+ RETURNS TABLE(bling_pedido text, contato_nome text, tem_marca boolean)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select p.numero, p.contato_nome,
+         public.vessel_pedido_marcado_presente(
+           coalesce(p.observacoes, '') || ' ' || coalesce(p.observacoes_internas, ''))
+    from public.vessel_pedidos p
+    join public.vessel_pedido_itens i on i.pedido_id = p.id
+   where i.sku = p_sku
+   order by p.data_do_pedido desc nulls last
+   limit 50;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_card_da_stylist(p_quem text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_quem     text := btrim(coalesce(p_quem, ''));
+  v_ip       text;
+  v_recentes int;
+  v_fone     text;
+  v_achadas  int;
+  v_sty      record;
+  v_encontros json;
+begin
+  -- Nada digitado: responde antes de contar (não gasta a cota de ninguém).
+  if v_quem = '' then
+    return json_build_object('ok', false, 'situacao', 'vazio');
+  end if;
+
+  -- ⚠️ ANTI-ABUSO ANTES DE QUALQUER BUSCA: 30 consultas por hora por origem.
+  -- Sem isto a função vira um oráculo de "este telefone é de uma stylist?".
+  -- A consulta recusada NÃO é anotada (senão quem insiste nunca sai da trava).
+  v_ip := public.vessel_hash_de_origem();
+  delete from public.vessel_card_consultas where momento < now() - interval '1 day';
+  select count(*) into v_recentes from public.vessel_card_consultas
+   where ip_hash = v_ip and momento > now() - interval '1 hour';
+  if v_recentes >= 30 then
+    return json_build_object('ok', false, 'situacao', 'devagar');
+  end if;
+  insert into public.vessel_card_consultas (ip_hash) values (v_ip);
+
+  -- Texto enorme não é nome de ninguém.
+  if length(v_quem) > 200 then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+
+  v_fone := public.vessel_telefone_canonico(v_quem);
+
+  if v_fone is not null then
+    -- ── por WHATSAPP ── `vessel_stylists.whatsapp` está gravado canônico
+    -- (55 + DDD + número, só dígitos — medido em 28/09/2026: 29 de 29), mas a
+    -- comparação passa pelos DOIS lados do canônico: linha antiga gravada com
+    -- máscara casaria do mesmo jeito.
+    select count(*) into v_achadas from public.vessel_stylists s
+     where s.ativa and not coalesce(s.teste, false)
+       and public.vessel_telefone_canonico(s.whatsapp) = v_fone;
+    if v_achadas > 1 then
+      return json_build_object('ok', false, 'situacao', 'varias');
+    end if;
+    select s.id, s.codigo, s.nome into v_sty from public.vessel_stylists s
+     where s.ativa and not coalesce(s.teste, false)
+       and public.vessel_telefone_canonico(s.whatsapp) = v_fone;
+
+  elsif position('@' in v_quem) > 0 then
+    -- ── por E-MAIL ── ⚠️ HOJE A STYLIST NÃO TEM E-MAIL (`vessel_stylists` não
+    -- tem a coluna). Responde "não achei" em vez de adivinhar pelo nome.
+    -- QUANDO A COLUNA EXISTIR, é aqui (e só aqui):
+    --   select count(*) into v_achadas from public.vessel_stylists s
+    --    where s.ativa and not coalesce(s.teste, false)
+    --      and public.vessel_email_canonico(s.email) = public.vessel_email_canonico(v_quem);
+    --   (e as mesmas duas saídas: > 1 → 'varias'; 1 → segue para os encontros)
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+
+  else
+    -- ── por NOME COMPLETO ── ⚠️ IGUAL, nunca parcial/like: "Juliana" não
+    -- pode devolver os encontros da Juliana Costa para quem digitou só o
+    -- primeiro nome. A normalização (minúsculas, sem acento — inclusive o
+    -- acento decomposto que o macOS cola —, espaços colapsados) é a MESMA
+    -- `vessel_achatar_cidade` das praças: uma conta só no banco.
+    select count(*) into v_achadas from public.vessel_stylists s
+     where s.ativa and not coalesce(s.teste, false)
+       and public.vessel_achatar_cidade(s.nome) = public.vessel_achatar_cidade(v_quem);
+    if v_achadas > 1 then
+      -- Duas stylists com o mesmo nome: não escolhe por ela.
+      return json_build_object('ok', false, 'situacao', 'varias');
+    end if;
+    select s.id, s.codigo, s.nome into v_sty from public.vessel_stylists s
+     where s.ativa and not coalesce(s.teste, false)
+       and public.vessel_achatar_cidade(s.nome) = public.vessel_achatar_cidade(v_quem);
+  end if;
+
+  if v_sty.id is null then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+
+  -- ── OS ENCONTROS DELA ── ativos, não arquivados, não teste, que ainda vão
+  -- acontecer: fora 'cancelado', 'realizado' e 'nao_realizado' (os valores do
+  -- CHECK `vessel_private_edits_status_valido`; ficam em_planejamento,
+  -- agendado, confirmado e reagendado). As 12 horas para trás deixam gerar o
+  -- cartão NO DIA, com o encontro já começado.
+  select coalesce(json_agg(json_build_object(
+           'chave', e.chave, 'codigo', e.codigo, 'quando', e.quando,
+           'loja', e.loja, 'praca', e.praca) order by e.quando, e.codigo), '[]'::json)
+    into v_encontros
+    from public.vessel_private_edits e
+   where e.stylist_id = v_sty.id
+     and e.ativa
+     and not coalesce(e.arquivada, false)
+     and not coalesce(e.teste, false)
+     and e.status not in ('cancelado', 'realizado', 'nao_realizado')
+     and e.quando >= now() - interval '12 hours';
+
+  if json_array_length(v_encontros) = 0 then
+    return json_build_object('ok', false, 'situacao', 'sem_encontro',
+      'stylist', json_build_object('codigo', v_sty.codigo, 'nome', v_sty.nome));
+  end if;
+
+  return json_build_object('ok', true,
+    'stylist', json_build_object('codigo', v_sty.codigo, 'nome', v_sty.nome),
+    'encontros', v_encontros);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_chave_da_convidada(p_id bigint)
  RETURNS json
  LANGUAGE plpgsql
@@ -557,6 +866,16 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_chave_do_nome(p_nome text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select regexp_replace(
+           lower(trim(unaccent_simples(coalesce(p_nome, '')))),
+           '\s+', ' ', 'g');
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_codigo_de_evento_usado(p_codigo text)
  RETURNS boolean
  LANGUAGE sql
@@ -569,6 +888,141 @@ AS $function$
       or exists (select 1 from public.vessel_origens where evento_id = p_codigo)
       or exists (select 1 from public.vessel_sessao_aberturas where codigo = p_codigo)
       or exists (select 1 from public.vessel_beauty_session_cadastros where codigo = p_codigo)
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_conta_apagar_recem_criada(p_cliente_id uuid)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  delete from public.vessel_clientes c
+   where c.id = p_cliente_id
+     and c.criado_em > now() - interval '10 minutes'
+     and not exists (select 1 from public.vessel_sessoes s where s.cliente_id = c.id);
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_conta_criar(p_nome text, p_cpf text, p_email text, p_whatsapp text, p_nascimento date, p_senha text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_cpf   text := public.vessel_cpf_digitos(p_cpf);
+  v_email text := lower(trim(coalesce(p_email, '')));
+  v_id    uuid;
+  v_linha record;
+begin
+  -- ⚠️ C6 (revisão final, 17/09/2026): antes, só a CONTAGEM de dígitos era
+  -- conferida aqui — "11111111111" e qualquer sequência de 11 dígitos
+  -- passavam, mesmo sem o dígito verificador bater. Sem esta conferência a
+  -- cliente criava perfil com CPF errado, entrava, e ao tocar em "Registrar"
+  -- recebia "Confira o CPF..." para sempre, sem NENHUM formulário na tela da
+  -- peça para consertar: conta morta, sem saída pela tela.
+  if v_cpf is null or not public.vessel_cpf_valido(v_cpf) then
+    return json_build_object('ok', false, 'motivo', 'cpf_invalido');
+  end if;
+  if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    return json_build_object('ok', false, 'motivo', 'email_invalido');
+  end if;
+  if coalesce(trim(p_nome), '') = '' then
+    return json_build_object('ok', false, 'motivo', 'nome_vazio');
+  end if;
+  -- ⚠️ NASCIMENTO É OBRIGATÓRIO, e não é burocracia: na venda a loja quase
+  -- nunca consegue tirar todos os dados, e o registro é o momento em que a
+  -- própria cliente completa o cadastro (decisão do dono, 06/09 e 17/09/2026).
+  if p_nascimento is null
+     or p_nascimento > current_date
+     or p_nascimento < current_date - interval '120 years' then
+    return json_build_object('ok', false, 'motivo', 'nascimento_invalido');
+  end if;
+  if exists (select 1 from public.vessel_clientes
+              where cpf = v_cpf or email = v_email) then
+    return json_build_object('ok', false, 'motivo', 'ja_existe');
+  end if;
+
+  -- ⚠️ CORRIDA ENTRE O EXISTS() E O INSERT: duplo clique, ou duas abas abertas
+  -- ao mesmo tempo, passam pelo exists() acima antes de qualquer um dos dois
+  -- ter inserido — e o segundo insert bate na unique de cpf/email como erro
+  -- cru do Postgres (`unique_violation`), não como o {ok:false} que a edge
+  -- espera. Este bloco pega esse erro e devolve a MESMA resposta do exists().
+  begin
+    insert into public.vessel_clientes (nome, cpf, email, whatsapp, nascimento, senha_hash)
+    values (trim(p_nome), v_cpf, v_email, p_whatsapp, p_nascimento,
+            extensions.crypt(p_senha, extensions.gen_salt('bf', 10)))
+    returning id into v_id;
+  exception
+    when unique_violation then
+      return json_build_object('ok', false, 'motivo', 'ja_existe');
+  end;
+
+  -- ── o que já era dela, pelo CPF ────────────────────────────────────────
+  -- ⚠️ `returning` + laço, em vez de um `update` mudo: é o `returning` que
+  -- diz QUAIS linhas mudaram, e é isso que a trilha precisa contar. Contar
+  -- depois, com um `select`, pegaria também o que já estava ligado antes.
+  for v_linha in
+    update public.vessel_registros r
+       set cliente_id = v_id
+     where r.cliente_id is null
+       and regexp_replace(coalesce(r.cpf, ''), '\D', '', 'g') = v_cpf
+    returning r.codigo, r.cpf
+  loop
+    insert into public.vessel_edicoes (codigo, acao, motivo, detalhes, feito_por)
+    values (v_linha.codigo, 'conta_ligada_pelo_cpf',
+            'a peca ja registrada neste CPF passou a ter perfil no site',
+            jsonb_build_object(
+              'cliente_id', v_id,
+              'onde', 'vessel_registros',
+              'cpf', public.vessel_cpf_mascarado(v_linha.cpf)), null);
+  end loop;
+
+  for v_linha in
+    update public.vessel_pedidos_de_registro pr
+       set cliente_id = v_id
+     where pr.cliente_id is null
+       and regexp_replace(coalesce(pr.cpf, ''), '\D', '', 'g') = v_cpf
+    returning pr.codigo, pr.cpf, pr.estado
+  loop
+    insert into public.vessel_edicoes (codigo, acao, motivo, detalhes, feito_por)
+    values (v_linha.codigo, 'conta_ligada_pelo_cpf',
+            'o pedido de registro deste CPF passou a ter perfil no site',
+            jsonb_build_object(
+              'cliente_id', v_id,
+              'onde', 'vessel_pedidos_de_registro',
+              'estado', v_linha.estado,
+              'cpf', public.vessel_cpf_mascarado(v_linha.cpf)), null);
+  end loop;
+
+  -- ⚠️ A RESPOSTA É A MESMA DE ANTES, CAMPO POR CAMPO. Ver o cabeçalho desta
+  -- função: contar aqui quantas peças foram ligadas transformaria o cadastro
+  -- num consultor de "este CPF tem bolsa?".
+  return json_build_object('ok', true, 'cliente_id', v_id, 'email', v_email);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_conta_da_sessao(p_token text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_s record; v_c record;
+begin
+  select * into v_s from public.vessel_sessoes
+   where token_hash = encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex')
+     and encerrada_em is null and expira_em > now();
+  if v_s.id is null then return json_build_object('ok', false); end if;
+
+  update public.vessel_sessoes set ultimo_uso_em = now() where id = v_s.id;
+  select * into v_c from public.vessel_clientes where id = v_s.cliente_id;
+  return json_build_object('ok', true, 'cliente_id', v_c.id, 'nome', v_c.nome,
+                           'email', v_c.email, 'whatsapp', v_c.whatsapp,
+                           'cpf_fim', right(v_c.cpf, 2));
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.vessel_conta_das_beauty_sessions(p_dias integer DEFAULT 7, p_incluir_arquivadas boolean DEFAULT false)
@@ -748,6 +1202,188 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_conta_editar(p_token text, p_nome text DEFAULT NULL::text, p_whatsapp text DEFAULT NULL::text, p_senha_atual text DEFAULT NULL::text, p_senha_nova text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_sessao json; v_id uuid; v_c record;
+begin
+  v_sessao := public.vessel_conta_da_sessao(p_token);
+  if not (v_sessao ->> 'ok')::boolean then
+    return json_build_object('ok', false, 'motivo', 'sem_sessao');
+  end if;
+  v_id := (v_sessao ->> 'cliente_id')::uuid;
+
+  if p_senha_nova is not null then
+    select * into v_c from public.vessel_clientes where id = v_id;
+    if v_c.senha_hash <> extensions.crypt(coalesce(p_senha_atual, ''), v_c.senha_hash) then
+      return json_build_object('ok', false, 'motivo', 'senha_atual_errada');
+    end if;
+    if length(coalesce(p_senha_nova, '')) < 8 then
+      return json_build_object('ok', false, 'motivo', 'senha_curta');
+    end if;
+    update public.vessel_clientes
+       set senha_hash = extensions.crypt(p_senha_nova, extensions.gen_salt('bf', 10)),
+           senha_trocada_em = now()
+     where id = v_id;
+  end if;
+
+  update public.vessel_clientes
+     set nome = coalesce(nullif(trim(coalesce(p_nome, '')), ''), nome),
+         whatsapp = coalesce(nullif(trim(coalesce(p_whatsapp, '')), ''), whatsapp)
+   where id = v_id;
+
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_conta_efetivar_nova_senha(p_cliente_id uuid, p_senha text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  update public.vessel_clientes
+     set senha_hash = extensions.crypt(p_senha, extensions.gen_salt('bf', 10)),
+         senha_trocada_em = now()
+   where id = p_cliente_id;
+  if not found then
+    return json_build_object('ok', false, 'motivo', 'nao_existe');
+  end if;
+
+  -- a senha nova derruba as sessões abertas: se alguém entrou, perde o acesso
+  update public.vessel_sessoes set encerrada_em = now()
+   where cliente_id = p_cliente_id and encerrada_em is null;
+
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_conta_entrar(p_login text, p_senha text, p_lembrar boolean, p_agente text DEFAULT NULL::text, p_ip_hash text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_login  text := lower(trim(coalesce(p_login, '')));
+  v_cpf    text := public.vessel_cpf_digitos(p_login);
+  -- ⚠️ A CHAVE DO TETO TEM DE SER A MESMA PARA A MESMA CONTA, em qualquer
+  -- formato que a cliente digitar o CPF. '390.533.447-05', '39053344705' e
+  -- '390-533-447.05' são O MESMO CPF, mas três strings diferentes — contando
+  -- por v_login cru, cada formato ganhava sua própria cota de 5 tentativas, e
+  -- a trava de "5 erros em 15 minutos" virava, na prática, "5 erros por
+  -- formato de CPF digitado". A chave usada para CONTAR, para GRAVAR o erro e
+  -- para GRAVAR o acerto é sempre a mesma: o CPF normalizado quando o login
+  -- veio como CPF (11 dígitos), e o e-mail normalizado nos outros casos.
+  v_chave  text := case when v_cpf is not null and length(v_cpf) = 11
+                        then v_cpf else v_login end;
+  v_c      record;
+  v_erros  int;
+  v_token  text;
+  v_expira timestamptz;
+begin
+  -- ⚠️ O TETO É POR LOGIN E VEM ANTES DE QUALQUER COMPARAÇÃO DE SENHA: sem ele
+  -- esta função vira um chutador de senhas com a chave anônima na mão.
+  select count(*) into v_erros from public.vessel_tentativas_de_login
+   where chave = v_chave and acertou = false and quando > now() - interval '15 minutes';
+  if v_erros >= 5 then
+    return json_build_object('ok', false, 'motivo', 'muitas_tentativas');
+  end if;
+
+  select * into v_c from public.vessel_clientes
+   where email = v_login or cpf = v_cpf limit 1;
+
+  if v_c.id is null then
+    -- ⚠️ CANAL DE TEMPO: sem isto, "conta não existe" responde na hora (nunca
+    -- chega a rodar o bcrypt) e "senha errada" responde devagar (rodou o
+    -- bcrypt de verdade contra o hash da cliente) — e só o TEMPO da resposta
+    -- já entrega quem é cliente da marca, sem nenhuma mensagem diferente na
+    -- tela. Rodar o mesmo `crypt` contra um hash de descarte fixo (nunca
+    -- gravado, de ninguém) e jogar o resultado fora deixa as duas respostas
+    -- com o mesmo custo.
+    perform extensions.crypt(p_senha,
+      '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy');
+    insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, false);
+    return json_build_object('ok', false, 'motivo', 'senha_errada');
+  end if;
+
+  if v_c.senha_hash <> extensions.crypt(p_senha, v_c.senha_hash) then
+    insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, false);
+    return json_build_object('ok', false, 'motivo', 'senha_errada');
+  end if;
+
+  insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, true);
+
+  v_token  := encode(extensions.gen_random_bytes(32), 'hex');
+  v_expira := now() + case when coalesce(p_lembrar, false) then interval '90 days'
+                           else interval '12 hours' end;
+  insert into public.vessel_sessoes (cliente_id, token_hash, expira_em, agente, ip_hash)
+  values (v_c.id, encode(extensions.digest(v_token, 'sha256'), 'hex'),
+          v_expira, left(coalesce(p_agente, ''), 300), p_ip_hash);
+
+  return json_build_object('ok', true, 'token', v_token, 'expira_em', v_expira,
+                           'nome', v_c.nome, 'cliente_id', v_c.id);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_conta_pedido_de_nova_senha(p_login text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_login text := lower(trim(coalesce(p_login, '')));
+  v_cpf   text := public.vessel_cpf_digitos(p_login);
+  v_chave text := 'esqueci:' || (case when v_cpf is not null and length(v_cpf) = 11
+                                       then v_cpf else v_login end);
+  v_pedidos int;
+  v_c     record;
+begin
+  select count(*) into v_pedidos from public.vessel_tentativas_de_login
+   where chave = v_chave and quando > now() - interval '1 hour';
+  if v_pedidos >= 3 then
+    return json_build_object('ok', false, 'motivo', 'muitas_tentativas');
+  end if;
+
+  -- conta o pedido de qualquer forma, ache ou não o perfil.
+  insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, false);
+
+  select * into v_c from public.vessel_clientes
+   where email = v_login or cpf = v_cpf limit 1;
+  if v_c.id is null then
+    return json_build_object('ok', true, 'cliente_id', null, 'email', null);   -- resposta idêntica
+  end if;
+
+  return json_build_object('ok', true, 'cliente_id', v_c.id, 'email', v_c.email);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_conta_sair(p_token text, p_todas boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_s record;
+begin
+  select * into v_s from public.vessel_sessoes
+   where token_hash = encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex');
+  if v_s.id is null then return json_build_object('ok', true); end if;
+  if coalesce(p_todas, false) then
+    update public.vessel_sessoes set encerrada_em = now()
+     where cliente_id = v_s.cliente_id and encerrada_em is null;
+  else
+    update public.vessel_sessoes set encerrada_em = now() where id = v_s.id;
+  end if;
+  return json_build_object('ok', true);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_contexto_da_loja(p_quando timestamp with time zone, p_loja text)
  RETURNS json
  LANGUAGE sql
@@ -916,6 +1552,98 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_convite_da_convidada(p_chave text, p_convidada text, p_equipe boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  -- ⚠️ `json`, NÃO `jsonb`, ENQUANTO NADA MUDA: `jsonb` reordena as chaves (não
+  -- guarda a ordem de inserção), e quem compara a resposta pelo texto (a
+  -- página, ou a prova) veria uma diferença que não existe. Só vira `jsonb`
+  -- no ponto em que de fato se mescla, mais abaixo.
+  v_geral json;
+  v_t record;
+begin
+  if exists (select 1 from public.vessel_private_edits e
+              where e.chave = upper(nullif(trim(coalesce(p_chave, '')), ''))
+                and (coalesce(e.arquivada, false)
+                     or e.status in ('cancelado', 'nao_realizado', 'realizado'))) then
+    return json_build_object('ok', false, 'situacao', 'nao_encontrado');
+  end if;
+  v_geral := public.vessel_convite_da_private_edit(p_chave);
+  if coalesce((v_geral ->> 'ok')::boolean, false) is not true then return v_geral; end if;
+  select t.id, t.rsvp, pe.nome into v_t
+    from public.vessel_atendimentos t
+    join public.vessel_private_edits e on e.codigo = t.evento_codigo
+    join public.vessel_pessoas pe on pe.id = t.pessoa_id
+   where e.chave = upper(nullif(trim(coalesce(p_chave, '')), ''))
+     and t.chave_convite = upper(nullif(trim(coalesce(p_convidada, '')), ''));
+  if not found then return v_geral; end if;
+  -- ⚠️ 25/09/2026: ABERTURA DA EQUIPE NÃO CONTA. Duas portas para dizer "sou
+  -- da equipe": a página abriu com o marcador da Central (`?equipe=1` no link
+  -- "Ver o convite dela" do cartão, que a página repassa em `p_equipe`), ou a
+  -- chamada veio com a sessão de alguém da Central (Atendimentos). A resposta
+  -- é a MESMA — a equipe vê exatamente o que a convidada vê —, só o contador
+  -- e o "abriu em" não se mexem. O marcador não é segredo nem trava: quem o
+  -- escrevesse à mão só deixaria de contar a própria abertura.
+  if not (coalesce(p_equipe, false)
+          or (auth.uid() is not null and public.is_vessel_atendimentos())) then
+    update public.vessel_atendimentos
+       set convite_aberto_em = coalesce(convite_aberto_em, now()),
+           convite_aberturas = convite_aberturas + 1
+     where id = v_t.id;
+  end if;
+  return (v_geral::jsonb || jsonb_build_object(
+    'primeiro_nome', split_part(trim(v_t.nome), ' ', 1),
+    'resposta', v_t.rsvp))::json;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_convite_da_private_edit(p_chave text)
+ RETURNS json
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_recentes int;
+  v_linha    record;
+begin
+  -- Teto por IP contra varredura de chaves. Alto o bastante para uma convidada
+  -- recarregar a página à vontade.
+  select count(*) into v_recentes from public.vessel_atendimentos
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+  if v_recentes >= 60 then
+    return json_build_object('ok', false, 'situacao', 'nao_encontrado');
+  end if;
+
+  select e.quando, e.local, e.praca, s.nome as anfitria
+    into v_linha
+    from public.vessel_private_edits e
+    join public.vessel_stylists s on s.id = e.stylist_id
+   where e.chave = upper(nullif(trim(coalesce(p_chave, '')), '')) and e.ativa;
+
+  if not found then
+    return json_build_object('ok', false, 'situacao', 'nao_encontrado');
+  end if;
+
+  return json_build_object(
+    'ok', true,
+    'anfitria', v_linha.anfitria,
+    'data_por_extenso', public.vessel_data_por_extenso(v_linha.quando),
+    'horario', trim(trailing ':00' from
+                 to_char(v_linha.quando at time zone 'America/Sao_Paulo', 'HH24:MI')) || 'h',
+    'local', v_linha.local,
+    -- ⚠️ Encontro que já passou não vira erro: a convidada que abre o convite
+    -- uma semana depois merece saber que o dia passou, não um "não encontrado"
+    -- que parece link quebrado.
+    'ja_passou', v_linha.quando < now());
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_convite_marcar(p_id bigint, p_marca text)
  RETURNS json
  LANGUAGE plpgsql
@@ -952,6 +1680,14 @@ begin
 
   return json_build_object('ok', true, 'situacao', 'ok');
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_cpf_digitos(p_bruto text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select nullif(regexp_replace(coalesce(p_bruto, ''), '\D', '', 'g'), '');
 $function$;
 
 CREATE OR REPLACE FUNCTION public.vessel_criar_private_edit(p_stylist text, p_quando timestamp with time zone, p_local text DEFAULT NULL::text, p_praca text DEFAULT NULL::text, p_loja text DEFAULT NULL::text, p_vagas integer DEFAULT 8, p_teste boolean DEFAULT false, p_confirmar_sobreposicao boolean DEFAULT NULL::boolean)
@@ -1108,6 +1844,111 @@ begin
 
   return json_build_object('ok', false, 'situacao', 'codigo_em_disputa',
     'erro', 'Não consegui dar um código ao encontro agora. Tente de novo em um instante.');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_data_por_extenso(p_quando timestamp with time zone)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select extract(day from p_quando at time zone 'America/Sao_Paulo')::int || ' de '
+    || (array['janeiro','fevereiro','março','abril','maio','junho','julho',
+              'agosto','setembro','outubro','novembro','dezembro'])
+       [extract(month from p_quando at time zone 'America/Sao_Paulo')::int];
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_detalhar_visita(p_senha text, p_data date, p_hora text, p_bolsa text DEFAULT NULL::text, p_ocasiao text DEFAULT NULL::text, p_atelier boolean DEFAULT false, p_acompanhantes integer DEFAULT NULL::integer, p_pedido text DEFAULT NULL::text, p_loja text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_hash  text := encode(extensions.digest(coalesce(p_senha, ''), 'sha256'), 'hex');
+  -- ⚠️ A DATA DA CASA, não a do servidor. O banco roda em UTC: depois das 21h
+  -- de Brasília `current_date` já virou o dia seguinte, e uma visita marcada
+  -- para amanhã seria recusada como "passada" — à noite, e só à noite.
+  v_hoje  date := (now() at time zone 'America/Sao_Paulo')::date;
+  v_dia   int;
+  v_loja  text;
+  v_id    bigint;
+begin
+  if p_data is null then
+    return json_build_object('ok', false, 'situacao', 'sem_data');
+  end if;
+
+  -- `isodow`: segunda = 1 … domingo = 7.
+  v_dia := extract(isodow from p_data);
+  if v_dia not between 1 and 5 then
+    return json_build_object('ok', false, 'situacao', 'dia_fechado');
+  end if;
+
+  -- Nunca hoje nem ontem: a visita é PREPARADA antes (seleção de peças e
+  -- Client Advisor dedicada), e preparar leva pelo menos um dia.
+  if p_data <= v_hoje then
+    return json_build_object('ok', false, 'situacao', 'data_passada');
+  end if;
+  if p_data > v_hoje + 120 then
+    return json_build_object('ok', false, 'situacao', 'data_longe');
+  end if;
+
+  -- ⚠️ A JANELA DEPENDE DO DIA. Segunda a quinta: 11:00 … 20:00. Sexta: 11:00
+  -- … 17:00. Sempre de meia em meia hora, pontas incluídas.
+  if v_dia <= 4 then
+    if coalesce(p_hora, '') !~ '^(1[1-9]:(00|30)|20:00)$' then
+      return json_build_object('ok', false, 'situacao', 'hora_fora');
+    end if;
+  else
+    if coalesce(p_hora, '') !~ '^(1[1-6]:(00|30)|17:00)$' then
+      return json_build_object('ok', false, 'situacao', 'hora_fora');
+    end if;
+  end if;
+
+  -- Vazio é "não respondeu" e passa; valor fora da lista é recusado. Responder
+  -- é opcional; INVENTAR resposta não é.
+  if nullif(trim(coalesce(p_bolsa, '')), '') is not null
+     and p_bolsa not in ('hand-bag', 'shoulder-bag', 'east-west', 'toda-colecao') then
+    return json_build_object('ok', false, 'situacao', 'bolsa_invalida');
+  end if;
+  if nullif(trim(coalesce(p_ocasiao, '')), '') is not null
+     and p_ocasiao not in ('dia-a-dia', 'trabalho', 'viagem', 'noite', 'presente') then
+    return json_build_object('ok', false, 'situacao', 'ocasiao_invalida');
+  end if;
+  if p_acompanhantes is not null and (p_acompanhantes < 0 or p_acompanhantes > 6) then
+    return json_build_object('ok', false, 'situacao', 'acompanhantes_invalido');
+  end if;
+  if length(trim(coalesce(p_pedido, ''))) > 400 then
+    return json_build_object('ok', false, 'situacao', 'pedido_longo');
+  end if;
+
+  v_loja := coalesce(nullif(trim(p_loja), ''), 'iguatemi');
+  if v_loja not in ('tivoli', 'iguatemi') then
+    return json_build_object('ok', false, 'situacao', 'loja_invalida');
+  end if;
+
+  update public.vessel_lista_espera
+     set objetivo             = 'visita',
+         loja                 = v_loja,
+         visita_data          = p_data,
+         visita_hora          = p_hora,
+         visita_bolsa         = nullif(trim(coalesce(p_bolsa, '')), ''),
+         visita_ocasiao       = nullif(trim(coalesce(p_ocasiao, '')), ''),
+         visita_atelier       = coalesce(p_atelier, false),
+         visita_acompanhantes = p_acompanhantes,
+         visita_pedido        = nullif(trim(coalesce(p_pedido, '')), ''),
+         visita_detalhes_em   = now(),
+         senha_hash           = null,
+         planilha_em          = null
+   where senha_hash = v_hash
+     and senha_em > now() - interval '2 hours'
+  returning id into v_id;
+
+  if v_id is null then
+    return json_build_object('ok', false, 'situacao', 'senha_invalida');
+  end if;
+
+  return json_build_object('ok', true, 'situacao', 'registrado');
 end;
 $function$;
 
@@ -1476,6 +2317,153 @@ AS $function$
      and p_quando < e.quando + public.vessel_private_edit_duracao()
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_entrar_na_lista(p_nome text, p_email text, p_whatsapp text, p_aceite_versao text, p_armadilha text DEFAULT NULL::text, p_origem text DEFAULT NULL::text, p_rastreio jsonb DEFAULT NULL::jsonb)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_cab      json := nullif(current_setting('request.headers', true), '')::json;
+  v_ip       text;
+  v_recentes int;
+  v_origem   text := coalesce(nullif(trim(p_origem), ''), 'lp-vesselbrasil');
+  v_prevenda boolean := v_origem = 'pre-venda';
+  v_email    text := lower(trim(p_email));
+  v_atual    public.vessel_lista_espera%rowtype;
+  v_feitos   int;
+  v_total    constant int := 10;
+  v_id       bigint;
+  v_senha    uuid := gen_random_uuid();
+  -- O rastreio, aparado. `nullif(trim(...), '')` para campo em branco não virar
+  -- string vazia, que depois parece "veio sem campanha" e não é a mesma coisa.
+  v_src      text := nullif(trim(left(p_rastreio ->> 'utm_source',   200)), '');
+  v_med      text := nullif(trim(left(p_rastreio ->> 'utm_medium',   200)), '');
+  v_cmp      text := nullif(trim(left(p_rastreio ->> 'utm_campaign', 200)), '');
+  v_cnt      text := nullif(trim(left(p_rastreio ->> 'utm_content',  200)), '');
+  v_trm      text := nullif(trim(left(p_rastreio ->> 'utm_term',     200)), '');
+  v_fbc      text := nullif(trim(left(p_rastreio ->> 'clique_meta',  500)), '');
+begin
+  -- A ARMADILHA CONTINUA MUDA. Robo que soubesse que caiu nela tentaria de
+  -- outro jeito; ele tem de sair achando que deu certo.
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'reservado',
+                             'senha', v_senha::text);
+  end if;
+
+  if coalesce(trim(p_nome), '') = ''
+     or p_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]{2,}$'
+     or length(regexp_replace(coalesce(p_whatsapp, ''), '\D', '', 'g')) not in (10, 11, 12, 13)
+  then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+                             'erro', 'Confira os campos e tente de novo.',
+                             'senha', v_senha::text);
+  end if;
+
+  v_ip := encode(extensions.digest(coalesce(v_cab ->> 'x-forwarded-for', 'sem-ip'), 'sha256'), 'hex');
+
+  select count(*) into v_recentes
+    from public.vessel_lista_espera
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+
+  -- O TETO POR IP FALA DIFERENTE NAS DUAS PORTAS, e isso e decisao.
+  if v_recentes >= 5 then
+    if v_prevenda then
+      return json_build_object('ok', false, 'situacao', 'muitas_tentativas',
+        'erro', 'Recebemos varios envios desta conexao. Aguarde alguns minutos e tente de novo.',
+        'senha', v_senha::text);
+    end if;
+    return json_build_object('ok', true, 'situacao', 'reservado',
+                             'senha', v_senha::text);
+  end if;
+
+  if v_prevenda then
+    perform pg_advisory_xact_lock(hashtext('vessel_pre_venda'));
+  end if;
+
+  select * into v_atual from public.vessel_lista_espera where lower(email) = v_email;
+  select count(*) into v_feitos from public.vessel_lista_espera where origem = 'pre-venda';
+
+  -- A PERGUNTA E `v_atual.id is not null`, NAO `found`.
+  if v_atual.id is not null then
+    -- ⚠️ QUEM JÁ ESTÁ NA LISTA SÓ TEM O QUE ESTIVER VAZIO PREENCHIDO. `coalesce`
+    -- na ordem (antigo, novo) é o first touch: a campanha que trouxe a pessoa
+    -- pela PRIMEIRA vez é a que vale, e a segunda visita não reescreve a
+    -- história. Preencher o que está nulo não é sobrescrever — é completar.
+    if not v_prevenda then
+      update public.vessel_lista_espera
+         set senha_hash = encode(extensions.digest(v_senha::text, 'sha256'), 'hex'),
+             senha_em   = now(),
+             utm_source = coalesce(utm_source, v_src),
+             utm_medium = coalesce(utm_medium, v_med),
+             utm_campaign = coalesce(utm_campaign, v_cmp),
+             utm_content = coalesce(utm_content, v_cnt),
+             utm_term = coalesce(utm_term, v_trm),
+             clique_meta = coalesce(clique_meta, v_fbc)
+       where id = v_atual.id;
+      return json_build_object('ok', true, 'situacao', 'ja_na_lista',
+                               'senha', v_senha::text);
+    end if;
+    if v_atual.origem = 'pre-venda' then
+      update public.vessel_lista_espera
+         set senha_hash = encode(extensions.digest(v_senha::text, 'sha256'), 'hex'),
+             senha_em   = now(),
+             utm_source = coalesce(utm_source, v_src),
+             utm_medium = coalesce(utm_medium, v_med),
+             utm_campaign = coalesce(utm_campaign, v_cmp),
+             utm_content = coalesce(utm_content, v_cnt),
+             utm_term = coalesce(utm_term, v_trm),
+             clique_meta = coalesce(clique_meta, v_fbc)
+       where id = v_atual.id;
+      return json_build_object('ok', true, 'situacao', 'ja_reservado',
+                               'restam', greatest(0, v_total - v_feitos),
+                               'senha', v_senha::text);
+    end if;
+    if v_feitos >= v_total then
+      return json_build_object('ok', false, 'situacao', 'esgotou', 'restam', 0,
+        'erro', 'As 10 pecas da pre-venda acabaram.',
+        'senha', v_senha::text);
+    end if;
+    update public.vessel_lista_espera
+       set origem = 'pre-venda', nome = trim(p_nome), whatsapp = trim(p_whatsapp),
+           aceite_versao = p_aceite_versao, aceite_em = now(),
+           bling_em = null, planilha_em = null,
+           senha_hash = encode(extensions.digest(v_senha::text, 'sha256'), 'hex'),
+           senha_em   = now(),
+           utm_source = coalesce(utm_source, v_src),
+           utm_medium = coalesce(utm_medium, v_med),
+           utm_campaign = coalesce(utm_campaign, v_cmp),
+           utm_content = coalesce(utm_content, v_cnt),
+           utm_term = coalesce(utm_term, v_trm),
+           clique_meta = coalesce(clique_meta, v_fbc)
+     where id = v_atual.id;
+    return json_build_object('ok', true, 'situacao', 'reservado',
+                             'restam', greatest(0, v_total - (v_feitos + 1)),
+                             'senha', v_senha::text);
+  end if;
+
+  if v_prevenda and v_feitos >= v_total then
+    return json_build_object('ok', false, 'situacao', 'esgotou', 'restam', 0,
+      'erro', 'As 10 pecas da pre-venda acabaram.',
+      'senha', v_senha::text);
+  end if;
+
+  insert into public.vessel_lista_espera
+    (nome, email, whatsapp, ip_hash, aceite_versao, origem, senha_hash, senha_em,
+     utm_source, utm_medium, utm_campaign, utm_content, utm_term, clique_meta)
+  values
+    (trim(p_nome), v_email, trim(p_whatsapp), v_ip, p_aceite_versao, v_origem,
+     encode(extensions.digest(v_senha::text, 'sha256'), 'hex'), now(),
+     v_src, v_med, v_cmp, v_cnt, v_trm, v_fbc)
+  returning id into v_id;
+
+  return json_build_object('ok', true,
+    'situacao', case when v_prevenda then 'reservado' else 'na_lista' end,
+    'restam', case when v_prevenda then greatest(0, v_total - (v_feitos + 1)) else null end,
+    'senha', v_senha::text);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_etapa_conta_como_prospectada(p_etapa bigint)
  RETURNS boolean
  LANGUAGE sql
@@ -1531,6 +2519,172 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_hash_de_origem()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_cab json := nullif(current_setting('request.headers', true), '')::json;
+begin
+  return encode(
+    extensions.digest(coalesce(v_cab ->> 'x-forwarded-for', 'sem-ip'), 'sha256'),
+    'hex');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_horarios_ocupados(p_loja text, p_data date)
+ RETURNS json
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_recentes int;
+  v_cheio    int;
+  v_minutos  int;
+begin
+  if p_loja not in ('iguatemi', 'tivoli', 'parkshopping') or p_data is null then
+    return json_build_object('ok', false, 'situacao', 'pedido_invalido');
+  end if;
+
+  select count(*) into v_recentes from public.vessel_atendimentos
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+  -- Teto alto de propósito: uma Client Advisor troca de dia muitas vezes numa
+  -- tarde. O que ele barra é a varredura, não o trabalho.
+  if v_recentes >= 400 then
+    return json_build_object('ok', true, 'ocupados', '[]'::json);
+  end if;
+
+  select ao_mesmo_tempo, minutos_por_visita into v_cheio, v_minutos
+    from public.vessel_agenda_da_loja where loja = p_loja;
+  v_cheio := coalesce(v_cheio, 1);
+  v_minutos := coalesce(v_minutos, 60);
+
+  return json_build_object(
+    'ok', true,
+    'ao_mesmo_tempo', v_cheio,
+    'minutos_por_visita', v_minutos,
+    -- As horas que JÁ ESTÃO no banco naquele dia, com quantas visitas cada uma
+    -- tem. Quem decide o que fica cinza na tela é a página, que conhece a grade
+    -- de horários oferecida; aqui só sai o fato.
+    'ocupados', coalesce((
+      select json_agg(json_build_object('hora', g.hora, 'quantas', g.quantas)
+                      order by g.hora)
+        from (
+          select to_char(a.quando at time zone 'America/Sao_Paulo', 'HH24:MI') as hora,
+                 count(*)::int as quantas
+            from public.vessel_atendimentos a
+           where a.loja = p_loja
+             and a.status in ('solicitado', 'confirmado', 'realizado')
+             and (a.quando at time zone 'America/Sao_Paulo')::date = p_data
+           group by 1
+        ) g
+    ), '[]'::json));
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_identificar_client_advisor(p_nome text, p_loja text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_chave  text := public.vessel_chave_do_nome(p_nome);
+  v_ca     public.vessel_client_advisors%rowtype;
+  v_codigo text;
+  v_n      int;
+  v_vend   json;
+  v_volta  int;
+  v_indice text;
+begin
+  if length(v_chave) < 2 then
+    return json_build_object('ok', false, 'erro', 'Escreva o seu nome.');
+  end if;
+
+  select * into v_ca from public.vessel_client_advisors where chave = v_chave;
+
+  if v_ca.id is null then
+    -- Teto de gente: sem ele, um robô que descubra o endereço criaria
+    -- Client Advisors sem fim.
+    select count(*) into v_n from public.vessel_client_advisors;
+    if v_n >= 200 then
+      return json_build_object('ok', false, 'erro', 'Fale com quem cuida do sistema.');
+    end if;
+
+    -- ⚠️ 25/09/2026 (o código sem repetir): era "quantas há + 1". Uma Client
+    -- Advisor apagada deixava o número dela livre na conta, e a próxima recebia
+    -- um CA que já existe (chave duplicada, a tela dela quebrava) — ou, se o
+    -- número era o maior, o CA de alguém que já tem visitas e aberturas no
+    -- nome. Agora: a FILA (trava até o fim da transação: duas identificações
+    -- ao mesmo tempo esperam uma pela outra), o MAIOR número já dado + 1 —
+    -- contando também o CA que só ficou nas visitas (`vessel_atendimentos`) e
+    -- nas aberturas do convite (`vessel_convite_aberturas`) — pulando o que já
+    -- aparecer em qualquer um dos três lugares, e o CINTO (`unique_violation`
+    -- no código avança e tenta de novo). Códigos que já existem não mudam.
+    -- O `lpad` só completa até 2 dígitos: `lpad('100', 2)` CORTARIA para '10'.
+    perform pg_advisory_xact_lock(hashtext('public.vessel_client_advisors.codigo')::bigint);
+    select coalesce(max(n), 0) into v_n from (
+      select (substring(codigo from '^CA-([0-9]{1,6})$'))::int as n from public.vessel_client_advisors
+      union all
+      select (substring(client_advisor from '^CA-([0-9]{1,6})$'))::int from public.vessel_atendimentos
+      union all
+      select (substring(client_advisor from '^CA-([0-9]{1,6})$'))::int from public.vessel_convite_aberturas
+    ) usados;
+
+    for v_volta in 1..5 loop
+      loop
+        v_n := v_n + 1;
+        v_codigo := 'CA-' || lpad(v_n::text, greatest(2, length(v_n::text)), '0');
+        exit when not exists (select 1 from public.vessel_client_advisors where codigo = v_codigo)
+              and not exists (select 1 from public.vessel_atendimentos where client_advisor = v_codigo)
+              and not exists (select 1 from public.vessel_convite_aberturas where client_advisor = v_codigo);
+      end loop;
+      begin
+        insert into public.vessel_client_advisors (codigo, nome, chave, loja, teste)
+        values (v_codigo, trim(p_nome), v_chave, nullif(trim(p_loja), ''), coalesce(p_teste, false))
+        on conflict (chave) do nothing;
+        exit;
+      exception when unique_violation then
+        get stacked diagnostics v_indice = constraint_name;
+        if v_indice is distinct from 'vessel_client_advisors_codigo_idx' then
+          raise;
+        end if;
+      end;
+    end loop;
+    select * into v_ca from public.vessel_client_advisors where chave = v_chave;
+    if v_ca.id is null then
+      return json_build_object('ok', false, 'erro', 'Não consegui te identificar agora. Tente de novo em um instante.');
+    end if;
+  else
+    -- A loja pode mudar (alguém cobrindo outra unidade); o código, não.
+    update public.vessel_client_advisors
+       set loja = coalesce(nullif(trim(p_loja), ''), loja)
+     where id = v_ca.id;
+  end if;
+
+  -- O bloco do vendedor, que é a novidade.
+  if v_ca.bling_vendedor_id is not null then
+    select json_build_object('ligado', json_build_object('id', v.bling_vendedor_id, 'nome', v.nome))
+      into v_vend
+      from public.vessel_vendedores_bling v
+     where v.bling_vendedor_id = v_ca.bling_vendedor_id;
+    v_vend := coalesce(v_vend, json_build_object('ligado',
+      json_build_object('id', v_ca.bling_vendedor_id, 'nome', v_ca.nome)));
+  elsif v_ca.vendedor_dispensado_em is not null then
+    -- Ela já olhou a lista e não se achou. Não pergunta de novo.
+    v_vend := json_build_object('parecidos', '[]'::json);
+  else
+    v_vend := json_build_object('parecidos', public.vessel_vendedores_parecidos(p_nome));
+  end if;
+
+  return json_build_object('ok', true, 'codigo', v_ca.codigo, 'vendedor', v_vend);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_instagram_canonico(p_bruto text)
  RETURNS text
  LANGUAGE sql
@@ -1544,6 +2698,99 @@ AS $function$
                                     '^(https?://)?(www\.)?instagram\.com/', ''),
                      '[/?#].*$', ''),
                    '^@', '') as h) x
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_interesse_da_beauty_session(p_nome text, p_whatsapp text, p_evento text, p_interesse text DEFAULT NULL::text, p_aceite_marketing boolean DEFAULT false, p_aceite_versao text DEFAULT NULL::text, p_origem jsonb DEFAULT NULL::jsonb, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false, p_instagram text DEFAULT NULL::text, p_email text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_recentes int;
+  v_loja     text;
+  v_ativa    boolean;
+  v_origem   jsonb;
+  v_email    text := public.vessel_email_canonico(p_email);
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+  if coalesce(trim(p_nome), '') = ''
+     or public.vessel_telefone_canonico(p_whatsapp) is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e o WhatsApp com DDD.');
+  end if;
+
+  -- ⚠️ E-MAIL OBRIGATÓRIO (etapa 2): sem ele o RD Station recusa o contato.
+  if v_email is null then
+    return json_build_object('ok', false, 'situacao', 'email_invalido',
+      'erro', 'Confira seu e-mail.');
+  end if;
+
+  -- ⚠️ O TETO É O MESMO DO STYLIST CIRCLE (120). Duas portas que guardam o
+  -- mesmo dado com limites diferentes é como um perfil entra inteiro por uma e
+  -- cortado pela outra.
+  if length(trim(coalesce(p_instagram, ''))) > 120 then
+    return json_build_object('ok', false, 'situacao', 'instagram_longo',
+      'erro', 'Seu perfil ficou longo demais. Use so o @ ou o endereco.');
+  end if;
+
+  select loja, ativa into v_loja, v_ativa from public.vessel_beauty_sessions
+   where codigo = upper(trim(coalesce(p_evento, '')));
+  if v_loja is null then
+    return json_build_object('ok', false, 'situacao', 'evento_desconhecido',
+      'erro', 'Nao reconhecemos este QR. Fale com a nossa equipe.');
+  end if;
+  if not coalesce(v_ativa, false) then
+    return json_build_object('ok', false, 'situacao', 'evento_encerrado',
+      'erro', 'Esta sessao ja foi encerrada. Fale com a nossa equipe que a gente '
+           || 'te atende do mesmo jeito.');
+  end if;
+
+  if nullif(trim(coalesce(p_interesse, '')), '') is not null
+     and p_interesse not in ('conhecer-a-loja', 'rever-uma-peca', 'personal-atelier') then
+    return json_build_object('ok', false, 'situacao', 'interesse_invalido');
+  end if;
+
+  select count(*) into v_recentes from public.vessel_atendimentos
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+  if v_recentes >= 20 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  -- ⚠️ O EVENTO E O CANAL SÃO CRAVADOS AQUI, por cima do que veio do endereço.
+  v_origem := coalesce(p_origem, '{}'::jsonb)
+    || jsonb_build_object('canal', 'beauty_session',
+                          'evento_id', upper(trim(p_evento)));
+
+  perform public.vessel_anotar_interesse(
+    p_nome, p_whatsapp, v_loja, 'beauty-session', v_ip,
+    null, null, p_interesse, null, p_aceite_marketing, p_aceite_versao,
+    v_origem, p_teste, p_instagram);
+
+  if v_email is not null then
+    update public.vessel_pessoas set email = v_email
+     where telefone = public.vessel_telefone_canonico(p_whatsapp)
+       and nullif(trim(coalesce(email, '')), '') is null;
+  end if;
+
+  -- ⚠️ O ACEITE DE E-MAIL É UMA LINHA PRÓPRIA. `vessel_anotar_interesse` grava
+  -- o de marketing com canal 'whatsapp'; desde a política v4 a caixa do QR diz
+  -- "pelo WhatsApp e por e-mail", então quem marcou nessa versão (ou depois)
+  -- ganha também a linha de 'email'. Página velha em cache (v3) não ganha:
+  -- ela aceitou um texto que falava só de WhatsApp.
+  if coalesce(p_aceite_marketing, false)
+     and coalesce(substring(p_aceite_versao from '^privacidade-v(\d+)$')::int, 0) >= 4 then
+    insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+    select p.id, 'marketing', 'email', p_aceite_versao, 'beauty-session', p_teste
+      from public.vessel_pessoas p
+     where p.telefone = public.vessel_telefone_canonico(p_whatsapp);
+  end if;
+
+  return json_build_object('ok', true, 'situacao', 'recebido');
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.vessel_leads_da_beauty_session(p_codigo text, p_dias integer DEFAULT 7)
@@ -1610,6 +2857,226 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_leitura_do_card(p_chave text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_chave text := upper(btrim(coalesce(p_chave, '')));
+  v_ip    text;
+  v_e     record;
+begin
+  select e.id, e.codigo, e.quando, e.loja, e.praca, e.teste, s.nome as anfitria
+    into v_e
+    from public.vessel_private_edits e
+    join public.vessel_stylists s on s.id = e.stylist_id
+   where e.chave = v_chave and not coalesce(e.arquivada, false);
+
+  if v_e.id is null then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+
+  -- ⚠️ ENCONTRO DE TESTE NÃO ANOTA (a resposta é a mesma: o site não precisa
+  -- saber). E a mesma pessoa relendo o mesmo QR em menos de 10 minutos não é
+  -- uma leitura nova — é a câmera que leu duas vezes, ou o voltar do navegador.
+  -- ⚠️ ENCONTRO ENCERRADO (ativa = false) ANOTA: o cartão impresso continua na
+  -- mão das convidadas, e ler depois do dia também é leitura.
+  if not coalesce(v_e.teste, false) then
+    v_ip := public.vessel_hash_de_origem();
+    if not exists (select 1 from public.vessel_private_edit_card_leituras l
+                    where l.private_edit_id = v_e.id and l.ip_hash = v_ip
+                      and l.momento > now() - interval '10 minutes') then
+      insert into public.vessel_private_edit_card_leituras (private_edit_id, ip_hash)
+      values (v_e.id, v_ip);
+    end if;
+  end if;
+
+  return json_build_object('ok', true, 'codigo', v_e.codigo, 'anfitria', v_e.anfitria,
+    'quando', v_e.quando, 'loja', v_e.loja, 'praca', v_e.praca);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_lembrete_cancelar_por_token(p_token text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if coalesce(p_token, '') <> '' then
+    update public.vessel_lembretes
+       set cancelado_em = now(), cancelado_por = 'cliente'
+     where token_hash = encode(extensions.digest(p_token, 'sha256'), 'hex')
+       and cancelado_em is null;
+  end if;
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_lembrete_criar(p_codigo text, p_email text, p_token_opcional text, p_consentimento boolean)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_codigo  text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_email   text := lower(btrim(coalesce(p_email, '')));
+  v_sessao  json;
+  v_cliente uuid;
+begin
+  -- 1. o consentimento, antes de tudo: sem ele não há o que guardar.
+  if coalesce(p_consentimento, false) is not true then
+    return json_build_object('ok', false, 'motivo', 'sem_consentimento');
+  end if;
+
+  -- 2. o e-mail, conferido de forma simples — a MESMA regra de
+  -- `vessel_conta_criar`. Validar e-mail "de verdade" é impossível sem mandar
+  -- um; o que esta linha pega é o erro de digitação óbvio.
+  if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    return json_build_object('ok', false, 'motivo', 'email_invalido');
+  end if;
+
+  -- 3. a conta, quando houver. Token inválido ou vencido NÃO é erro: o
+  -- lembrete continua valendo, só fica sem dona. Quem não tem conta passa
+  -- `null` aqui e segue igual.
+  if coalesce(p_token_opcional, '') <> '' then
+    v_sessao := public.vessel_conta_da_sessao(p_token_opcional);
+    if coalesce((v_sessao ->> 'ok')::boolean, false) then
+      v_cliente := (v_sessao ->> 'cliente_id')::uuid;
+    end if;
+  end if;
+
+  -- ⚠️ TRAVA A PEÇA antes de olhar qualquer coisa. Duplo clique e duas abas
+  -- passariam os dois pelas conferências abaixo antes de qualquer um gravar, e
+  -- o segundo bateria no índice único como erro CRU do Postgres — que a edge
+  -- devolveria como "falhou", contando, pelo próprio erro, que já havia um
+  -- lembrete ali. Com a trava, o segundo espera e enxerga o do primeiro.
+  perform pg_advisory_xact_lock(hashtext('vessel_lembrete:' || v_codigo));
+
+  -- 4. a peça existe? (ver o cabeçalho desta função)
+  if not exists (select 1 from public.vessel_pecas where codigo = v_codigo) then
+    return json_build_object('ok', true);
+  end if;
+
+  -- 5. peça já registrada não aceita lembrete: ela já tem dona, e o lembrete
+  -- existe para quem AINDA NÃO registrou.
+  if exists (select 1 from public.vessel_registros where codigo = v_codigo) then
+    return json_build_object('ok', true);
+  end if;
+
+  -- 6. teto de 1 pedido por peça a cada 24h (conta o que NASCEU, ver acima).
+  if exists (
+    select 1 from public.vessel_lembretes
+     where peca_codigo = v_codigo and criado_em > now() - interval '24 hours'
+  ) then
+    return json_build_object('ok', true);
+  end if;
+
+  -- 7. ⚠️ TETO DE 3 POR E-MAIL A CADA 24H (decisão do dono, 19/09/2026).
+  -- O teto por peça, sozinho, não segura o abuso que importa. Ele conta por
+  -- BOLSA: com uma lista de códigos de peça na mão — e os códigos estão
+  -- gravados na etiqueta de cada peça que circula —, um pedido por peça ainda
+  -- é um e-mail por peça, e TODOS podem apontar para o MESMO endereço. Sem
+  -- este segundo teto, o lembrete vira um jeito de mandar e-mail para qualquer
+  -- pessoa com o remetente da VESSEL: inunda a caixa dela e queima
+  -- `vesselbrasil.com.br` como remetente no ZeptoMail — o mesmo estrago que o
+  -- teto de "esqueci a senha" existe para impedir
+  -- (2026-09-17-vessel-contas-base.sql).
+  --
+  -- ⚠️ CONTA O QUE NASCEU NAS ÚLTIMAS 24H, cancelado ou não. Contar só os
+  -- "abertos" deixaria a cota se refazer sozinha: bastaria clicar no link de
+  -- parar (ou esperar o registro) para liberar vaga e pedir de novo, e o teto
+  -- viraria enfeite. E é por isso que o e-mail é gravado normalizado: sem o
+  -- `lower(btrim(...))`, "Ana@X.com" e "ana@x.com" teriam cotas separadas.
+  --
+  -- ⚠️ E É CEGO, como as outras recusas de estado: quem estourou recebe o
+  -- MESMO `{ok:true}`. Um motivo aqui contaria a quem está do lado de fora
+  -- que aquele endereço já pediu hoje — dado de outra pessoa.
+  if (select count(*) from public.vessel_lembretes
+       where email = v_email and criado_em > now() - interval '24 hours') >= 3 then
+    return json_build_object('ok', true);
+  end if;
+
+  -- 8. já existe um aberto (de mais de 24h atrás): um por peça, e pronto.
+  if exists (
+    select 1 from public.vessel_lembretes
+     where peca_codigo = v_codigo and cancelado_em is null and enviado_30_em is null
+  ) then
+    return json_build_object('ok', true);
+  end if;
+
+  -- ⚠️ E AINDA ASSIM, O `exception`: a trava acima é por transação, e um
+  -- caminho futuro que grave nesta tabela sem passar por aqui bateria no
+  -- índice único como erro cru. O erro vira a MESMA resposta das outras — a
+  -- regra da resposta única não pode depender de nenhuma conferência
+  -- lembrar de existir.
+  begin
+    insert into public.vessel_lembretes
+      (peca_codigo, email, cliente_id, consentimento_em)
+    values (v_codigo, v_email, v_cliente, now());
+  exception
+    when unique_violation then
+      return json_build_object('ok', true);
+  end;
+
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_ligar_vendedor(p_codigo text, p_vendedor_id bigint DEFAULT NULL::bigint)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ca    public.vessel_client_advisors%rowtype;
+  v_nome  text;
+begin
+  select * into v_ca from public.vessel_client_advisors
+   where codigo = upper(trim(coalesce(p_codigo, '')));
+  if v_ca.id is null then
+    return json_build_object('ok', false, 'situacao', 'nao_conheco_esse_codigo');
+  end if;
+
+  -- Nulo = "não me achei na lista". Marca, para não perguntar de novo.
+  if p_vendedor_id is null then
+    update public.vessel_client_advisors
+       set vendedor_dispensado_em = now() where id = v_ca.id;
+    return json_build_object('ok', true, 'situacao', 'dispensado');
+  end if;
+
+  if v_ca.bling_vendedor_id is not null then
+    return json_build_object('ok', v_ca.bling_vendedor_id = p_vendedor_id,
+      'situacao', case when v_ca.bling_vendedor_id = p_vendedor_id
+                       then 'ja_era_esse' else 'ja_ligado_a_outro' end);
+  end if;
+
+  select nome into v_nome from public.vessel_vendedores_bling
+   where bling_vendedor_id = p_vendedor_id;
+  if v_nome is null then
+    return json_build_object('ok', false, 'situacao', 'vendedor_desconhecido');
+  end if;
+
+  -- ⚠️ O índice único já barra, mas barrar aqui devolve FRASE em vez de
+  -- derrubar a transação com erro de banco na cara de quem está usando.
+  if exists (select 1 from public.vessel_client_advisors
+              where bling_vendedor_id = p_vendedor_id) then
+    return json_build_object('ok', false, 'situacao', 'vendedor_ja_e_de_outra');
+  end if;
+
+  update public.vessel_client_advisors
+     set bling_vendedor_id = p_vendedor_id, vendedor_ligado_em = now(),
+         vendedor_dispensado_em = null
+   where id = v_ca.id;
+
+  return json_build_object('ok', true, 'situacao', 'ligado', 'nome', v_nome);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_lugar_do_encontro(p_loja text, p_praca text, p_local text)
  RETURNS text
  LANGUAGE sql
@@ -1622,6 +3089,114 @@ AS $function$
              || lower(regexp_replace(trim(coalesce(p_local, '')), '\s+', ' ', 'g')))
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_marcar_objetivo_e_motivo(p_senha text, p_objetivo text, p_motivo text DEFAULT NULL::text, p_loja text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_hash text := encode(extensions.digest(coalesce(p_senha, ''), 'sha256'), 'hex');
+  v_loja text;
+  v_id   bigint;
+begin
+  if p_objetivo is null or p_objetivo not in ('visita', 'ecommerce') then
+    return json_build_object('ok', false, 'situacao', 'objetivo_invalido');
+  end if;
+
+  v_loja := coalesce(nullif(trim(p_loja), ''), 'iguatemi');
+  if p_objetivo = 'visita' and v_loja not in ('tivoli', 'iguatemi') then
+    return json_build_object('ok', false, 'situacao', 'loja_invalida');
+  end if;
+
+  -- Lista fechada na FUNÇÃO, não em CHECK: motivo novo é uma linha aqui, não
+  -- uma transação derrubada.
+  if nullif(trim(coalesce(p_motivo, '')), '') is not null
+     and p_motivo not in ('pulou', 'fechou', 'esc', 'fora', 'saiu-da-pagina') then
+    return json_build_object('ok', false, 'situacao', 'motivo_invalido');
+  end if;
+
+  update public.vessel_lista_espera
+     set objetivo        = p_objetivo,
+         loja            = case when p_objetivo = 'visita' then v_loja else null end,
+         objetivo_motivo = nullif(trim(coalesce(p_motivo, '')), ''),
+         senha_hash      = null,
+         planilha_em     = null
+   where senha_hash = v_hash
+     and senha_em > now() - interval '2 hours'
+  returning id into v_id;
+
+  if v_id is null then
+    return json_build_object('ok', false, 'situacao', 'senha_invalida');
+  end if;
+  return json_build_object('ok', true, 'situacao', 'registrado');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_marcar_presenca(p_codigo text, p_veio boolean, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_id bigint;
+begin
+  select id into v_id from public.vessel_atendimentos
+   where convite_codigo = upper(trim(coalesce(p_codigo, '')));
+  if v_id is null then return json_build_object('ok', true); end if;
+  update public.vessel_atendimentos
+     set status = case when p_veio then 'realizado' else 'no_show' end,
+         presenca_em = case when p_veio then coalesce(presenca_em, now()) else null end,
+         teste = p_teste, atualizado_em = now()
+   where id = v_id;
+  return json_build_object('ok', true, 'situacao', case when p_veio then 'veio' else 'nao_veio' end);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_minhas_pecas(p_token text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_sessao json; v_id uuid; v_pecas json;
+begin
+  v_sessao := public.vessel_conta_da_sessao(p_token);
+  if not (v_sessao ->> 'ok')::boolean then
+    return json_build_object('ok', false, 'motivo', 'sem_sessao');
+  end if;
+  v_id := (v_sessao ->> 'cliente_id')::uuid;
+
+  select coalesce(json_agg(x order by x.registrado_em desc), '[]'::json) into v_pecas
+    from (
+      select r.codigo, l.modelo, l.cor, l.sku, p.numero_na_serie,
+             r.registrado_em, r.garantia_ate, 'registrada' as estado
+        from public.vessel_registros r
+        join public.vessel_pecas p on p.codigo = r.codigo
+        join public.vessel_lotes l on l.id = p.lote_id
+       where r.cliente_id = v_id
+      union all
+      -- ⚠️ UMA PEÇA SÓ APARECE UMA VEZ. Correção 1 (revisão 17/09/2026): a
+      -- própria dona pode reabrir um pedido de registro para um código que
+      -- JÁ é dela (por exemplo depois de já ter virado dona por outro
+      -- caminho) — a edge e o rpc de abrir pedido não impedem isso. Sem o
+      -- `not exists` abaixo, essa peça sairia DUAS VEZES em "Minhas peças":
+      -- uma como "registrada" e outra como "em conferência" do mesmo código.
+      -- O lugar certo de blindar é aqui, na leitura, e não confiar que quem
+      -- escreve nunca vai deixar passar essa sobreposição.
+      select pr.codigo, l.modelo, l.cor, l.sku, p.numero_na_serie,
+             pr.criado_em, null::date, 'em conferência'
+        from public.vessel_pedidos_de_registro pr
+        join public.vessel_pecas p on p.codigo = pr.codigo
+        join public.vessel_lotes l on l.id = p.lote_id
+       where pr.cliente_id = v_id and pr.estado = 'pendente'
+         and not exists (select 1 from public.vessel_registros r2 where r2.codigo = pr.codigo)
+    ) x;
+
+  return json_build_object('ok', true, 'pecas', v_pecas);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_motivo_de_saida_nao_se_apaga()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -1630,6 +3205,48 @@ AS $function$
 begin
   raise exception 'motivo de saida nao se apaga: desative (o historico aponta para ele)'
     using errcode = '42501';
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_nome_curto(p_nome text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  with n as (select nullif(regexp_replace(trim(coalesce(p_nome, '')), '\s+', ' ', 'g'), '') as nome)
+  select case
+    when nome is null then null
+    -- so um nome: devolve ele, sem inicial inventada
+    when split_part(nome, ' ', 2) = '' then nome
+    else split_part(nome, ' ', 1) || ' '
+         || upper(substr(split_part(nome, ' ', 2), 1, 1)) || '.'
+  end from n;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_novo_codigo_de_convite()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_alfabeto text := 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
+  v_codigo   text;
+  v_tenta    int := 0;
+begin
+  loop
+    v_codigo := '';
+    for i in 1..6 loop
+      v_codigo := v_codigo || substr(v_alfabeto, 1 + floor(random() * length(v_alfabeto))::int, 1);
+    end loop;
+    exit when not exists (
+      select 1 from public.vessel_atendimentos where convite_codigo = v_codigo);
+    v_tenta := v_tenta + 1;
+    if v_tenta > 50 then
+      raise exception 'nao consegui um codigo de convite livre';
+    end if;
+  end loop;
+  return v_codigo;
 end;
 $function$;
 
@@ -1761,6 +3378,279 @@ begin
 
   return v_saida;
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_pedido_de_personal_atelier(p_nome text, p_whatsapp text, p_loja text, p_modelo text DEFAULT NULL::text, p_tecido text DEFAULT NULL::text, p_ferragem text DEFAULT NULL::text, p_periodo text DEFAULT NULL::text, p_observacao text DEFAULT NULL::text, p_aceite_marketing boolean DEFAULT false, p_aceite_versao text DEFAULT NULL::text, p_origem jsonb DEFAULT NULL::jsonb, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_recentes int;
+  v_id       bigint;
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+  if coalesce(trim(p_nome), '') = ''
+     or public.vessel_telefone_canonico(p_whatsapp) is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e o WhatsApp com DDD.');
+  end if;
+  if p_loja is null or p_loja not in ('iguatemi', 'tivoli', 'parkshopping') then
+    return json_build_object('ok', false, 'situacao', 'loja_invalida', 'erro', 'Escolha a loja.');
+  end if;
+
+  -- ⚠️ OS TRÊS ELEGÍVEIS, e só eles.
+  if nullif(trim(coalesce(p_modelo, '')), '') is not null
+     and p_modelo not in ('nerea', 'cyrene', 'astrea', 'nao-sei') then
+    return json_build_object('ok', false, 'situacao', 'modelo_invalido');
+  end if;
+  if nullif(trim(coalesce(p_tecido, '')), '') is not null
+     and p_tecido not in ('couro', 'canvas') then
+    return json_build_object('ok', false, 'situacao', 'tecido_invalido');
+  end if;
+  if nullif(trim(coalesce(p_ferragem, '')), '') is not null
+     and p_ferragem not in ('ouro-9k', 'onix') then
+    return json_build_object('ok', false, 'situacao', 'ferragem_invalida');
+  end if;
+  if nullif(trim(coalesce(p_periodo, '')), '') is not null
+     and p_periodo not in ('manha', 'tarde', 'noite', 'qualquer') then
+    return json_build_object('ok', false, 'situacao', 'periodo_invalido');
+  end if;
+  if length(trim(coalesce(p_observacao, ''))) > 300 then
+    return json_build_object('ok', false, 'situacao', 'observacao_longa',
+      'erro', 'Sua observacao ficou longa demais. Resuma em ate 300 letras.');
+  end if;
+
+  select count(*) into v_recentes from public.vessel_atendimentos
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+  if v_recentes >= 20 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  v_id := public.vessel_anotar_interesse(
+    p_nome, p_whatsapp, p_loja, 'lp-personal-atelier', v_ip,
+    'personalizacao', p_periodo, 'personal-atelier', p_observacao,
+    p_aceite_marketing, p_aceite_versao, p_origem, p_teste);
+
+  update public.vessel_atendimentos
+     set modelo_de_interesse = coalesce(nullif(trim(coalesce(p_modelo, '')), ''), modelo_de_interesse),
+         atelier_tecido      = coalesce(nullif(trim(coalesce(p_tecido, '')), ''), atelier_tecido),
+         atelier_ferragem    = coalesce(nullif(trim(coalesce(p_ferragem, '')), ''), atelier_ferragem),
+         atualizado_em = now()
+   where id = v_id;
+
+  return json_build_object('ok', true, 'situacao', 'solicitado');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_pedido_do_stylist(p_nome text, p_whatsapp text, p_cidade text DEFAULT NULL::text, p_instagram text DEFAULT NULL::text, p_atuacao text DEFAULT NULL::text, p_quer_sessao text DEFAULT NULL::text, p_convidadas text DEFAULT NULL::text, p_praca text DEFAULT NULL::text, p_aceite_marketing boolean DEFAULT false, p_aceite_versao text DEFAULT NULL::text, p_origem jsonb DEFAULT NULL::jsonb, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_fone     text;
+  v_recentes int;
+  v_id       bigint;
+  v_codigo   text;
+  v_n        int;
+  v_volta    int;
+  v_indice   text;
+  v_praca_id bigint;
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): a praça DEDUZIDA da cidade, separada da
+  -- escolhida de propósito — a deduzida só PREENCHE buraco, nunca troca a
+  -- praça de quem já tem uma (ver o `coalesce` de três pernas no update).
+  v_praca_da_cidade bigint;
+  v_era_nova boolean;
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  v_fone := public.vessel_telefone_canonico(p_whatsapp);
+  if coalesce(trim(p_nome), '') = '' or v_fone is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e o WhatsApp com DDD.');
+  end if;
+  if nullif(trim(coalesce(p_atuacao, '')), '') is not null
+     and p_atuacao not in ('stylist', 'personal-shopper', 'consultoria', 'outra') then
+    return json_build_object('ok', false, 'situacao', 'atuacao_invalida');
+  end if;
+  if nullif(trim(coalesce(p_quer_sessao, '')), '') is not null
+     and p_quer_sessao not in ('sim', 'entender') then
+    return json_build_object('ok', false, 'situacao', 'sessao_invalida');
+  end if;
+  if nullif(trim(coalesce(p_convidadas, '')), '') is not null
+     and p_convidadas not in ('ate-4', '5-8', 'mais-de-8') then
+    return json_build_object('ok', false, 'situacao', 'convidadas_invalido');
+  end if;
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO): consulta ao cadastro, não lista
+  -- fechada — sem isto, uma stylist de Limeira/Piracicaba não conseguia se
+  -- inscrever pela landing page com a própria praça.
+  --
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): o formulário PÚBLICO não pergunta a
+  -- praça — pergunta a CIDADE. Sem derivar, toda inscrição pela landing page
+  -- nascia com `praca_id` nulo: fora de toda edição, fora de todo placar,
+  -- calada. `v_praca_da_cidade` é a MESMA conta do backfill da seção 8.
+  if nullif(trim(coalesce(p_praca, '')), '') is not null then
+    v_praca_id := public.vessel_praca_id_ativa(p_praca);
+    if v_praca_id is null then
+      return json_build_object('ok', false, 'situacao', 'praca_invalida');
+    end if;
+  else
+    v_praca_da_cidade := public.vessel_praca_id_da_cidade(p_cidade);
+  end if;
+  if length(trim(coalesce(p_instagram, ''))) > 120 then
+    return json_build_object('ok', false, 'situacao', 'instagram_longo');
+  end if;
+
+  -- Teto por IP, mudo: quem apanha não pode saber.
+  select count(*) into v_recentes from public.vessel_stylists
+   where criado_em > now() - interval '1 hour';
+  if v_recentes >= 40 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  select id, codigo into v_id, v_codigo from public.vessel_stylists where whatsapp = v_fone;
+  v_era_nova := v_id is null;
+
+  if v_id is null then
+    -- ⚠️ O CÓDIGO NUNCA MUDA depois de dado: ele vai para dentro de links de
+    -- rastreio que a stylist já mandou para as clientes dela.
+    --
+    -- ⚠️ 25/09/2026 (o código sem repetir): era "quantas stylists há + 1". Uma
+    -- stylist apagada deixa a conta menor que o maior número dado, e a próxima
+    -- inscrição recebia um STY que JÁ EXISTE — a inscrição da página quebrava
+    -- com chave duplicada (`vessel_stylists_codigo_idx`). Agora é a MESMA regra
+    -- de `vessel_stylist_criar` (a do cadastro pela equipe, desde 19/09): a
+    -- FILA com a MESMA trava (as duas portas esperam uma pela outra), o MAIOR
+    -- número já dado + 1, pulando o que já existir, e o CINTO (`unique_violation`
+    -- no código avança e tenta de novo). Códigos que já existem não mudam.
+    perform pg_advisory_xact_lock(hashtext('public.vessel_stylists.codigo')::bigint);
+    for v_volta in 1..3 loop
+      select coalesce(max((substring(s.codigo from '^STY-([0-9]{4})$'))::int), 0)
+        into v_n
+        from public.vessel_stylists s
+       where s.codigo ~ '^STY-[0-9]{4}$';
+
+      v_codigo := null;
+      for i in 1..10000 loop
+        v_n := v_n + 1;
+        if v_n > 9999 then
+          v_n := 0;
+        end if;
+        v_codigo := 'STY-' || lpad(v_n::text, 4, '0');
+        exit when not exists (select 1 from public.vessel_stylists s where s.codigo = v_codigo);
+        v_codigo := null;
+      end loop;
+      if v_codigo is null then
+        -- Sem número livre: a pessoa não pode ver erro nem saber por quê.
+        return json_build_object('ok', true, 'situacao', 'recebido');
+      end if;
+
+      begin
+        -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` grava junto com `praca_preview`.
+        insert into public.vessel_stylists
+          (codigo, nome, whatsapp, cidade, instagram, atuacao, quer_sessao, convidadas,
+           praca_preview, praca_id, teste, origem_canal, origem_campanha, origem_utm)
+        values (v_codigo, trim(p_nome), v_fone,
+                nullif(trim(coalesce(p_cidade, '')), ''), nullif(trim(coalesce(p_instagram, '')), ''),
+                nullif(trim(coalesce(p_atuacao, '')), ''), nullif(trim(coalesce(p_quer_sessao, '')), ''),
+                nullif(trim(coalesce(p_convidadas, '')), ''), upper(nullif(trim(coalesce(p_praca, '')), '')),
+                -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): quem NASCE aqui não tem
+                -- praça nenhuma, então a deduzida da cidade entra direto.
+                coalesce(v_praca_id, v_praca_da_cidade),
+                p_teste,
+                coalesce(nullif(trim(p_origem ->> 'canal'), ''), 'lp-stylist-circle'),
+                nullif(trim(p_origem ->> 'utm_campaign'), ''),
+                p_origem)
+        on conflict (whatsapp) do nothing
+        returning id into v_id;
+        exit;
+      exception when unique_violation then
+        get stacked diagnostics v_indice = constraint_name;
+        if v_indice is distinct from 'vessel_stylists_codigo_idx' then
+          raise;                               -- outra coisa: não é para engolir
+        end if;                                -- o código: conta de novo na volta
+        v_id := null;
+      end;
+    end loop;
+    if v_id is null then
+      select id, codigo into v_id, v_codigo from public.vessel_stylists where whatsapp = v_fone;
+    end if;
+    if v_id is null then
+      -- as três voltas perderam a disputa do código: responde calmo, sem gravar
+      return json_build_object('ok', true, 'situacao', 'recebido');
+    end if;
+  else
+    -- Ela voltou e contou mais: o que chega agora vale, o que não veio fica.
+    update public.vessel_stylists
+       set nome = coalesce(nullif(trim(coalesce(p_nome, '')), ''), nome),
+           cidade = coalesce(nullif(trim(coalesce(p_cidade, '')), ''), cidade),
+           instagram = coalesce(nullif(trim(coalesce(p_instagram, '')), ''), instagram),
+           atuacao = coalesce(nullif(trim(coalesce(p_atuacao, '')), ''), atuacao),
+           quer_sessao = coalesce(nullif(trim(coalesce(p_quer_sessao, '')), ''), quer_sessao),
+           convidadas = coalesce(nullif(trim(coalesce(p_convidadas, '')), ''), convidadas),
+           praca_preview = coalesce(upper(nullif(trim(coalesce(p_praca, '')), '')), praca_preview),
+           -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` junto — só muda quando `p_praca` veio.
+           -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): a praça DEDUZIDA da cidade é a
+           -- ÚLTIMA perna do `coalesce` — ela só PREENCHE quem está sem praça,
+           -- nunca MOVE quem já tem uma. Mover alguém de praça por um campo de
+           -- formulário público (a pessoa corrige a grafia da cidade e troca
+           -- de loja de destino sem ninguém ver) seria justamente o tipo de
+           -- mudança calada que este trabalho existe para matar.
+           praca_id = coalesce(v_praca_id, praca_id, v_praca_da_cidade),
+           atualizado_em = now()
+     where id = v_id;
+  end if;
+
+  -- ⚠️ TASK 11 RODADA 1 DE CONSERTO (IMPORTANTE 2) — a porta PÚBLICA (a
+  -- landing page do Stylist Circle) não vinculava à edição aberta: quem se
+  -- inscrevia no meio de uma rodada ficava fora do placar dela, calado, até
+  -- alguém abrir a próxima edição. `p_fechar_antigo => not v_era_nova`: quem
+  -- está se inscrevendo PELA PRIMEIRA VEZ não tem vínculo antigo para fechar
+  -- (mesma regra de `vessel_stylist_criar`); quem VOLTOU e mudou de praça
+  -- (o ramo `else`, acima) passa pela mesma trava do CRÍTICO 1 — fecha o
+  -- vínculo aberto da praça antiga antes de abrir o da nova.
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): a praça EFETIVA é a que FICOU GRAVADA
+  -- na linha — lida de volta, nunca deduzida de novo aqui. Com a praça vindo
+  -- da cidade, `v_praca_id` sozinho seria nulo e a sincronização não faria
+  -- nada: a inscrição continuaria fora da edição aberta, que é o defeito que
+  -- o IMPORTANTE 2 (rodada anterior) fechou por outra porta.
+  select s.praca_id into v_praca_id from public.vessel_stylists s where s.id = v_id;
+  perform public.vessel_stylist_sincronizar_edicao(v_id, v_praca_id, not v_era_nova);
+
+  -- As permissões, separadas por finalidade — a de atendimento sempre, a de
+  -- marketing só se ela marcou.
+  insert into public.vessel_consentimentos (stylist_id, finalidade, canal, versao, fonte, teste)
+  values (v_id, 'atendimento', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+          'lp-stylist-circle', p_teste);
+  if coalesce(p_aceite_marketing, false) then
+    insert into public.vessel_consentimentos (stylist_id, finalidade, canal, versao, fonte, teste)
+    values (v_id, 'marketing', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+            'lp-stylist-circle', p_teste);
+  end if;
+
+  -- ⚠️ O CÓDIGO NÃO VOLTA PARA A PÁGINA. Ele é identificador interno de
+  -- rastreio; devolvê-lo ao navegador o transformaria em coisa pública, e o
+  -- módulo 10 quer o contrário.
+  return json_build_object('ok', true, 'situacao', 'recebido');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_pedido_marcado_presente(p_texto text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select coalesce(p_texto, '') <> '' and
+         translate(lower(p_texto), 'áéíóúâêôãõç', 'aeiouaeoaoc') like '%presente%';
 $function$;
 
 CREATE OR REPLACE FUNCTION public.vessel_pessoa_por_telefone(p_nome text, p_telefone text, p_email text DEFAULT NULL::text, p_cidade text DEFAULT NULL::text)
@@ -2191,6 +4081,25 @@ begin
                            where s.praca_id = p.id and not coalesce(s.teste, false)))
            order by p.ordem, p.id)
       from public.vessel_pracas p), '[]'::json);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_pre_venda_restantes()
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_total constant int := 10;
+  v_feitos int;
+begin
+  select count(*) into v_feitos
+    from public.vessel_lista_espera where origem = 'pre-venda';
+  return json_build_object(
+    'total', v_total,
+    'restam', greatest(0, v_total - v_feitos),
+    'esgotou', v_feitos >= v_total);
 end;
 $function$;
 
@@ -2680,6 +4589,259 @@ begin
   return new;
 end $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_registrar_cartao(p_nome text, p_whatsapp text, p_loja text, p_quando timestamp with time zone, p_client_advisor text, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip text := public.vessel_hash_de_origem();
+  v_recentes int; v_pessoa bigint; v_codigo text; v_cheio int; v_ja int;
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then return json_build_object('ok', true); end if;
+  if coalesce(trim(p_nome), '') = '' or public.vessel_telefone_canonico(p_whatsapp) is null then
+    return json_build_object('ok', false, 'erro', 'Confira o nome e o WhatsApp da cliente.');
+  end if;
+  if p_loja not in ('iguatemi', 'tivoli', 'parkshopping') then
+    return json_build_object('ok', false, 'erro', 'Escolha a loja.');
+  end if;
+  if p_quando is null or p_quando < now() - interval '1 day' then
+    return json_build_object('ok', false, 'erro', 'Confira a data e o horario.');
+  end if;
+  select count(*) into v_recentes from public.vessel_atendimentos
+   where ip_hash = v_ip and origem_registro = 'appointment_card'
+     and criado_em > now() - interval '1 hour';
+  if v_recentes >= 60 then
+    return json_build_object('ok', true, 'codigo', public.vessel_novo_codigo_de_convite());
+  end if;
+
+  -- ⚠️ A TRAVA, ANTES DA CONTA. Uma por loja e por dia.
+  perform pg_advisory_xact_lock(
+    hashtext('vessel_agenda_' || p_loja || '_' ||
+             ((p_quando at time zone 'America/Sao_Paulo')::date)::text));
+
+  select coalesce(ao_mesmo_tempo, 1) into v_cheio
+    from public.vessel_agenda_da_loja where loja = p_loja;
+  v_cheio := coalesce(v_cheio, 1);
+  v_ja := public.vessel_visitas_no_horario(p_loja, p_quando);
+  if v_ja >= v_cheio then
+    -- ⚠️ A RECUSA DIZ O MOTIVO, e não "confira os dados": quem está com a
+    -- cliente na frente precisa saber que o problema é a HORA, para oferecer
+    -- outra na mesma conversa.
+    return json_build_object('ok', false, 'situacao', 'horario_ocupado',
+      'erro', 'Esse horário já tem uma visita marcada nesta loja. Escolha outro.');
+  end if;
+
+  v_pessoa := public.vessel_pessoa_por_telefone(p_nome, p_whatsapp);
+  update public.vessel_pessoas set teste = p_teste where id = v_pessoa;
+  v_codigo := public.vessel_novo_codigo_de_convite();
+  insert into public.vessel_atendimentos (
+    pessoa_id, loja, client_advisor, quando, status, convite_codigo, origem_registro, ip_hash, teste)
+  values (v_pessoa, p_loja, p_client_advisor, p_quando, 'confirmado', v_codigo,
+          'appointment_card', v_ip, p_teste);
+  return json_build_object('ok', true, 'codigo', v_codigo);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_registrar_como_cliente(p_token text, p_codigo text, p_onde text DEFAULT NULL::text, p_comprado_em date DEFAULT NULL::date, p_so_teste boolean DEFAULT false, p_presente_de_nome text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_sessao json; v_c record; v_aberto json;
+  v_codigo text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+begin
+  v_sessao := public.vessel_conta_da_sessao(p_token);
+  if not (v_sessao ->> 'ok')::boolean then
+    return json_build_object('ok', false, 'motivo', 'sem_sessao');
+  end if;
+  select * into v_c from public.vessel_clientes where id = (v_sessao ->> 'cliente_id')::uuid;
+
+  -- ⚠️ AQUI MORAVA A TRAVA DE LOTE DE TESTE (`fora_do_teste`). Ela saiu por
+  -- decisão do dono, com a Fase 2 (plano de 18/09/2026). O que continua
+  -- segurando a peça de outra pessoa NÃO é esta função e nunca foi: é a
+  -- trava da dona dentro de `vessel_decidir_pedido_de_registro` — abrir um
+  -- pedido de registro nunca deu a peça a ninguém, só põe a linha na fila.
+  -- Peça com dona de CPF diferente cai em `ja_tem_dona` e vai para a fila do
+  -- painel, onde uma pessoa decide. Isso não mudou uma linha.
+  --
+  -- ⚠️ `p_so_teste` FICA, SEM EFEITO. Removê-lo mudaria a assinatura, e
+  -- `create or replace` com assinatura diferente deixa as DUAS versões no ar
+  -- (sobrecarga). A edge `vessel-registrar-garantia` manda esse campo em duas
+  -- chamadas; tirar o parâmetro quebraria as duas com `function does not
+  -- exist`.
+  v_aberto := public.vessel_abrir_pedido_de_registro(
+    p_codigo, v_c.nome, v_c.cpf, v_c.whatsapp, p_onde, p_comprado_em, v_c.nascimento);
+  if not (v_aberto ->> 'ok')::boolean then return v_aberto; end if;
+
+  update public.vessel_pedidos_de_registro
+     set cliente_id = v_c.id,
+         presente_de_nome = coalesce(nullif(trim(coalesce(p_presente_de_nome, '')), ''),
+                                      presente_de_nome)
+   where id = (v_aberto ->> 'pedido')::uuid;
+
+  -- `ja_tem_dono` e `dono_curto` atravessam de `vessel_abrir_pedido_de_registro`
+  -- sem alteração: é a peça já ter dona OU NÃO, e a edge (e a tela) precisam
+  -- disso para explicar a situação à cliente.
+  return json_build_object('ok', true, 'pedido', v_aberto ->> 'pedido',
+                           'sku', v_aberto ->> 'sku', 'cliente_id', v_c.id,
+                           'ja_tem_dono', (v_aberto ->> 'ja_tem_dono')::boolean,
+                           'dono_curto', v_aberto ->> 'dono_curto');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_rsvp_da_convidada(p_chave text, p_convidada text, p_resposta text, p_aceite_marketing boolean DEFAULT false, p_aceite_versao text DEFAULT NULL::text, p_armadilha text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_t   record;
+  v_ip  text := public.vessel_hash_de_origem();
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+  if p_resposta is null or p_resposta not in ('sim', 'falar-com-equipe') then
+    return json_build_object('ok', false, 'situacao', 'resposta_invalida');
+  end if;
+  select t.id, t.pessoa_id, t.teste into v_t
+    from public.vessel_atendimentos t
+    join public.vessel_private_edits e on e.codigo = t.evento_codigo
+   where e.chave = upper(nullif(trim(coalesce(p_chave, '')), ''))
+     and t.chave_convite = upper(nullif(trim(coalesce(p_convidada, '')), ''))
+     and e.ativa and not coalesce(e.arquivada, false)
+     and e.status not in ('cancelado', 'nao_realizado', 'realizado');
+  if not found then return json_build_object('ok', false, 'situacao', 'convite_invalido'); end if;
+
+  -- ⚠️ 25/09/2026: O TETO DE TENTATIVAS, no estilo das portas públicas da
+  -- Beauty Session: passou de 10 respostas na última hora para ESTA convidada,
+  -- ou de 60 vindas do mesmo endereço (o hash do IP), responde o mesmo
+  -- "recebido" de sempre e NÃO grava nada — quem apanha não pode saber. Um
+  -- robô com o link não reescreve a resposta dela sem fim, nem enche
+  -- `vessel_consentimentos`. Só conta tentativa com convite válido: link
+  -- errado já volta `convite_invalido` sem gravar.
+  if (select count(*) from public.vessel_rsvp_tentativas
+       where atendimento_id = v_t.id and momento > now() - interval '1 hour') >= 10
+     or (select count(*) from public.vessel_rsvp_tentativas
+          where ip_hash = v_ip and momento > now() - interval '1 hour') >= 60 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+  insert into public.vessel_rsvp_tentativas (atendimento_id, ip_hash, teste)
+  values (v_t.id, v_ip, coalesce(v_t.teste, false));
+
+  update public.vessel_atendimentos set rsvp = p_resposta, atualizado_em = now() where id = v_t.id;
+
+  -- A permissão de atendimento, como no RSVP geral — uma por hora no máximo,
+  -- para quem aperta o botão três vezes não virar três aceites.
+  -- ⚠️ `momento`, NÃO `criado_em`: `vessel_consentimentos` não tem
+  -- `criado_em` (conferido no banco antes de escrever esta linha).
+  if not exists (select 1 from public.vessel_consentimentos
+                  where pessoa_id = v_t.pessoa_id and finalidade = 'atendimento'
+                    and fonte = 'private-edit' and momento > now() - interval '1 hour') then
+    insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+    values (v_t.pessoa_id, 'atendimento', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+            'private-edit', v_t.teste);
+  end if;
+  if coalesce(p_aceite_marketing, false) then
+    insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+    values (v_t.pessoa_id, 'marketing', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+            'private-edit', v_t.teste);
+  end if;
+  return json_build_object('ok', true, 'situacao', 'recebido');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_rsvp_da_private_edit(p_chave text, p_nome text, p_whatsapp text, p_resposta text, p_aceite_marketing boolean DEFAULT false, p_aceite_versao text DEFAULT NULL::text, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_recentes int;
+  v_e        record;
+  v_pessoa   bigint;
+  v_ja       bigint;
+begin
+  -- A armadilha continua muda: robô que soubesse que caiu nela tentaria de
+  -- outro jeito.
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  if coalesce(trim(p_nome), '') = ''
+     or public.vessel_telefone_canonico(p_whatsapp) is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e o WhatsApp com DDD.');
+  end if;
+  if p_resposta is null or p_resposta not in ('sim', 'falar-com-equipe') then
+    return json_build_object('ok', false, 'situacao', 'resposta_invalida');
+  end if;
+
+  select count(*) into v_recentes from public.vessel_atendimentos
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+  if v_recentes >= 20 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  select e.codigo, e.quando, e.loja, s.codigo as stylist
+    into v_e
+    from public.vessel_private_edits e
+    join public.vessel_stylists s on s.id = e.stylist_id
+   where e.chave = upper(nullif(trim(coalesce(p_chave, '')), '')) and e.ativa;
+  if not found then
+    return json_build_object('ok', false, 'situacao', 'convite_invalido');
+  end if;
+
+  v_pessoa := public.vessel_pessoa_por_telefone(p_nome, p_whatsapp);
+  update public.vessel_pessoas set teste = p_teste where id = v_pessoa;
+
+  -- ⚠️ A ORIGEM SÓ ACRESCENTA (first touch, módulo 10), e o canal e as UTMs são
+  -- cravados aqui: quem chegou por este convite veio pela anfitriã, e isso não
+  -- se aceita do navegador.
+  insert into public.vessel_origens
+    (pessoa_id, canal, evento_id, stylist_id, utm_source, utm_medium, utm_campaign)
+  values (v_pessoa, 'private_edit', v_e.codigo, v_e.stylist,
+          'private_edit', 'convite', replace(lower(v_e.codigo), '-', '_'));
+
+  -- ⚠️ UMA CONVIDADA, UMA CADEIRA. Responder de novo CORRIGE a resposta; não
+  -- cria uma segunda presença no mesmo encontro.
+  select id into v_ja from public.vessel_atendimentos
+   where pessoa_id = v_pessoa and evento_codigo = v_e.codigo
+   order by id desc limit 1;
+
+  if v_ja is not null then
+    update public.vessel_atendimentos
+       set rsvp = p_resposta, atualizado_em = now()
+     where id = v_ja;
+  else
+    insert into public.vessel_atendimentos
+      (pessoa_id, loja, quando, status, origem_registro, ip_hash, teste,
+       evento_codigo, rsvp)
+    values (v_pessoa, v_e.loja, v_e.quando, 'solicitado', 'private-edit', v_ip, p_teste,
+            v_e.codigo, p_resposta);
+  end if;
+
+  -- A permissão de atendimento é sempre gravada; a de marketing, só se marcou.
+  insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+  values (v_pessoa, 'atendimento', 'whatsapp',
+          nullif(trim(coalesce(p_aceite_versao, '')), ''), 'private-edit', p_teste);
+  if coalesce(p_aceite_marketing, false) then
+    insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+    values (v_pessoa, 'marketing', 'whatsapp',
+            nullif(trim(coalesce(p_aceite_versao, '')), ''), 'private-edit', p_teste);
+  end if;
+
+  return json_build_object('ok', true, 'situacao', 'recebido');
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_scorecard_da_stylist(p_codigo text, p_de date DEFAULT NULL::date, p_ate date DEFAULT NULL::date, p_dias integer DEFAULT 14)
  RETURNS json
  LANGUAGE plpgsql
@@ -2759,6 +4921,18 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_sessao_do_codigo(p_codigo text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select s.codigo from public.vessel_beauty_sessions s
+   where s.codigo = upper(nullif(trim(coalesce(p_codigo, '')), ''))
+     and coalesce(s.ativa, false)
+   limit 1;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_situacao_do_atendimento(p_id bigint, p_situacao text)
  RETURNS json
  LANGUAGE plpgsql
@@ -2830,6 +5004,155 @@ AS $function$
 begin
   raise exception '% e so-acrescenta: % nao e permitido', tg_table_name, lower(tg_op)
     using errcode = '42501';
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_solicitar_atendimento(p_nome text, p_whatsapp text, p_loja text, p_momento text DEFAULT NULL::text, p_periodo text DEFAULT NULL::text, p_recado text DEFAULT NULL::text, p_aceite_marketing boolean DEFAULT false, p_aceite_versao text DEFAULT NULL::text, p_origem jsonb DEFAULT NULL::jsonb, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_recentes int;
+  v_pessoa   bigint;
+  v_ja       bigint;
+  v_id       bigint;
+  v_recado   text := nullif(trim(coalesce(p_recado, '')), '');
+  v_stylist  text;
+  v_sessao   text;
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  if coalesce(trim(p_nome), '') = ''
+     or public.vessel_telefone_canonico(p_whatsapp) is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e o WhatsApp com DDD.');
+  end if;
+  if p_loja is null or p_loja not in ('iguatemi', 'tivoli', 'parkshopping') then
+    return json_build_object('ok', false, 'situacao', 'loja_invalida',
+      'erro', 'Escolha a loja.');
+  end if;
+  if nullif(trim(coalesce(p_momento, '')), '') is not null
+     and p_momento not in ('dia-a-dia', 'trabalho', 'ocasiao', 'personalizacao', 'conhecer') then
+    return json_build_object('ok', false, 'situacao', 'momento_invalido');
+  end if;
+  if nullif(trim(coalesce(p_periodo, '')), '') is not null
+     and p_periodo not in ('manha', 'tarde', 'noite', 'qualquer') then
+    return json_build_object('ok', false, 'situacao', 'periodo_invalido');
+  end if;
+  if length(v_recado) > 300 then
+    return json_build_object('ok', false, 'situacao', 'recado_longo',
+      'erro', 'Seu recado ficou longo demais. Resuma em ate 300 letras.');
+  end if;
+
+  select count(*) into v_recentes from public.vessel_atendimentos
+   where ip_hash = v_ip and criado_em > now() - interval '1 hour';
+  if v_recentes >= 20 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  v_pessoa := public.vessel_pessoa_por_telefone(p_nome, p_whatsapp);
+  update public.vessel_pessoas set teste = p_teste where id = v_pessoa;
+
+  -- ⚠️ QA03: A ORIGEM SÓ ACRESCENTA, NUNCA ATUALIZA (first touch).
+  if p_origem is not null then
+    v_stylist := public.vessel_stylist_do_codigo(p_origem ->> 'stylist_id');
+    -- A sessão só vale se o código existir na agenda — e ela perde para a
+    -- stylist quando os dois vierem, porque a indicação de uma pessoa é mais
+    -- específica do que o evento em que o cartão foi entregue.
+    v_sessao := public.vessel_sessao_do_codigo(p_origem ->> 'evento_id');
+
+    insert into public.vessel_origens
+      (pessoa_id, canal, campanha_id, evento_id, parceiro_id, stylist_id, criativo_id,
+       utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+       clique_meta, navegador_meta)
+    values (v_pessoa,
+      -- ⚠️ 'stylist' E 'beauty_session' SÃO CANAIS RESERVADOS: só o servidor os
+      -- escreve, e só depois de achar o código na tabela. Sem estas linhas
+      -- bastaria a página mandar o canal com um código inventado para nascer
+      -- uma origem fantasma no painel, com tráfego que ninguém trouxe.
+      case when v_stylist is not null then 'stylist'
+           when v_sessao  is not null then 'beauty_session'
+           when lower(coalesce(trim(p_origem ->> 'canal'), ''))
+                  in ('stylist', 'beauty_session', '')
+             then 'lp-private-appointment'
+           else trim(p_origem ->> 'canal') end,
+      nullif(trim(p_origem ->> 'campanha_id'), ''),
+      -- O evento só entra conferido: código torto vira NULL, e não etiqueta.
+      v_sessao,
+      nullif(trim(p_origem ->> 'parceiro_id'), ''),
+      v_stylist,
+      nullif(trim(p_origem ->> 'criativo_id'), ''),
+      -- Mesma reserva na UTM: um link com `utm_source=beauty_session` colado à
+      -- mão contaria como sessão sem sessão nenhuma.
+      case when v_stylist is not null then 'stylist'
+           when v_sessao  is not null then 'beauty_session'
+           when lower(coalesce(trim(p_origem ->> 'utm_source'), ''))
+                  in ('stylist', 'beauty_session') then null
+           else nullif(trim(p_origem ->> 'utm_source'), '') end,
+      case when v_stylist is not null then 'referral'
+           -- ⚠️ O MEIO DO CARTÃO É RESPEITADO quando a sessão é real: é ele que
+           -- separa o QR impresso (offline_qr) do link mandado por WhatsApp, e
+           -- essa diferença é metade do que a medição do cartão existe para
+           -- responder. Só o que NÃO for um meio conhecido cai no padrão.
+           when v_sessao is not null then
+             case when lower(coalesce(trim(p_origem ->> 'utm_medium'), ''))
+                         in ('offline_qr', 'whatsapp', 'referral')
+                  then lower(trim(p_origem ->> 'utm_medium'))
+                  else 'offline_qr' end
+           else nullif(trim(p_origem ->> 'utm_medium'), '') end,
+      case when v_stylist is not null then replace(lower(v_stylist), '-', '_')
+           when v_sessao  is not null then replace(lower(v_sessao), '-', '_')
+           else nullif(trim(p_origem ->> 'utm_campaign'), '') end,
+      nullif(trim(p_origem ->> 'utm_content'), ''), nullif(trim(p_origem ->> 'utm_term'), ''),
+      nullif(trim(p_origem ->> 'clique_meta'), ''), nullif(trim(p_origem ->> 'navegador_meta'), ''));
+  end if;
+
+  -- ⚠️ QA02: DUPLO CLIQUE NÃO DUPLICA.
+  select id into v_ja from public.vessel_atendimentos
+   where pessoa_id = v_pessoa and loja = p_loja and status = 'solicitado'
+     and criado_em > now() - interval '30 minutes'
+   order by id desc limit 1;
+
+  if v_ja is not null then
+    v_id := v_ja;
+    update public.vessel_atendimentos
+       set momento_de_uso = coalesce(nullif(trim(coalesce(p_momento, '')), ''), momento_de_uso),
+           periodo_preferido = coalesce(nullif(trim(coalesce(p_periodo, '')), ''), periodo_preferido),
+           recado = coalesce(v_recado, recado),
+           atualizado_em = now()
+     where id = v_id;
+  else
+    insert into public.vessel_atendimentos
+      (pessoa_id, loja, quando, status, origem_registro, ip_hash, teste,
+       momento_de_uso, periodo_preferido, recado)
+    values (v_pessoa, p_loja, null, 'solicitado',
+            case when v_stylist is not null then 'stylist'
+                 when v_sessao  is not null then 'beauty-session-cartao'
+                 else 'lp-private-appointment' end,
+            v_ip, p_teste,
+            nullif(trim(coalesce(p_momento, '')), ''),
+            nullif(trim(coalesce(p_periodo, '')), ''), v_recado)
+    returning id into v_id;
+  end if;
+
+  -- ⚠️ QA05: a permissão de atendimento é sempre gravada; a de marketing, só
+  -- se ela marcou.
+  insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+  values (v_pessoa, 'atendimento', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+          coalesce(v_stylist, v_sessao, 'lp-private-appointment'), p_teste);
+
+  if coalesce(p_aceite_marketing, false) then
+    insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+    values (v_pessoa, 'marketing', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+            coalesce(v_stylist, v_sessao, 'lp-private-appointment'), p_teste);
+  end if;
+
+  return json_build_object('ok', true, 'situacao', 'solicitado');
 end;
 $function$;
 
@@ -3163,6 +5486,17 @@ begin
   return json_build_object('ok', true, 'situacao', 'ok',
                            'codigo', v_codigo, 'ativa', v_ativa);
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_stylist_do_codigo(p_codigo text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select s.codigo from public.vessel_stylists s
+   where s.codigo = upper(nullif(trim(coalesce(p_codigo, '')), ''))
+   limit 1;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.vessel_stylist_editar(p_codigo text, p_nome text DEFAULT NULL::text, p_whatsapp text DEFAULT NULL::text, p_cidade text DEFAULT NULL::text, p_instagram text DEFAULT NULL::text, p_atuacao text DEFAULT NULL::text, p_estagio text DEFAULT NULL::text, p_praca text DEFAULT NULL::text, p_loja text DEFAULT NULL::text, p_origem_contato text DEFAULT NULL::text, p_responsavel text DEFAULT NULL::text, p_prospectado_em date DEFAULT NULL::date, p_proxima_acao text DEFAULT NULL::text, p_proxima_acao_em date DEFAULT NULL::date, p_sem_proxima_acao boolean DEFAULT false, p_observacoes text DEFAULT NULL::text, p_sem_contato boolean DEFAULT NULL::boolean)
@@ -4133,6 +6467,337 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.vessel_tentativa_de_presente(p_codigo text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_codigo text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_n int;
+begin
+  insert into public.vessel_tentativas_de_presente (codigo) values (v_codigo);
+
+  select count(*) into v_n from public.vessel_tentativas_de_presente
+   where codigo = v_codigo and quando > now() - interval '24 hours';
+
+  return json_build_object('ok', true, 'permitido', v_n <= 3, 'tentativas', v_n);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_tentativa_de_transferencia(p_codigo text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_codigo text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_n int;
+begin
+  insert into public.vessel_tentativas_de_transferencia (codigo) values (v_codigo);
+
+  select count(*) into v_n from public.vessel_tentativas_de_transferencia
+   where codigo = v_codigo and quando > now() - interval '24 hours';
+
+  return json_build_object('ok', true, 'permitido', v_n <= 5, 'tentativas', v_n);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_teto_de_chamadas(p_chave text, p_max integer, p_janela_segundos integer)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_n int;
+begin
+  if p_chave is null or p_chave !~ '^teto:' or p_max < 1 or p_janela_segundos < 1 then
+    raise exception 'vessel_teto_de_chamadas: parametros invalidos';
+  end if;
+
+  -- limpa só a PRÓPRIA chave, só o que já saiu da janela: a tabela não cresce
+  -- sem fim e a limpeza usa o índice (chave, quando).
+  delete from public.vessel_tentativas_de_login
+   where chave = p_chave and acertou = true
+     and quando < now() - make_interval(secs => p_janela_segundos);
+
+  select count(*) into v_n from public.vessel_tentativas_de_login
+   where chave = p_chave and acertou = true;
+  if v_n >= p_max then
+    return false;
+  end if;
+
+  insert into public.vessel_tentativas_de_login (chave, acertou) values (p_chave, true);
+  return true;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_transferencia_aberta(p_token text, p_codigo text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_sessao  json;
+  v_cliente uuid;
+  v_codigo  text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_reg     record;
+  v_conv    record;
+begin
+  v_sessao := public.vessel_conta_da_sessao(p_token);
+  if not (v_sessao ->> 'ok')::boolean then
+    return json_build_object('ok', false, 'motivo', 'sem_sessao');
+  end if;
+  v_cliente := (v_sessao ->> 'cliente_id')::uuid;
+
+  select * into v_reg from public.vessel_registros where codigo = v_codigo;
+  if not found or v_reg.cliente_id is null or v_reg.cliente_id <> v_cliente then
+    return json_build_object('ok', false, 'motivo', 'nao_e_sua');
+  end if;
+
+  select * into v_conv from public.vessel_transferencias
+   where peca_codigo = v_codigo and usado_em is null and cancelado_em is null
+     and vale_ate > now();
+
+  return json_build_object('ok', true, 'tem', found,
+                           'vale_ate', v_conv.vale_ate);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_transferencia_aceitar(p_token text, p_codigo text, p_codigo_transferencia text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_sessao   json;
+  v_novo     record;
+  v_codigo   text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_digitado text := regexp_replace(coalesce(p_codigo_transferencia, ''), '\D', '', 'g');
+  v_teto     json;
+  v_reg      record;
+  v_conv     record;
+  v_dona     record;
+  v_zap      text;
+begin
+  v_sessao := public.vessel_conta_da_sessao(p_token);
+  if not (v_sessao ->> 'ok')::boolean then
+    return json_build_object('ok', false, 'motivo', 'sem_sessao');
+  end if;
+  select * into v_novo from public.vessel_clientes
+   where id = (v_sessao ->> 'cliente_id')::uuid;
+
+  -- 2. O TETO, ANTES DE QUALQUER CONFERÊNCIA. Ver o cabeçalho desta função.
+  v_teto := public.vessel_tentativa_de_transferencia(v_codigo);
+  if not (v_teto ->> 'permitido')::boolean then
+    return json_build_object('ok', false, 'motivo', 'muitas_tentativas');
+  end if;
+
+  -- Trava a linha da peça: duas aceitações ao mesmo tempo viram fila, e a
+  -- segunda já enxerga o convite marcado como usado pela primeira.
+  select * into v_reg from public.vessel_registros
+   where codigo = v_codigo for no key update;
+  if not found then
+    return json_build_object('ok', false, 'motivo', 'codigo_invalido');
+  end if;
+
+  -- 3. convite aberto, no prazo. `for update` põe em fila quem chegar junto.
+  select * into v_conv from public.vessel_transferencias
+   where peca_codigo = v_codigo and usado_em is null and cancelado_em is null
+     and vale_ate > now()
+     for update;
+  if not found then
+    return json_build_object('ok', false, 'motivo', 'codigo_invalido');
+  end if;
+
+  -- 4. ⚠️ A DONA ATUAL AINDA TEM DE SER QUEM GEROU. Se a peça trocou de dona
+  -- por outro caminho (o painel, por `vessel_trocar_dono` ou por uma aprovação
+  -- na mão), o convite que ficou aberto perde a validade — senão o código
+  -- velho da dona ANTIGA continuaria valendo contra a peça da dona NOVA.
+  -- Confere pelos DOIS lados porque a função do painel troca nome e CPF e NÃO
+  -- mexe em `cliente_id` (medido em 18/09/2026): olhar só o `cliente_id`
+  -- deixaria passar a troca feita pelo painel.
+  select * into v_dona from public.vessel_clientes where id = v_conv.cliente_de;
+  if v_reg.cliente_id is distinct from v_conv.cliente_de
+     or regexp_replace(coalesce(v_reg.cpf, ''), '\D', '', 'g')
+        is distinct from regexp_replace(coalesce(v_dona.cpf, ''), '\D', '', 'g') then
+    return json_build_object('ok', false, 'motivo', 'codigo_invalido');
+  end if;
+
+  -- 5. A dona não transfere para si mesma. Só ELA pode ver esta resposta (é a
+  -- própria `cliente_de`), então não conta nada a ninguém de fora.
+  if v_novo.id = v_conv.cliente_de then
+    return json_build_object('ok', false, 'motivo', 'sua_ja');
+  end if;
+
+  -- 6. o hash, por último.
+  if length(v_digitado) <> 6
+     or v_conv.codigo_hash <> extensions.crypt(v_digitado, v_conv.codigo_hash) then
+    return json_build_object('ok', false, 'motivo', 'codigo_invalido');
+  end if;
+
+  -- ── A TROCA ──────────────────────────────────────────────────────────────
+  -- ⚠️ O QUE NÃO APARECE AQUI É O QUE IMPORTA. `garantia_ate`, `comprado_em`,
+  -- `pedido_id`, `bling_pedido`, `bling_contato_id`, `onde_comprou` e
+  -- `registrado_em` NÃO são tocados: a garantia é a da compra original, e o
+  -- elo com aquela compra é a prova dela. Ver, no cabeçalho deste arquivo, por
+  -- que isso impede reaproveitar `vessel_trocar_dono` (ela zera três desses).
+  --
+  -- ⚠️ O WHATSAPP DA DONA ANTIGA NUNCA ATRAVESSA. Se a conta nova não tem
+  -- telefone, o campo fica vazio — a coluna é `not null`, mas aceita string
+  -- vazia. Carregar o telefone de quem vendeu para a ficha de quem comprou
+  -- seria vazar o contato de uma cliente para dentro do registro de outra.
+  --
+  -- ⚠️ `bling_atualizado_em = now()` TIRA A LINHA DA FILA DO ROBÔ, e é o
+  -- contrário do que `vessel_decidir_pedido_de_registro` faz (ela zera).
+  -- Medido em supabase/functions/vessel-espelhar-lista/index.ts: o robô pega
+  -- as linhas com `bling_atualizado_em` nulo e escreve celular e nascimento no
+  -- contato de `bling_contato_id`. Aqui `bling_contato_id` é, de propósito, o
+  -- contato de QUEM COMPROU — a dona antiga. Deixar a linha na fila faria o
+  -- robô gravar os dados da dona NOVA por cima do cadastro da ANTIGA no Bling,
+  -- calado. A transferência entre clientes não é uma venda do Bling: não há o
+  -- que completar lá. (O próprio robô usa `now()` com esse sentido quando não
+  -- há mudança a fazer.)
+  update public.vessel_registros
+     set nome = v_novo.nome,
+         cpf = v_novo.cpf,
+         whatsapp = coalesce(nullif(regexp_replace(coalesce(v_novo.whatsapp, ''), '\D', '', 'g'), ''), ''),
+         nascimento = v_novo.nascimento,
+         cliente_id = v_novo.id,
+         bling_atualizado_em = now()
+   where codigo = v_codigo;
+
+  update public.vessel_transferencias
+     set usado_em = now(), cliente_para = v_novo.id
+   where id = v_conv.id;
+
+  -- ⚠️ A TRILHA NUNCA LEVA O CÓDIGO DE 6 DÍGITOS. `vessel_edicoes` é lida pelo
+  -- painel; o código é o que vale por uma bolsa. Vai o id do convite, que
+  -- amarra a linha ao papel sem revelá-lo.
+  --
+  -- ⚠️ `feito_por` FICA NULO, e é a verdade: ninguém da Central fez isto. As
+  -- outras ações gravam `auth.uid()`, que aqui seria nulo de qualquer jeito —
+  -- a cliente não tem login do Supabase. Quem fez está em `detalhes`.
+  insert into public.vessel_edicoes (codigo, acao, motivo, detalhes, feito_por)
+  values (v_codigo, 'transferida_pela_dona',
+          'a dona liberou a transferencia com o codigo de 6 digitos',
+          jsonb_build_object(
+            'transferencia', v_conv.id,
+            'de',   jsonb_build_object('cliente_id', v_conv.cliente_de,
+                                       'nome', v_reg.nome,
+                                       'cpf', public.vessel_cpf_mascarado(v_reg.cpf)),
+            'para', jsonb_build_object('cliente_id', v_novo.id,
+                                       'nome', v_novo.nome,
+                                       'cpf', public.vessel_cpf_mascarado(v_novo.cpf)),
+            'garantia_ate', v_reg.garantia_ate), null);
+
+  -- A garantia devolvida é a MESMA que já estava no registro — não é
+  -- recalculada. É esse número que a tela mostra para quem acabou de receber.
+  return json_build_object('ok', true, 'garantia_ate', v_reg.garantia_ate);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_transferencia_cancelar(p_token text, p_codigo text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_sessao  json;
+  v_cliente uuid;
+  v_codigo  text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_reg     record;
+begin
+  v_sessao := public.vessel_conta_da_sessao(p_token);
+  if not (v_sessao ->> 'ok')::boolean then
+    return json_build_object('ok', false, 'motivo', 'sem_sessao');
+  end if;
+  v_cliente := (v_sessao ->> 'cliente_id')::uuid;
+
+  select * into v_reg from public.vessel_registros
+   where codigo = v_codigo for no key update;
+  if not found or v_reg.cliente_id is null or v_reg.cliente_id <> v_cliente then
+    return json_build_object('ok', false, 'motivo', 'nao_e_sua');
+  end if;
+
+  update public.vessel_transferencias
+     set cancelado_em = now()
+   where peca_codigo = v_codigo and usado_em is null and cancelado_em is null;
+
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_transferencia_gerar(p_token text, p_codigo text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_sessao   json;
+  v_cliente  uuid;
+  v_codigo   text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_reg      record;
+  -- ⚠️ SORTEIO CRIPTOGRÁFICO, COM REJEIÇÃO. `random()` do Postgres é semeado
+  -- por sessão: quem vê alguns códigos continua a sequência. E `byte % 10`
+  -- sozinho não serve: 256 não é múltiplo de 10, então 0..5 sairiam mais que
+  -- 6..9. O maior múltiplo de 10 que cabe em 256 é 250; byte de 250 para cima
+  -- é descartado, e o sorteio fica justo.
+  v_teto     int := 256 - (256 % 10);
+  v_byte     int;
+  v_sorteado text := '';
+  v_vale_ate timestamptz := now() + interval '7 days';
+begin
+  v_sessao := public.vessel_conta_da_sessao(p_token);
+  if not (v_sessao ->> 'ok')::boolean then
+    return json_build_object('ok', false, 'motivo', 'sem_sessao');
+  end if;
+  v_cliente := (v_sessao ->> 'cliente_id')::uuid;
+
+  -- ⚠️ AQUI MORAVA A TRAVA DE LOTE DE TESTE (`fora_do_teste`). Saiu com a
+  -- Fase 2. O que segura a peça continua sendo o `nao_e_sua` logo abaixo:
+  -- convite só nasce para quem JÁ é a dona registrada da peça. Sem registro,
+  -- ou com registro de outra conta, não sai convite nenhum — e é por isso
+  -- que `vessel_transferencia_aceitar` nunca precisou de trava de lote.
+
+  -- ⚠️ TRAVA A LINHA DA PEÇA antes de olhar quem é a dona. Sem isto, gerar e
+  -- aceitar ao mesmo tempo passariam os dois pela conferência antes de
+  -- qualquer um gravar.
+  select * into v_reg from public.vessel_registros
+   where codigo = v_codigo for no key update;
+  if not found or v_reg.cliente_id is null or v_reg.cliente_id <> v_cliente then
+    return json_build_object('ok', false, 'motivo', 'nao_e_sua');
+  end if;
+
+  -- ⚠️ CANCELA O ANTERIOR ANTES DE ABRIR O NOVO. Sem isto o índice único
+  -- recusa o segundo convite com erro cru do Postgres, e "gerar de novo"
+  -- simplesmente trava a tela.
+  update public.vessel_transferencias
+     set cancelado_em = now()
+   where peca_codigo = v_codigo and usado_em is null and cancelado_em is null;
+
+  while length(v_sorteado) < 6 loop
+    v_byte := get_byte(extensions.gen_random_bytes(1), 0);
+    continue when v_byte >= v_teto;      -- descarta e sorteia outro
+    v_sorteado := v_sorteado || (v_byte % 10)::text;
+  end loop;
+
+  insert into public.vessel_transferencias
+    (peca_codigo, cliente_de, codigo_hash, vale_ate)
+  values (v_codigo, v_cliente,
+          extensions.crypt(v_sorteado, extensions.gen_salt('bf', 10)), v_vale_ate);
+
+  return json_build_object('ok', true, 'codigo_transferencia', v_sorteado,
+                           'vale_ate', v_vale_ate);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.vessel_vendas_dos_encontros(p_dias integer DEFAULT 14)
  RETURNS TABLE(pedido_id bigint, evento_codigo text, stylist_id bigint, pessoa_id bigint, receita numeric, pecas numeric, quando_do_encontro timestamp with time zone)
  LANGUAGE sql
@@ -4161,6 +6826,180 @@ AS $function$
                and (e.quando at time zone 'America/Sao_Paulo')::date
                    + greatest(coalesce(p_dias, 14), 0)
    order by p.id, e.quando, e.id
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_vendedores_parecidos(p_nome text)
+ RETURNS json
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select coalesce(json_agg(json_build_object('id', bling_vendedor_id, 'nome', nome)
+                           order by ordem, nome), '[]'::json)
+    from (
+      select v.bling_vendedor_id, v.nome,
+             -- Ativo primeiro: quem trabalha hoje é o palpite mais provável.
+             case when v.situacao = 'A' then 0 else 1 end as ordem
+        from public.vessel_vendedores_bling v
+       where length(public.vessel_chave_do_nome(p_nome)) >= 3
+         -- Começa com o que foi digitado, OU tem uma PALAVRA que começa com
+         -- isso. "Kariny" acha "Kariny Stefany Ezidio dos Santos"; "Godoy" acha
+         -- "Thaina Mikaela de Godoy Pimenta". Pedaço no meio de palavra não
+         -- acha nada — senão "ana" traria meia loja.
+         and (v.chave like public.vessel_chave_do_nome(p_nome) || '%'
+              or v.chave like '% ' || public.vessel_chave_do_nome(p_nome) || '%')
+         -- Vendedor excluído no Bling não é oferecido: ninguém se liga a uma
+         -- ficha que a loja já apagou.
+         and coalesce(v.situacao, 'A') <> 'E'
+         -- Já é de outra Client Advisor? Então não é desta.
+         and not exists (select 1 from public.vessel_client_advisors c
+                          where c.bling_vendedor_id = v.bling_vendedor_id)
+       limit 5) as parecidos;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_verificar(p_codigo text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_codigo text := upper(regexp_replace(coalesce(p_codigo, ''), '[\s.\-_]', '', 'g'));
+  v_peca   record;
+  v_reg    record;
+  v_cab    json := nullif(current_setting('request.headers', true), '')::json;
+begin
+  select p.codigo, p.numero_na_serie, l.modelo, l.cor, l.sku, l.quantidade,
+         l.fabricado_em, l.fotos, l.teste, l.material
+    into v_peca
+    from public.vessel_pecas p
+    join public.vessel_lotes l on l.id = p.lote_id
+   where p.codigo = v_codigo;
+
+  insert into public.vessel_leituras (codigo, achou, agente, ip_hash)
+  values (
+    left(v_codigo, 32),
+    v_peca.codigo is not null,
+    left(coalesce(v_cab ->> 'user-agent', ''), 300),
+    encode(extensions.digest(coalesce(v_cab ->> 'x-forwarded-for', 'sem-ip'), 'sha256'), 'hex')
+  );
+
+  if v_peca.codigo is null then
+    return json_build_object('ok', false);
+  end if;
+
+  select * into v_reg from public.vessel_registros where codigo = v_codigo;
+
+  return json_build_object(
+    'ok', true,
+    'modelo', v_peca.modelo,
+    'cor', v_peca.cor,
+    'sku', v_peca.sku,
+    'numero', v_peca.numero_na_serie,
+    'total', v_peca.quantidade,
+    'fabricado_em', v_peca.fabricado_em,
+    'fotos', coalesce(v_peca.fotos, array[]::text[]),
+    'teste', coalesce(v_peca.teste, false),
+    'registrada', v_reg.codigo is not null,
+    'dono_curto', public.vessel_nome_curto(v_reg.nome),
+    -- Nome completo para TODA peça, pelo mesmo portão do nome curto (decisão
+    -- do dono, 18/09/2026 — ver o cabeçalho deste arquivo).
+    'dono_nome', case when public.vessel_nome_curto(v_reg.nome) is not null then v_reg.nome else null end,
+    'pode_revelar', v_reg.codigo is not null,
+    'registrada_em', v_reg.registrado_em,
+    'garantia_ate', v_reg.garantia_ate,
+    -- Regra de 18/09/2026. Nulo quando o lote ainda não tem material.
+    'material', v_peca.material,
+    'garantia_meses', public.vessel_meses_de_garantia(v_peca.material)
+  );
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_visita_da_sessao(p_codigo text, p_peca text DEFAULT 'mesa'::text, p_via text DEFAULT 'qr'::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_codigo   text := public.vessel_sessao_do_codigo(p_codigo);
+  v_recentes int;
+begin
+  -- ⚠️ RESPOSTA IGUAL PARA CÓDIGO BOM E CÓDIGO INVENTADO, como na irmã do
+  -- stylist: dizer "não existe" entregaria a agenda de sessões a quem pedisse.
+  if v_codigo is null then
+    return json_build_object('ok', true);
+  end if;
+
+  -- O mesmo teto da irmã: 30 aberturas por hora do mesmo lugar. Numa sessão de
+  -- salão o Wi-Fi é compartilhado, e sem teto uma pessoa recarregando a página
+  -- vira "tráfego" que não existiu.
+  select count(*) into v_recentes from public.vessel_sessao_aberturas
+   where ip_hash = v_ip and momento > now() - interval '1 hour';
+  if v_recentes >= 30 then
+    return json_build_object('ok', true);
+  end if;
+
+  insert into public.vessel_sessao_aberturas (codigo, peca, via, ip_hash)
+  values (v_codigo,
+          case when p_peca in ('mesa', 'cartao') then p_peca else 'mesa' end,
+          case when p_via  in ('qr', 'texto')    then p_via  else 'qr'   end,
+          v_ip);
+
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_visita_do_stylist(p_codigo text, p_via text DEFAULT 'qr'::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_codigo   text := public.vessel_stylist_do_codigo(p_codigo);
+  v_recentes int;
+begin
+  -- ⚠️ RESPOSTA IGUAL PARA CÓDIGO BOM E CÓDIGO INVENTADO. Dizer "não existe"
+  -- entregaria de graça quantas stylists a marca tem: bastaria pedir de
+  -- STY-0001 até parar de achar.
+  if v_codigo is null then
+    return json_build_object('ok', true);
+  end if;
+
+  select count(*) into v_recentes from public.vessel_stylist_aberturas
+   where ip_hash = v_ip and momento > now() - interval '1 hour';
+  if v_recentes >= 30 then
+    return json_build_object('ok', true);
+  end if;
+
+  insert into public.vessel_stylist_aberturas (codigo, via, ip_hash)
+  values (v_codigo, case when p_via in ('qr', 'texto') then p_via else 'qr' end, v_ip);
+
+  return json_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.vessel_visitas_no_horario(p_loja text, p_quando timestamp with time zone, p_ignorar bigint DEFAULT NULL::bigint)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select count(*)::int
+    from public.vessel_atendimentos a,
+         lateral (select coalesce(
+                    (select g.minutos_por_visita from public.vessel_agenda_da_loja g
+                      where g.loja = p_loja), 60) as m) cfg
+   where a.loja = p_loja
+     and a.status in ('solicitado', 'confirmado', 'realizado')
+     and a.quando is not null
+     and (p_ignorar is null or a.id <> p_ignorar)
+     -- Duas janelas de `m` minutos se cruzam quando a distância entre os
+     -- inícios é MENOR que `m`.
+     and abs(extract(epoch from (a.quando - p_quando))) < cfg.m * 60;
 $function$;
 
 -- gatilhos vivos

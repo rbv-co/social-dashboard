@@ -16,11 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -209,40 +207,12 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	args := pgx.NamedArgs{}
-	enviados := map[string]json.RawMessage{}
-	var chamadas []string
-	var conta json.RawMessage
-	var temConta bool
-	for _, pr := range f.Params {
-		v, tem := corpo[pr.Nome]
-		delete(corpo, pr.Nome)
-		if pr.Nome == f.ParamConta {
-			conta, temConta = v, tem
-		}
-		if !tem {
-			if !pr.Opcional {
-				dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "falta o parâmetro "+pr.Nome)
-				return
-			}
-			continue
-		}
-		if msg := formaOk(pr, v); msg != "" {
-			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", msg)
-			return
-		}
-		args[pr.Nome] = string(v)
-		enviados[pr.Nome] = v
-		chamadas = append(chamadas, pgx.Identifier{pr.Nome}.Sanitize()+" => "+expr(pr))
-	}
-	if len(corpo) > 0 {
-		k := slices.Min(slices.Collect(maps.Keys(corpo)))
-		if r := []rune(k); len(r) > 40 {
-			k = string(r[:40]) + "…"
-		}
-		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "parâmetro desconhecido: "+k)
+	ped, msg := f.Montar(corpo)
+	if msg != "" {
+		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", msg)
 		return
 	}
+	conta, temConta := ped.conta, ped.temConta
 	if f.ParamConta != "" && temConta && strings.TrimSpace(string(conta)) != "null" {
 		var c string
 		if json.Unmarshal(conta, &c) != nil {
@@ -254,24 +224,16 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	chamada := pgx.Identifier{f.Nome}.Sanitize() + "(" + strings.Join(chamadas, ", ") + ")"
 	var saida []byte
 	err = banco.ComUsuario(r.Context(), rg.pool, a.ID, func(tx pgx.Tx) error {
 		if f.Conferir != nil {
-			if err := f.Conferir(r.Context(), tx, e, enviados); err != nil {
+			if err := f.Conferir(r.Context(), tx, e, ped.Enviados); err != nil {
 				return err
 			}
 		}
-		switch f.Retorno {
-		case Conjunto:
-			// linha inteira (r.*: uma coluna chamada r não a esconde) e o teto de linhas do PostgREST
-			return tx.QueryRow(r.Context(), `select coalesce(json_agg(t.v), '[]'::json) from (select to_json(r.*) as v from `+
-				chamada+` r limit `+strconv.Itoa(dados.LimitePadrao)+`) t`, args).Scan(&saida)
-		case Nada:
-			_, err := tx.Exec(r.Context(), `select `+chamada, args)
-			return err
-		}
-		return tx.QueryRow(r.Context(), `select coalesce(to_json(`+chamada+`), 'null'::json)`, args).Scan(&saida)
+		var err error
+		saida, err = f.Rodar(r.Context(), tx, ped)
+		return err
 	})
 	if errors.Is(err, autz.ErrNegado) {
 		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
