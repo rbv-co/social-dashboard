@@ -11,6 +11,7 @@
 import { STATUS_QUE_CONTAM, LOJA_ID_SHOPIFY } from '../../supabase/functions/_shared/pedido-shopify.js';
 import { diaEmSaoPaulo } from '../../supabase/functions/_shared/hora-de-sao-paulo.js';
 
+import { deOnde } from './banco-pela-api.js';
 const PAGINA = 1000;   // o PostgREST corta em 1000 sem avisar — paginar sempre
 
 // A Shopify guarda em UTC (criado_em_shopify é timestamptz). di/df são datas
@@ -38,7 +39,7 @@ export async function buscarPedidosShopifyDoPeriodo(sbClient, di, df) {
   const linhas = [];
   try {
     for (let offset = 0; ; offset += PAGINA) {
-      const { data, error } = await sbClient
+      const { data, error } = await deOnde(sbClient)
         .from('shopify_pedidos')
         .select('id,total,criado_em_shopify,status_financeiro')
         .gte('criado_em_shopify', inicio)

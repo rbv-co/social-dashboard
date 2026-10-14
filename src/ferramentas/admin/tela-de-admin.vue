@@ -221,7 +221,7 @@ import { estado, PERMISSION_TREE, RECURSOS } from '../../compartilhado/controle-
 // pela API em Go. O resto desta tela é a área `admin` (5.1).
 import { areaNaApi, corpoDaEdge } from '../../compartilhado/api.js'
 // Chave `admin` (Plano 7): as tabelas do 5.1 pela API (adFetch, gravar e os .from abaixo).
-import { tabelaNaApi, fetchPostgrest, deOnde, contarPelaApi, ligarCadastroPelaApi } from '../../compartilhado/banco-pela-api.js'
+import { tabelaNaApi, fetchPostgrest, deOnde, contarPelaApi, ligarCadastroPelaApi, escreverComposto } from '../../compartilhado/banco-pela-api.js'
 import { APROVACOES } from '../../compartilhado/catalogo-de-ferramentas.js'
 import { agruparRecursos, contarAcoes, estadoDaSelecao, marcarTudo } from './agrupar-permissoes.js'
 import { derivarFeatures } from '../../compartilhado/derivar-features.js'
@@ -562,8 +562,8 @@ async function _vdPuxar() {
     // que a aba espelho do Gestor Comercial usa — aquela funcionou em produção
     // no mesmo dia em que esta não funcionou. Escolhi o que tem prova.
     const [rv, rp] = await Promise.all([
-      sbClient.from('bling_vendedores').select('vendor_id,nome'),
-      sbClient.from('bling_pedido_vendedor').select('vendor_id,loja_id,pedido_data').limit(5000),
+      deOnde(sbClient).from('bling_vendedores').select('vendor_id,nome'),
+      deOnde(sbClient).from('bling_pedido_vendedor').select('vendor_id,loja_id,pedido_data').limit(5000),
     ])
     if (rv.error || rp.error) {
       _vdMotivoVazio = 'A leitura falhou: ' + ((rv.error || rp.error).message || 'motivo desconhecido')
@@ -890,7 +890,7 @@ async function loadAdminCanais() {
   const body = document.getElementById('admin-canais-body'); if (!body) return
   try {
     const [rc, rt, rg] = await Promise.all([
-      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').order('nome'),
+      deOnde(sbClient).from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').order('nome'),
       deOnde(sbClient).from('equipes').select('id,nome,canal_loja_id'),
       deOnde(sbClient).from('canais_grupos').select('id,nome').order('nome'),
     ])
@@ -4161,11 +4161,11 @@ async function _mtCarregar(aviso) {
   const alvo = document.getElementById(_MT_ALVO); if (!alvo) return
   const primeiroDia = _mtAno + '-' + String(_mtMes).padStart(2, '0') + '-01'
   const [rl, rm, rv, rvm, rp] = await Promise.all([
-    sbClient.from('bling_lojas').select('loja_id,nome,fechado_em').order('nome'),
-    sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
-    sbClient.from('bling_vendedores').select('vendor_id,nome').order('nome'),
-    sbClient.from('bling_vendedor_metas').select('vendor_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
-    sbClient.from('bling_pedido_vendedor').select('vendor_id,loja_id').order('pedido_data', { ascending: false }).limit(5000),
+    deOnde(sbClient).from('bling_lojas').select('loja_id,nome,fechado_em').order('nome'),
+    deOnde(sbClient).from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
+    deOnde(sbClient).from('bling_vendedores').select('vendor_id,nome').order('nome'),
+    deOnde(sbClient).from('bling_vendedor_metas').select('vendor_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
+    deOnde(sbClient).from('bling_pedido_vendedor').select('vendor_id,loja_id').order('pedido_data', { ascending: false }).limit(5000),
   ])
   const erro = rl.error || rm.error || rv.error || rvm.error || rp.error
   if (erro) {
@@ -4308,6 +4308,26 @@ async function _mtSalvar(alvo, btn) {
   btn.disabled = true
   _mtAviso(alvo, 'Salvando…')
   let feitos = 0
+  if (areaNaApi('comercial')) {
+    // Pela API as metas do mês são UMA transação (sob trava do mês): recusou, nada foi gravado.
+    const gravar = (t) => r[t].gravar.map(g => ({
+      [_mt[t].chave]: Number(g.id), meta_valor: g.valor,
+      daily_goals: reescalarDiarias(_mt[t].linhas[g.id] && _mt[t].linhas[g.id].daily_goals, g.valor) || null,
+    }))
+    const total = r.loja.gravar.length + r.loja.apagar.length + r.vend.gravar.length + r.vend.apagar.length
+    const { error } = total === 0 ? { error: null } : await escreverComposto('/comercial/metas/salvar', {
+      ano: _mtAno, mes: _mtMes,
+      lojas: { gravar: gravar('loja'), apagar: r.loja.apagar.map(Number) },
+      vendedoras: { gravar: gravar('vend'), apagar: r.vend.apagar.map(Number) },
+    })
+    if (error) {
+      await _mtCarregar({ texto: 'Não salvou: ' + error.message + ' Nada foi gravado.', erro: 'erro' })
+      return
+    }
+    adminToast('Metas salvas')
+    await _mtCarregar({ texto: total + (total === 1 ? ' meta salva' : ' metas salvas') + ' em ' + _mtNomeDoMes(_mtAno, _mtMes) + '.', erro: 'ok' })
+    return
+  }
   try {
     for (const t of ['loja', 'vend']) {
       for (const g of r[t].gravar) { await _mtGravar(t, g); feitos++ }

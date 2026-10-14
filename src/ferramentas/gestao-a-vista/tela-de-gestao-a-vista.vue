@@ -265,7 +265,7 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
     batchCount++;
     if(batchCount%10===0){
       if(newVendorFound){_gvUpdateVendRanking();newVendorFound=false;}
-      if(bgMappings.length){const snap=[...bgMappings];bgMappings.length=0;sbClient.from('bling_pedido_vendedor').upsert(snap,{onConflict:'pedido_id'}).then(null,()=>{});}
+      if(bgMappings.length){const snap=[...bgMappings];bgMappings.length=0;deOnde(sbClient).from('bling_pedido_vendedor').upsert(snap,{onConflict:'pedido_id'}).then(null,()=>{});}
       // Progressive SKU ticker update — updates the slide as data arrives instead of waiting until the end
       const _intTop=Object.values(skuMap).sort((a,b)=>b.qty-a.qty).slice(0,10);
       if(_intTop.length&&window._gvTickerSlides){
@@ -294,7 +294,7 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
     batchCount++;
     if(batchCount%10===0){
       if(newVendorFound){_gvUpdateVendRanking();newVendorFound=false;}
-      if(bgMappings.length){const snap=[...bgMappings];bgMappings.length=0;sbClient.from('bling_pedido_vendedor').upsert(snap,{onConflict:'pedido_id'}).then(null,()=>{});}
+      if(bgMappings.length){const snap=[...bgMappings];bgMappings.length=0;deOnde(sbClient).from('bling_pedido_vendedor').upsert(snap,{onConflict:'pedido_id'}).then(null,()=>{});}
     }
   }
 
@@ -314,8 +314,8 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
       }
     }catch(e){}
   }
-  if(bgMappings.length)sbClient.from('bling_pedido_vendedor').upsert(bgMappings,{onConflict:'pedido_id'}).then(null,()=>{});
-  if(bgVendRows.length)sbClient.from('bling_vendedores').upsert(bgVendRows,{onConflict:'vendor_id'}).then(null,()=>{});
+  if(bgMappings.length)deOnde(sbClient).from('bling_pedido_vendedor').upsert(bgMappings,{onConflict:'pedido_id'}).then(null,()=>{});
+  if(bgVendRows.length)deOnde(sbClient).from('bling_vendedores').upsert(bgVendRows,{onConflict:'vendor_id'}).then(null,()=>{});
   if(newVendorFound||newVendIds.size)_gvUpdateVendRanking();
 
   const topSkus=Object.values(skuMap).sort((a,b)=>b.qty-a.qty).slice(0,10);
@@ -686,8 +686,8 @@ async function loadGestaoVistaData(period){
     const[canaisCheio,metasRows,eqTimes,eqMembros,eqMembrosDeGrupo,depsRows,vincRows]=await Promise.all([
       // O GRUPO vem na mesma leitura do nome (Peça 2, 20/08/2026): é ele que
       // separa o menu de canais em Atacado / Varejo / Outros.
-      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').then(r=>{const mp={};_gvGrupoDoCanal={};_gvCanaisBrutos=r.data||[];_gvCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_gvGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}).catch(()=>({})),
-      sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',metaY).eq('month',metaM).then(r=>r.data||[]).catch(()=>[]),
+      deOnde(sbClient).from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').then(r=>{const mp={};_gvGrupoDoCanal={};_gvCanaisBrutos=r.data||[];_gvCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_gvGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}).catch(()=>({})),
+      deOnde(sbClient).from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',metaY).eq('month',metaM).then(r=>r.data||[]).catch(()=>[]),
       // Os times e quem está neles. Falhar devolve lista vazia — e com ela quem
       // é de time fica com `[]` (tela vazia com o motivo escrito), não com a
       // empresa inteira. É o lado seguro do erro.
@@ -707,7 +707,7 @@ async function loadGestaoVistaData(period){
       // tem sete. Loja nova exigia mexer em código aqui, no coletor e no robô
       // comercial. Agora vem de `bling_depositos`, alimentada pelo próprio
       // Bling; falhar cai na semente, e a seção continua desenhando.
-      sbClient.from('bling_depositos').select('deposito_id,nome,ativo,padrao').then(r=>r.data||[]).catch(()=>[]),
+      deOnde(sbClient).from('bling_depositos').select('deposito_id,nome,ativo,padrao').then(r=>r.data||[]).catch(()=>[]),
       // O vínculo EXPLÍCITO. É ele que resolve o caso em que o nome não resolve:
       // o canal "Loja Santa Bárbara d'Oeste" corresponde ao depósito "Estoque
       // Loja Sbo. Tivoli", e não há uma palavra em comum entre os dois.
@@ -762,8 +762,8 @@ async function loadGestaoVistaData(period){
     if(!window._gvPedidoVendorMap)window._gvPedidoVendorMap={};
     const allIds=[...new Set([...pedidos,...pedidosPrev].map(p=>p.id).filter(Boolean))];
     const [vendRows,pedVRows]=await Promise.all([
-      sbClient.from('bling_vendedores').select('vendor_id,nome').then(r=>r.data||[]).catch(()=>[]),
-      allIds.length?sbClient.from('bling_pedido_vendedor').select('pedido_id,vendor_id').in('pedido_id',allIds.slice(0,500)).then(r=>r.data||[]).catch(()=>[]):Promise.resolve([])
+      deOnde(sbClient).from('bling_vendedores').select('vendor_id,nome').then(r=>r.data||[]).catch(()=>[]),
+      allIds.length?deOnde(sbClient).from('bling_pedido_vendedor').select('pedido_id,vendor_id').in('pedido_id',allIds.slice(0,500)).then(r=>r.data||[]).catch(()=>[]):Promise.resolve([])
     ]);
     vendRows.forEach(r=>{window._gvVendedoresCache[r.vendor_id]={nome:r.nome,loja:''};});
     pedVRows.forEach(r=>{window._gvPedidoVendorMap[r.pedido_id]=r.vendor_id;});
@@ -975,7 +975,7 @@ async function _gvCarregaEstoque(){
   const size=1000, rows=[];
   try{
     for(let from=0;;from+=size){
-      const { data, error }=await sbClient.from('gc_estoque_item').select('deposito_id,sku,produto,saldo,categoria').in('deposito_id',ids).range(from,from+size-1);
+      const { data, error }=await deOnde(sbClient).from('gc_estoque_item').select('deposito_id,sku,produto,saldo,categoria').in('deposito_id',ids).range(from,from+size-1);
       if(error)throw error;
       rows.push(...(data||[]));
       if(!data||data.length<size)break;

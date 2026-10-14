@@ -77,6 +77,8 @@ import { onMounted, onUnmounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `comercial` (Plano 7): as tabelas bling_* pela API em Go (5.5).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 // Quando a recarga de 5 minutos deve acontecer — e quando é só desperdício.
 import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-automatica.js'
@@ -393,9 +395,9 @@ async function loadSalesAnalysisData(period,opcoes){
       blingPages('pedidos/vendas',{dataInicial:diPrev,dataFinal:dfPrev,'idsSituacoes[]':9}).catch(()=>[]),
       // O GRUPO vem junto do nome (Peça 2, 20/08/2026): é ele que separa o
       // menu de canais em Atacado / Varejo / Outros.
-      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').order('loja_id').then(r=>{const mp={};_saGrupoDoCanal={};_saCanaisBrutos=r.data||[];_saCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_saGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}),
-      sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',effY).eq('month',effM).then(r=>r.data||[]),
-      sbClient.from('bling_vendedores').select('vendor_id,nome').then(r=>r.data||[]),
+      deOnde(sbClient).from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').order('loja_id').then(r=>{const mp={};_saGrupoDoCanal={};_saCanaisBrutos=r.data||[];_saCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_saGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}),
+      deOnde(sbClient).from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',effY).eq('month',effM).then(r=>r.data||[]),
+      deOnde(sbClient).from('bling_vendedores').select('vendor_id,nome').then(r=>r.data||[]),
       blingPages('pedidos/vendas',{dataInicial:di15,dataFinal:df15,'idsSituacoes[]':9}).catch(()=>[]),
       // Os times e quem está neles. Falhar aqui devolve listas vazias — e com
       // elas `canaisDoEscopo` responde `[]` para quem é de time, ou seja, tela
@@ -486,9 +488,9 @@ async function loadSalesAnalysisData(period,opcoes){
     let pvMap={};let pvQtdMap={};
     if(allIds.length){
       let pvArr=[];
-      const r1=await sbClient.from('bling_pedido_vendedor').select('pedido_id,vendor_id,qtd_itens').in('pedido_id',allIds.slice(0,500));
+      const r1=await deOnde(sbClient).from('bling_pedido_vendedor').select('pedido_id,vendor_id,qtd_itens').in('pedido_id',allIds.slice(0,500));
       if(!r1.error&&r1.data){pvArr=r1.data;}
-      else{const r2=await sbClient.from('bling_pedido_vendedor').select('pedido_id,vendor_id').in('pedido_id',allIds.slice(0,500));pvArr=r2.data||[];}
+      else{const r2=await deOnde(sbClient).from('bling_pedido_vendedor').select('pedido_id,vendor_id').in('pedido_id',allIds.slice(0,500));pvArr=r2.data||[];}
       pvArr.forEach(r=>{pvMap[r.pedido_id]=r.vendor_id;pvQtdMap[r.pedido_id]=r.qtd_itens||1;});
     }
 
@@ -642,7 +644,7 @@ async function _saPopulateItemCounts(pedidos,pvQtdMap,pvMap){
     if((i+1)%10===0)await new Promise(r=>setTimeout(r,250));
   }
   if(window._saItemFetchV!==myV||!upsert.length)return;
-  sbClient.from('bling_pedido_vendedor').upsert(upsert,{onConflict:'pedido_id'}).then(null,()=>{});
+  deOnde(sbClient).from('bling_pedido_vendedor').upsert(upsert,{onConflict:'pedido_id'}).then(null,()=>{});
   const scr=document.querySelector('.tela-analise-vendas');
   if(scr&&window._saRawData){
     const boxes=[...document.querySelectorAll('.sa-canal-chk')];

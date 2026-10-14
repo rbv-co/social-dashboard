@@ -7,6 +7,7 @@
 // de valor-corrigido.js.
 import { aplicarValorLiquidoDeTroca } from '../../supabase/functions/_shared/valor-liquido-de-troca.js'
 
+import { deOnde } from './banco-pela-api.js';
 export { aplicarValorLiquidoDeTroca, ehDevolucaoDeMercadoria } from '../../supabase/functions/_shared/valor-liquido-de-troca.js'
 
 // ── Busca as devoluções ──────────────────────────────────────────────────
@@ -22,7 +23,7 @@ export async function buscarDevolucoes(sbClient) {
   const PAGINA = 1000;   // o PostgREST corta em 1000 sem avisar — paginar sempre
   try {
     for (let inicio = 0; ; inicio += PAGINA) {
-      const { data, error } = await sbClient
+      const { data, error } = await deOnde(sbClient)
         .from('bling_pedido_forma_pagamento')
         .select('pedido_id,valor')
         .eq('eh_devolucao', true)
