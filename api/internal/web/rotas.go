@@ -68,6 +68,7 @@ var FuncoesRPC = slices.Concat(
 	trafego.FuncoesRPC,    // Plano 5.7
 	patrimonio.FuncoesRPC, // Plano 5.2
 	conteudo.FuncoesRPC,   // Plano 5.9
+	frota.FuncoesRPC,      // Plano 5.3
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
@@ -173,6 +174,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
 			conteudo.Montar(r, p) // Plano 5.9
 			acessos.Montar(r, p)  // Plano 5.4: colaboradores e acessos (cadastro)
+			frota.Montar(r, p)    // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {
 				panic(err) // declaração errada: a API não sobe

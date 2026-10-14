@@ -122,6 +122,8 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                      # seção do 5.3
 
 ---
 
+> **Nota de execução (13/10):** a Task 1 foi executada pela convenção comum do esquema de teste (ledger do 5.3): o arquivo é `01-tabelas-5-03.sql` (dois dígitos), as condições `UPDATE OF`/`WHEN` ficam na lista `CONFERIDOS` de `gerar-gatilhos.mjs` (não há `condicoes-dos-gatilhos.json`) e as funções avulsas entram pela linha `-- funções:` da fatia (não há `funcoes-avulsas-5-3.txt`). Onde este plano citar esses nomes antigos, leia os novos.
+
 ### Task 1: D0 — fatia 5.3 do esquema de produção nos testes
 
 **Revisor:** opus. **Depende de:** Task 1 do 5.1 (carregador e gerador), fatia do 5.2.
@@ -1877,7 +1879,7 @@ var FuncoesRPC = []rpc.Funcao{
 
 **(c) Arquivos:** Create `api/internal/frota/rpc.go`, `api/internal/frota/rpc_test.go`.
 
-**(d) Dependências:** Tasks 1 (as 2 funções no banco de teste, por `funcoes-avulsas-5-3.txt`) e 2; `rpc.Novo` (5.0).
+**(d) Dependências:** Tasks 1 (as 2 funções no banco de teste, pela linha `-- funções:` de `01-tabelas-5-03.sql`) e 2; `rpc.Novo` (5.0).
 
 - [ ] **Step 1:** Teste; ver falhar (`FuncoesRPC`). - [ ] **Step 2:** Implementar. - [ ] **Step 3:** gofmt/vet/test PASS; mutação reprova. - [ ] **Step 4:** Commit `feat(api): RPCs da frota (etiqueta_quem_e, frota_corrente_do_veiculo) com o portão de cada função` (+ `Co-Authored-By`).
 
@@ -2105,7 +2107,7 @@ Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 
 ### Antes do corte
 - `api worker conferir` no banco restaurado: colunas, tipos, únicos e funções dos gatilhos da Frota.
-- `select tgname, pg_get_triggerdef(oid) from pg_trigger where tgname like 'trg_frota%' order by 1` no banco restaurado = as condições de `api/internal/testebanco/esquema/condicoes-dos-gatilhos.json`.
+- `select tgname, pg_get_triggerdef(oid) from pg_trigger where tgname like 'trg_frota%' order by 1` no banco restaurado = as condições da lista `CONFERIDOS` de `api/internal/testebanco/esquema/gerar-gatilhos.mjs`.
 - Plano 6: o consumidor das filas de PDF (`enviar-pdf-checklist`) roda `frota_pdf_aceite_pegar_da_fila`, que não devolve nada sem `is_frota_admin()`: precisa de identidade com a Frota.
 ```
 

@@ -742,6 +742,34 @@ O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` j
 ### Achados para o dono
 (ver a seção "Achados para o dono" do plano 5.9)
 
+## Plano 5.3 — Frota
+
+### Rotas novas (com sessão; regra = catálogo de produção, `is_frota_admin()`; escrita de sessão "entrar como" = 403)
+- `/frota/veiculos`, `/frota/usos` (+ `POST /frota/usos/trocar`), `/frota/requisicoes`, `/frota/checklists` (+ `/respostas`, `/copias`), `/frota/checklist-itens`, `/frota/checklist-config`, `/frota/plano-revisao`, `/frota/revisoes`, `POST /frota/manutencoes`, `/frota/abastecimentos`; `POST /rpc/etiqueta_quem_e` e `POST /rpc/frota_corrente_do_veiculo`. Total: 27 rotas (11 leituras, 16 escritas) + 2 RPCs.
+- `POST /avisar-decisao-de-reserva` (Plano 4) continua como está: a tela o chama depois do PATCH da reserva.
+
+### Mudanças de contrato que o Plano 7 absorve
+- Checklist numa chamada: `POST /frota/checklists {ficha, respostas, assinatura?}` (substitui tela-de-frota.vue:2209, 2229, 2247 e o tratamento de ficha pela metade); `assinada_por` e `criada_por` saem do corpo.
+- Manutenção numa chamada: `POST /frota/manutencoes {manutencao, trocas:[{item, custo_centavos}]}` (substitui 3549, 3572 e o delete de desfazer em 3590).
+- Troca de posse numa chamada: `POST /frota/usos/trocar {veiculo_id, fechar?, abrir?, para_estoque?}` (passe 1513/1524/1551; dono fixo 3451/3466, depois do PATCH do veículo); `409` quando a posse a fechar já não é a aberta.
+- `criada_por` (reserva) e `criado_por` (abastecimento) saem do corpo; a reserva nasce sem `situacao`; PATCH aceita só `aprovada|recusada|cancelada|revogada|usada`.
+- A frase do gatilho chega em `mensagem` (`400 regra_de_negocio`); a tela hoje lê `error.message`. Duplicidade = `409 conflito` (a tela hoje testa `/duplicate|unique/`).
+- `etiqueta_quem_e` responde 403 a quem não é admin do Patrimônio (antes `{existe:false}`, que a tela mostrava como "Número livre"): a tela fica calada (tela-de-frota.vue:3027-3030).
+
+### Achados para o dono
+- Pelo PostgREST, quem tinha a Frota podia CRIAR reserva já `aprovada` (o gatilho de decisão só olha UPDATE) e forjar `assinada_por`/`criada_por`; a API fecha os três.
+- `permissions['frota.aprovar']` (o botão da tela e a rota do aviso) e a feature `frota.aprovar` (o gatilho) precisam andar juntas: com só uma, a pessoa vê o botão e recebe a recusa, ou o contrário (Ruling 13 do mestre).
+- `etiqueta_quem_e` dizia "Número livre" a quem só tinha a Frota.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas, tipos, únicos, funções e gatilhos da Frota (entradas do 5.3 em `cmd/api/conferir.go`).
+- `select tgname, pg_get_triggerdef(oid) from pg_trigger where tgname like 'trg_frota%' order by 1` no banco restaurado = as condições da lista `CONFERIDOS` de `api/internal/testebanco/esquema/gerar-gatilhos.mjs`.
+- Plano 6: o consumidor das filas de PDF (`enviar-pdf-checklist`) roda `frota_pdf_aceite_pegar_da_fila`, que não devolve nada sem `is_frota_admin()`: precisa de identidade com a Frota.
+- `02-gatilhos.sql` foi unido à mão no merge com a `main` (só o cabeçalho divergia, as funções vieram idênticas); na próxima regeneração com o levantamento (`gerar-gatilhos.mjs <dir>`), o diff tem de ser vazio.
+
+### Limites conhecidos (revisão do 5.3)
+- `POST /frota/usos/trocar` com `para_estoque` trava a posse e depois o carro; `PATCH /frota/veiculos/{id}` com `pessoa_id: null` trava o carro e depois a posse (gatilho `frota_fechar_posse_orfa`). Os dois ao mesmo tempo podem dar deadlock (`40P01`): a transação é desfeita, nada fica pela metade, e a resposta hoje é `500` (o certo seria pedir para tentar de novo). Mesma janela do PostgREST de hoje; rara (duas pessoas mexendo no MESMO carro no mesmo instante). Tratar `40P01` como `409` em `dados.ErroDoBanco` se aparecer em produção.
+
 ## Plano 5.4 — Colaboradores e Acessos (cadastro)
 
 ### Rotas novas (com sessão; regra = catálogo de produção, `is_acessos_admin()`; escrita de sessão "entrar como" = 403)

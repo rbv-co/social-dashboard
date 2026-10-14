@@ -1,7 +1,7 @@
 -- GERADO por gerar-gatilhos.mjs a partir do levantamento de produção (02-funções.csv, 03-triggers.csv).
 -- NÃO EDITE À MÃO: rode o script de novo. Corpos verbatim de produção; orientação dos gatilhos das migrations.
--- Tabelas: access_requests, account_insights, accounts, acessos_conexoes, acessos_config, acessos_dispositivos, acessos_drive_marcas, acessos_drive_overrides, acessos_drive_setores, acessos_log, acessos_organizacoes, acessos_patrimonio_historico, acessos_perfis, acessos_pessoas, acessos_recursos, acessos_setores, acessos_termos, acessos_vinculos, ad_insights_hora, ads, audit_log, bling_lojas, campaign_adsets, campaign_filters, campaign_insights, campaign_insights_hora, campaigns, canais_grupos, canais_grupos_membros, content_snapshots, conteudo_arquivos, conteudo_blocos, conteudo_casamentos, conteudo_concorrentes, conteudo_eventos, conteudo_ideias, conteudo_jobs, conteudo_metricas, conteudo_pecas, daily_snapshots, data_integrity_checks, engagement_snapshots, equipes, equipes_membros, equipes_permissoes, fabrica_campanhas, fabrica_criativos, fabrica_jobs, fabrica_lojas, fabrica_looks, fabrica_marcas, fabrica_meta_jobs, fabrica_objetivos, fabrica_publicos, followers_leituras, frota_uso, frota_veiculos, gt_ad_analises, gt_budget_analises, gt_campanhas_rascunho, gt_config_metricas, gt_fila_decisoes, gt_objetivo_interacao, gt_ponderada_config, gt_ponderada_config_log, gt_problemas_meta, ia_execucoes, interesses_sugeridos, patrimonio_bens, patrimonio_categorias, patrimonio_comodos, patrimonio_config, patrimonio_empresas, patrimonio_locais, patrimonio_log, patrimonio_posse, patrimonio_tipos, perfil_visitas_hora, profiles, push_preferencias, push_subs, social_metas, visitas_perfil_dia
--- Funções (28): bem_de_veiculo_segue_a_frota, conta_ativa, conteudo_guarda_aprovacao, criar_pessoa_rapida, criar_setor_rapido, equipes_toca_atualizado, espelhar_grupo_do_canal, espelhar_rename_do_grupo, frota_aceite_imutavel, frota_espelha_responsavel_no_bem, frota_espelha_situacao_no_bem, frota_fechar_posse_orfa, frota_uso_enfileirar_pdf, gt_rascunho_toca_updated_at, guard_profiles, impedir_autopromocao, is_acessos_admin, is_frota_admin, is_patrimonio_admin, is_superadmin, patrimonio_espelha_responsavel_no_veiculo, patrimonio_espelha_situacao_no_veiculo, patrimonio_traduz_situacao_para_frota, pessoas_para_escolher, pode_cadastrar_pessoa_rapida, setores_para_escolher, sincronizar_carro_e_bem, situacao_do_bem_pelo_veiculo
+-- Tabelas: access_requests, account_insights, accounts, acessos_conexoes, acessos_config, acessos_dispositivos, acessos_drive_marcas, acessos_drive_overrides, acessos_drive_setores, acessos_log, acessos_organizacoes, acessos_patrimonio_historico, acessos_perfis, acessos_pessoas, acessos_recursos, acessos_setores, acessos_termos, acessos_vinculos, ad_insights_hora, ads, audit_log, bling_lojas, campaign_adsets, campaign_filters, campaign_insights, campaign_insights_hora, campaigns, canais_grupos, canais_grupos_membros, content_snapshots, conteudo_arquivos, conteudo_blocos, conteudo_casamentos, conteudo_concorrentes, conteudo_eventos, conteudo_ideias, conteudo_jobs, conteudo_metricas, conteudo_pecas, daily_snapshots, data_integrity_checks, engagement_snapshots, equipes, equipes_membros, equipes_permissoes, fabrica_campanhas, fabrica_criativos, fabrica_jobs, fabrica_lojas, fabrica_looks, fabrica_marcas, fabrica_meta_jobs, fabrica_objetivos, fabrica_publicos, followers_leituras, frota_abastecimentos, frota_checklist, frota_checklist_config, frota_checklist_itens, frota_checklist_pdf, frota_checklist_respostas, frota_manutencoes, frota_plano_revisao, frota_requisicoes, frota_requisicoes_historico, frota_revisoes, frota_uso, frota_uso_pdf, frota_veiculos, gt_ad_analises, gt_budget_analises, gt_campanhas_rascunho, gt_config_metricas, gt_fila_decisoes, gt_objetivo_interacao, gt_ponderada_config, gt_ponderada_config_log, gt_problemas_meta, ia_execucoes, interesses_sugeridos, patrimonio_bens, patrimonio_categorias, patrimonio_comodos, patrimonio_config, patrimonio_empresas, patrimonio_locais, patrimonio_log, patrimonio_posse, patrimonio_tipos, perfil_visitas_hora, profiles, push_preferencias, push_subs, social_metas, visitas_perfil_dia
+-- Funções (37): bem_de_veiculo_segue_a_frota, conta_ativa, conteudo_guarda_aprovacao, criar_pessoa_rapida, criar_setor_rapido, equipes_toca_atualizado, espelhar_grupo_do_canal, espelhar_rename_do_grupo, etiqueta_quem_e, frota_aceite_imutavel, frota_checar_arquivamento, frota_checar_decisao, frota_checklist_enfileirar_pdf, frota_checklist_imutavel, frota_corrente_do_veiculo, frota_espelha_responsavel_no_bem, frota_espelha_situacao_no_bem, frota_fechar_posse_orfa, frota_gravar_historico, frota_resposta_imutavel, frota_uso_enfileirar_pdf, gt_rascunho_toca_updated_at, guard_profiles, impedir_autopromocao, is_acessos_admin, is_frota_admin, is_patrimonio_admin, is_superadmin, patrimonio_espelha_responsavel_no_veiculo, patrimonio_espelha_situacao_no_veiculo, patrimonio_traduz_situacao_para_frota, pessoas_para_escolher, pode_aprovar_frota, pode_cadastrar_pessoa_rapida, setores_para_escolher, sincronizar_carro_e_bem, situacao_do_bem_pelo_veiculo
 set check_function_bodies = off;
 
 CREATE OR REPLACE FUNCTION public.bem_de_veiculo_segue_a_frota()
@@ -239,6 +239,28 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.etiqueta_quem_e(p_numero integer)
+ RETURNS jsonb
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select case
+    when not public.is_patrimonio_admin() then jsonb_build_object('existe', false)
+    else coalesce(
+      (select jsonb_build_object(
+         'existe', true,
+         'nome', b.nome,
+         'categoria', c.nome,
+         'eh_veiculo', coalesce(c.nome ilike '%ve%cul%', false),
+         'placa_ligada', (select v.placa from public.frota_veiculos v where v.bem_id = b.id))
+         from public.patrimonio_bens b
+         left join public.patrimonio_categorias c on c.id = b.categoria_id
+        where b.numero = p_numero),
+      jsonb_build_object('existe', false))
+  end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.frota_aceite_imutavel()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -270,6 +292,173 @@ begin
 
   return new;
 end $function$;
+
+CREATE OR REPLACE FUNCTION public.frota_checar_arquivamento()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  venceu boolean;
+begin
+  if new.arquivada_em is not distinct from old.arquivada_em then
+    return new;
+  end if;
+
+  if not public.pode_aprovar_frota() then
+    raise exception 'Você não pode arquivar reserva de veículo. Peça a quem aprova.'
+      using errcode = 'check_violation';
+  end if;
+
+  if new.arquivada_em is not null then
+    -- Sem hora de devolução não dá pra dizer que venceu; trata-se como ainda
+    -- valendo, que é a resposta que mantém o pedido à vista.
+    venceu := new.devolucao_prevista is not null
+              and new.devolucao_prevista < now()
+              and new.uso_id is null;
+
+    if new.situacao not in ('recusada', 'cancelada', 'revogada', 'usada')
+       and not (new.situacao = 'aprovada' and venceu) then
+      raise exception
+        'Só reserva encerrada ou vencida pode ser arquivada. Esta está %, e pedido em aberto não some da lista.',
+        new.situacao
+        using errcode = 'check_violation';
+    end if;
+    new.arquivada_por := auth.uid();
+  else
+    new.arquivada_por := null;
+  end if;
+
+  return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.frota_checar_decisao()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  mudou_conteudo boolean;
+begin
+  if new.situacao is distinct from old.situacao
+     and new.situacao in ('aprovada','recusada') then
+
+    if not public.pode_aprovar_frota() then
+      raise exception 'Você não tem permissão para aprovar requisições de veículo.'
+        using errcode = 'check_violation';
+    end if;
+
+    new.decidida_por := auth.uid();
+    new.decidida_em := now();
+  end if;
+
+  if new.situacao is distinct from old.situacao
+     and new.situacao in ('cancelada','revogada') then
+
+    if not public.pode_aprovar_frota() then
+      raise exception 'Você não pode cancelar nem revogar reserva de veículo. Peça a quem aprova.'
+        using errcode = 'check_violation';
+    end if;
+
+    if coalesce(btrim(new.encerrada_motivo), '') = '' then
+      raise exception 'Escreva o motivo do cancelamento ou da revogação.'
+        using errcode = 'check_violation';
+    end if;
+
+    new.encerrada_por := auth.uid();
+    new.encerrada_em := now();
+  end if;
+
+  mudou_conteudo :=
+       new.veiculo_id         is distinct from old.veiculo_id
+    or new.pessoa_id          is distinct from old.pessoa_id
+    or new.pessoa_nome        is distinct from old.pessoa_nome
+    or new.departamento       is distinct from old.departamento
+    or new.destino            is distinct from old.destino
+    or new.finalidade         is distinct from old.finalidade
+    or new.retirada_prevista  is distinct from old.retirada_prevista
+    or new.devolucao_prevista is distinct from old.devolucao_prevista
+    or new.observacao         is distinct from old.observacao;
+
+  if mudou_conteudo then
+    if not public.pode_aprovar_frota() then
+      raise exception 'Você não pode alterar reserva de veículo. Peça a quem aprova.'
+        using errcode = 'check_violation';
+    end if;
+
+    if old.situacao not in ('pendente','aprovada') then
+      raise exception 'Esta reserva já está %. Reserva encerrada não se edita.', old.situacao
+        using errcode = 'check_violation';
+    end if;
+
+    if old.uso_id is not null then
+      raise exception 'Esta reserva já virou viagem. Não dá pra mudar o pedido depois que o carro saiu.'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
+  return new;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.frota_checklist_enfileirar_pdf()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if new.assinada_em is null then
+    return null;
+  end if;
+  if tg_op = 'UPDATE' and old.assinada_em is not null then
+    return null;
+  end if;
+
+  begin
+    insert into public.frota_checklist_pdf(checklist_id) values (new.id)
+    on conflict (checklist_id) do nothing;
+  exception when others then
+    raise warning 'Frota: nao consegui por a ficha % na fila do PDF (%). A assinatura foi gravada assim mesmo; o conserto automatico da fila pega isto.',
+      new.id, sqlerrm;
+  end;
+  return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.frota_checklist_imutavel()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'Esta ficha foi assinada em % e não pode ser apagada.', old.assinada_em;
+  end if;
+  raise exception 'Esta ficha foi assinada em % e não pode ser alterada. '
+    'Se há algo errado nela, registre uma ficha nova explicando.', old.assinada_em;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.frota_corrente_do_veiculo(p_veiculo uuid)
+ RETURNS TABLE(id uuid, veiculo_id uuid, feita_em date, pessoa_id uuid, hodometro integer, hodometro_justificativa text, cadencias text[], resultado text, anomalias text, assinada_em timestamp with time zone, assinatura_hash text, assinatura_hash_anterior text, assinatura_versao smallint, assinatura_rabisco jsonb, respostas jsonb)
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select c.id, c.veiculo_id, c.feita_em, c.pessoa_id,
+         c.hodometro, c.hodometro_justificativa, c.cadencias,
+         c.resultado, c.anomalias, c.assinada_em,
+         c.assinatura_hash, c.assinatura_hash_anterior,
+         c.assinatura_versao, c.assinatura_rabisco,
+         coalesce((
+           select jsonb_agg(jsonb_build_object(
+                    'item_texto', r.item_texto, 'estado', r.estado, 'observacao', r.observacao)
+                  order by r.ordem, r.id)
+             from public.frota_checklist_respostas r where r.checklist_id = c.id
+         ), '[]'::jsonb)
+    from public.frota_checklist c
+   where c.veiculo_id = p_veiculo
+   order by c.feita_em, c.criada_em;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.frota_espelha_responsavel_no_bem()
  RETURNS trigger
@@ -335,6 +524,79 @@ begin
   return new;
 end;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.frota_gravar_historico()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  quem_mudou uuid := auth.uid();
+  o_motivo text := coalesce(new.encerrada_motivo, new.motivo_decisao);
+  fmt constant text := 'DD/MM/YYYY HH24:MI';
+begin
+  if new.veiculo_id is distinct from old.veiculo_id then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'carro',
+            (select v.nome from public.frota_veiculos v where v.id = old.veiculo_id),
+            (select v.nome from public.frota_veiculos v where v.id = new.veiculo_id),
+            o_motivo, quem_mudou);
+  end if;
+  if new.pessoa_nome is distinct from old.pessoa_nome then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'quem vai dirigir', old.pessoa_nome, new.pessoa_nome, o_motivo, quem_mudou);
+  end if;
+  if new.retirada_prevista is distinct from old.retirada_prevista then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'retirada',
+            to_char(old.retirada_prevista at time zone 'America/Sao_Paulo', fmt),
+            to_char(new.retirada_prevista at time zone 'America/Sao_Paulo', fmt),
+            o_motivo, quem_mudou);
+  end if;
+  if new.devolucao_prevista is distinct from old.devolucao_prevista then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'devolução',
+            to_char(old.devolucao_prevista at time zone 'America/Sao_Paulo', fmt),
+            to_char(new.devolucao_prevista at time zone 'America/Sao_Paulo', fmt),
+            o_motivo, quem_mudou);
+  end if;
+  if new.destino is distinct from old.destino then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'destino', old.destino, new.destino, o_motivo, quem_mudou);
+  end if;
+  if new.finalidade is distinct from old.finalidade then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'finalidade', old.finalidade, new.finalidade, o_motivo, quem_mudou);
+  end if;
+  if new.departamento is distinct from old.departamento then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'departamento', old.departamento, new.departamento, o_motivo, quem_mudou);
+  end if;
+  if new.observacao is distinct from old.observacao then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'observação', old.observacao, new.observacao, o_motivo, quem_mudou);
+  end if;
+  if new.situacao is distinct from old.situacao then
+    insert into public.frota_requisicoes_historico(requisicao_id, campo, de, para, motivo, quem)
+    values (new.id, 'situação', old.situacao, new.situacao, o_motivo, quem_mudou);
+  end if;
+  return null;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.frota_resposta_imutavel()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare v_assinada timestamptz;
+begin
+  select c.assinada_em into v_assinada from public.frota_checklist c
+   where c.id = coalesce(old.checklist_id, new.checklist_id);
+  if v_assinada is not null then
+    raise exception 'A ficha desta resposta foi assinada em % e não pode ser alterada.', v_assinada;
+  end if;
+  return coalesce(new, old);
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.frota_uso_enfileirar_pdf()
  RETURNS trigger
@@ -579,6 +841,18 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.pode_aprovar_frota()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select public.conta_ativa() and coalesce(
+    (select 'frota.aprovar' = any(p.features) or p.is_superadmin
+       from public.profiles p where p.id = auth.uid()),
+    false);
+$function$;
+
 CREATE OR REPLACE FUNCTION public.pode_cadastrar_pessoa_rapida()
  RETURNS boolean
  LANGUAGE sql
@@ -745,6 +1019,12 @@ create trigger trg_espelhar_grupo_do_canal BEFORE UPDATE OF grupo_id, grupo or I
 create trigger trg_espelhar_rename_do_grupo AFTER UPDATE on public.canais_grupos for each row EXECUTE FUNCTION espelhar_rename_do_grupo();
 create trigger conteudo_pecas_guarda BEFORE UPDATE on public.conteudo_pecas for each row EXECUTE FUNCTION conteudo_guarda_aprovacao();
 create trigger equipes_atualizado BEFORE UPDATE on public.equipes for each row EXECUTE FUNCTION equipes_toca_atualizado();
+create trigger trg_frota_resposta_imutavel BEFORE INSERT or UPDATE or DELETE on public.frota_checklist_respostas for each row EXECUTE FUNCTION frota_resposta_imutavel();
+create trigger trg_frota_checklist_enfileirar_pdf AFTER INSERT or UPDATE OF assinada_em on public.frota_checklist for each row EXECUTE FUNCTION frota_checklist_enfileirar_pdf();
+create trigger trg_frota_checklist_imutavel BEFORE DELETE or UPDATE on public.frota_checklist for each row when (old.assinada_em is not null) EXECUTE FUNCTION frota_checklist_imutavel();
+create trigger trg_frota_checar_arquivamento BEFORE UPDATE on public.frota_requisicoes for each row EXECUTE FUNCTION frota_checar_arquivamento();
+create trigger trg_frota_checar_decisao BEFORE UPDATE on public.frota_requisicoes for each row EXECUTE FUNCTION frota_checar_decisao();
+create trigger trg_frota_gravar_historico AFTER UPDATE on public.frota_requisicoes for each row EXECUTE FUNCTION frota_gravar_historico();
 create trigger trg_frota_aceite_imutavel BEFORE INSERT or UPDATE on public.frota_uso for each row EXECUTE FUNCTION frota_aceite_imutavel();
 create trigger trg_frota_uso_enfileirar_pdf AFTER UPDATE OF aceite_em or INSERT on public.frota_uso for each row EXECUTE FUNCTION frota_uso_enfileirar_pdf();
 create trigger trg_frota_espelha_responsavel AFTER UPDATE OF pessoa_id on public.frota_veiculos for each row EXECUTE FUNCTION frota_espelha_responsavel_no_bem();
