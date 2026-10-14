@@ -219,11 +219,13 @@ func TestRotasPanicaComRPCRegistradaErrada(t *testing.T) {
 	p := testebanco.Novo(t)
 	original := FuncoesRPC
 	t.Cleanup(func() { FuncoesRPC = original })
+	// um nome AINDA pendente: o 5.10 registrou o vessel_gerar_lote que estava aqui
+	pendente := RPCPendentes[len(RPCPendentes)-1]
 	for nome, fs := range map[string][]rpc.Funcao{
-		"sem portão":            {{Nome: "vessel_gerar_lote"}},
+		"sem portão":            {{Nome: pendente}},
 		"nome proibido":         {{Nome: "minha_conta_esta_desativada", Portao: autz.SuperFicha}},
 		"fora da triagem":       {{Nome: "funcao_que_ninguem_chama", Portao: autz.SuperFicha}},
-		"pendente e registrada": {{Nome: "vessel_gerar_lote", Portao: autz.SuperFicha}},
+		"pendente e registrada": {{Nome: pendente, Portao: autz.SuperFicha}},
 	} {
 		FuncoesRPC = append(slices.Clone(original), fs...) // as dos sub-planos ficam: a soma de TotalRPCDoPainel só estoura pela errada
 		func() {
@@ -236,9 +238,9 @@ func TestRotasPanicaComRPCRegistradaErrada(t *testing.T) {
 		}()
 	}
 	// e uma registrada certa (movida de pendente) monta
-	FuncoesRPC = append(slices.Clone(original), rpc.Funcao{Nome: "vessel_gerar_lote", Portao: autz.SuperFicha})
+	FuncoesRPC = append(slices.Clone(original), rpc.Funcao{Nome: pendente, Portao: autz.SuperFicha})
 	saved := RPCPendentes
 	t.Cleanup(func() { RPCPendentes = saved })
-	RPCPendentes = slices.DeleteFunc(slices.Clone(saved), func(x string) bool { return x == "vessel_gerar_lote" })
+	RPCPendentes = slices.DeleteFunc(slices.Clone(saved), func(x string) bool { return x == pendente })
 	Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
 }

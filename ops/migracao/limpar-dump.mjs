@@ -59,6 +59,10 @@ const REGRAS = [
   ['extensoes', /^create\s+extension\b[\s\S]*\b(pg_cron|pg_net|supabase_vault|pg_stat_statements)\b/i],
   ['extensoes', /^comment\s+on\s+extension\b/i],
   ['publicacoes', /^(create|alter|drop)\s+publication\b/i],
+  // A disparar_robo de produção chama net.http_post (pg_net não vai para o Postgres novo). A substituta (fila
+  // disparos_pendentes) vem da migração 00007 da API, que o restaurar.sh roda ANTES do schema: sem tirar esta,
+  // o CREATE FUNCTION do dump colide (ON_ERROR_STOP). Quem a CHAMA fica. Plano 5.10, Ruling 5.10-1.
+  ['substituidas', /^(create(\s+or\s+replace)?|comment\s+on)\s+function\s+(public\.)?"?disparar_robo"?\s*\(/i],
 ]
 
 // 21 FKs de 16 tabelas apontam para auth.users(id); no banco novo a identidade é public.usuarios.
@@ -66,7 +70,7 @@ const REGRAS = [
 const FK_AUTH = /\breferences\s+auth\.users\s*\(\s*id\s*\)/gi
 
 export function limpar(sql) {
-  const removidos = { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0, schemas: 0 }
+  const removidos = { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0, schemas: 0, substituidas: 0 }
   const reescritos = { fks_usuarios: 0 }
   const mantidos = []
   for (const cmd of dividir(sql)) {
