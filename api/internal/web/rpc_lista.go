@@ -13,74 +13,10 @@ import (
 // dividem sempre este total.
 const TotalRPCDoPainel = 92
 
-// RPCPendentes: os nomes de RPC que o painel chama e que AINDA não estão em FuncoesRPC, por
-// sub-plano. Registrar uma função em FuncoesRPC exige TIRÁ-LA daqui no mesmo commit (a montagem
-// recusa o nome nos dois lugares: mover, não copiar). Critério de entrada do Plano 8: lista vazia.
-var RPCPendentes = []string{
-	// 5.11 (comercial Vessel e leads): 62
-	"vessel_agenda_das_lojas",
-	"vessel_beauty_session_apagar",
-	"vessel_beauty_session_arquivar",
-	"vessel_beauty_session_cadastrar_lead",
-	"vessel_beauty_session_criar",
-	"vessel_beauty_session_editar",
-	"vessel_beauty_session_encerrar",
-	"vessel_chave_da_convidada",
-	"vessel_conta_das_beauty_sessions",
-	"vessel_conta_das_private_edits",
-	"vessel_convidadas_do_encontro",
-	"vessel_convidar_para_encontro",
-	"vessel_convite_marcar",
-	"vessel_criar_private_edit",
-	"vessel_edicao_abrir",
-	"vessel_edicao_criar",
-	"vessel_edicao_encerrar",
-	"vessel_edicao_incluir_stylist",
-	"vessel_edicao_tirar_stylist",
-	"vessel_edicao_turma",
-	"vessel_edicoes_listar",
-	"vessel_eventos_de_origem",
-	"vessel_leads_da_beauty_session",
-	"vessel_placar_da_edicao",
-	"vessel_praca_cidade_desvincular",
-	"vessel_praca_cidade_vincular",
-	"vessel_praca_criar",
-	"vessel_praca_editar",
-	"vessel_pracas_listar",
-	"vessel_private_edit_apagar",
-	"vessel_private_edit_arquivar",
-	"vessel_private_edit_editar",
-	"vessel_private_edit_encerrar",
-	"vessel_private_edit_situacao",
-	"vessel_private_edit_sobreposicoes",
-	"vessel_qualificacoes_vigentes",
-	"vessel_rastreio_dos_stylists",
-	"vessel_scorecard_da_stylist",
-	"vessel_situacao_do_atendimento",
-	"vessel_stylist_avaliar",
-	"vessel_stylist_contatos",
-	"vessel_stylist_criar",
-	"vessel_stylist_desativar",
-	"vessel_stylist_editar",
-	"vessel_stylist_etapas",
-	"vessel_stylist_historico_de_etapas",
-	"vessel_stylist_mover_de_etapa",
-	"vessel_stylist_qualificacoes",
-	"vessel_stylist_registrar_contato",
-	"vessel_stylist_etapa_criar",
-	"vessel_stylist_etapa_excluir",
-	"vessel_stylist_etapa_liberar_private_edit",
-	"vessel_stylist_etapa_marcar_prospectada",
-	"vessel_stylist_etapa_mover",
-	"vessel_stylist_etapa_renomear",
-	"vessel_stylist_etapa_tipo",
-	"vessel_stylist_motivo_ativar",
-	"vessel_stylist_motivo_criar",
-	"vessel_stylist_motivo_exigir_nota",
-	"vessel_stylist_motivo_mover",
-	"vessel_stylist_motivo_renomear",
-	"vessel_stylists_para_escolher",
-}
+// RPCPendentes: os nomes de RPC que o painel chama e que AINDA não estão em FuncoesRPC. Vazia desde o 5.11
+// (as 62 de atendimentos da Vessel entraram por atendimentos.FuncoesRPC): critério de entrada do Plano 8 cumprido.
+// Registrar uma função nova exige TIRÁ-LA daqui no mesmo commit (a montagem recusa o nome nos dois lugares).
+var RPCPendentes = []string{}
 
 // RPCForaDoPainel: as 15 funções do levantamento que NUNCA entram em FuncoesRPC (rpc.Novo também as
 // recusa; um teste confere que as duas listas concordam):

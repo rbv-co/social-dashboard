@@ -66,7 +66,7 @@ func TestFatiaDaAutenticidade(t *testing.T) {
 			t.Errorf("tabela %s não existe", tab)
 		}
 	}
-	// os gatilhos do selo: os 6 vivos; vessel_lote_novo_pede_foto e vessel_cartao_pedido_novo_acorda_o_robo saíram em 10/10
+	// os gatilhos vessel_*: os 6 do selo (5.10) e os 12 de atendimentos (5.11); vessel_lote_novo_pede_foto e vessel_cartao_pedido_novo_acorda_o_robo saíram em 10/10
 	linhas, err := p.Query(ctx, `select c.relname::text || '.' || g.tgname::text || ':' ||
 		  case when g.tgtype::int & 2 = 2 then 'before' else 'after' end
 		  from pg_trigger g join pg_class c on c.oid = g.tgrelid
@@ -78,10 +78,18 @@ func TestFatiaDaAutenticidade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quer := []string{"vessel_clientes.vessel_clientes_atualizado:before",
-		"vessel_lotes.trg_vessel_lote_material_recalcula_garantia:after", "vessel_lotes.trg_vessel_lote_novo_herda_material:before",
-		"vessel_lotes.trg_vessel_lotes_marcar_teste:before", "vessel_registros.vessel_registros_mata_o_lembrete:after",
-		"vessel_registros.vessel_registros_preencher_cliente_id:before"}; !reflect.DeepEqual(gat, quer) {
+	if quer := []string{
+		"vessel_atendimentos.vessel_atendimentos_atualizado:before", "vessel_clientes.vessel_clientes_atualizado:before",
+		"vessel_lista_espera.vessel_lista_espera_espelhar:after", "vessel_lotes.trg_vessel_lote_material_recalcula_garantia:after",
+		"vessel_lotes.trg_vessel_lote_novo_herda_material:before", "vessel_lotes.trg_vessel_lotes_marcar_teste:before",
+		"vessel_origens.vessel_rd_na_fila:after", "vessel_pessoas.vessel_pessoas_atualizado:before",
+		"vessel_private_edits.vessel_private_edits_funil:after", "vessel_registros.vessel_registros_mata_o_lembrete:after",
+		"vessel_registros.vessel_registros_preencher_cliente_id:before",
+		"vessel_stylist_etapas_historico.vessel_stylist_etapas_historico_so_acrescenta:before", "vessel_stylist_etapas_trilha.vessel_stylist_etapas_trilha_so_acrescenta:before",
+		"vessel_stylist_motivos_de_saida.vessel_stylist_motivos_de_saida_nao_se_apaga:before",
+		"vessel_stylist_qualificacoes.vessel_stylist_qualificacoes_so_acrescenta:before",
+		"vessel_stylists.vessel_stylists_etapa_antes:before", "vessel_stylists.vessel_stylists_etapa_depois:after",
+		"vessel_stylists.vessel_stylists_sem_contato_some:before"}; !reflect.DeepEqual(gat, quer) {
 		t.Errorf("gatilhos do selo = %v, esperava %v", gat, quer)
 	}
 

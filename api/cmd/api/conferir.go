@@ -310,6 +310,10 @@ var funcoesDoWorker = []string{
 	"frota_aceite_imutavel()", "frota_checar_decisao()", "frota_checar_arquivamento()", "frota_gravar_historico()",
 	"frota_checklist_imutavel()", "frota_resposta_imutavel()", "frota_checklist_enfileirar_pdf()", "frota_uso_enfileirar_pdf()",
 	"frota_fechar_posse_orfa()", "frota_espelha_situacao_no_bem()", "frota_espelha_responsavel_no_bem()", "pode_aprovar_frota()",
+	// Plano 5.11: as funções dos 12 gatilhos de atendimentos da Vessel e o portão de todas as 62 RPCs (as 62, o conferirRPC cobre)
+	"vessel_toca_atualizado_em()", "vessel_espelhar_agora()", "vessel_private_edits_mexe_no_funil()", "vessel_rd_na_fila()",
+	"vessel_so_acrescenta()", "vessel_motivo_de_saida_nao_se_apaga()", "vessel_stylist_qualificacoes_so_acrescenta()",
+	"vessel_stylists_etapa_antes()", "vessel_stylists_etapa_depois()", "vessel_stylists_sem_contato_some()", "vessel_pode(text,text)",
 }
 
 // gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados
@@ -332,6 +336,15 @@ var gatilhosDoWorker = [][2]string{
 	{"trg_frota_checklist_enfileirar_pdf", "frota_checklist"}, {"trg_frota_resposta_imutavel", "frota_checklist_respostas"},
 	{"trg_frota_espelha_responsavel", "frota_veiculos"}, {"trg_frota_espelha_situacao", "frota_veiculos"},
 	{"trg_frota_espelha_situacao_no_bem", "frota_veiculos"}, {"trg_frota_fechar_posse_orfa", "frota_veiculos"},
+	// Plano 5.11: carimbo de atualização, funil do Private Edit, histórico que só acrescenta, motivo que não se apaga,
+	// o funil da stylist (antes/depois/sem contato) e o espelho ao vivo da lista de espera (a fila disparos_pendentes)
+	{"vessel_atendimentos_atualizado", "vessel_atendimentos"}, {"vessel_pessoas_atualizado", "vessel_pessoas"},
+	{"vessel_lista_espera_espelhar", "vessel_lista_espera"}, {"vessel_private_edits_funil", "vessel_private_edits"},
+	{"vessel_rd_na_fila", "vessel_origens"}, {"vessel_stylist_etapas_historico_so_acrescenta", "vessel_stylist_etapas_historico"},
+	{"vessel_stylist_etapas_trilha_so_acrescenta", "vessel_stylist_etapas_trilha"},
+	{"vessel_stylist_motivos_de_saida_nao_se_apaga", "vessel_stylist_motivos_de_saida"},
+	{"vessel_stylist_qualificacoes_so_acrescenta", "vessel_stylist_qualificacoes"}, {"vessel_stylists_etapa_antes", "vessel_stylists"},
+	{"vessel_stylists_etapa_depois", "vessel_stylists"}, {"vessel_stylists_sem_contato_some", "vessel_stylists"},
 }
 
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há

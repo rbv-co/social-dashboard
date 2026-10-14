@@ -831,13 +831,12 @@ func TestContaCaminhosFelizesPelaMontagemReal(t *testing.T) {
 // ele, 404 para nome não registrado, e o portão vem antes da validação do corpo.
 func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
 	original, pendentes := FuncoesRPC, RPCPendentes
-	// um nome AINDA pendente: o 5.10 registrou o vessel_gerar_lote que estava aqui
-	nome := pendentes[len(pendentes)-1]
+	// RPCPendentes está vazia desde o 5.11: a função de teste TROCA uma registrada de verdade (mesmo nome, portão e
+	// parâmetro de teste), o que mantém a soma de TotalRPCDoPainel.
+	const nome = "vessel_pracas_listar"
 	t.Cleanup(func() { FuncoesRPC, RPCPendentes = original, pendentes })
-	// ACRESCENTA: com as funções dos sub-planos já registradas (e fora de RPCPendentes), trocar a lista inteira
-	// derrubaria a soma de TotalRPCDoPainel.
-	FuncoesRPC = append(slices.Clone(original), rpc.Funcao{Nome: nome, Params: []rpc.Param{{Nome: "p_n", Tipo: "integer"}}, Retorno: rpc.Valor, Portao: autz.SuperFicha})
-	RPCPendentes = slices.DeleteFunc(slices.Clone(pendentes), func(x string) bool { return x == nome })
+	FuncoesRPC = append(slices.DeleteFunc(slices.Clone(original), func(f rpc.Funcao) bool { return f.Nome == nome }),
+		rpc.Funcao{Nome: nome, Params: []rpc.Param{{Nome: "p_n", Tipo: "integer"}}, Retorno: rpc.Valor, Portao: autz.SuperFicha})
 	p := testebanco.Novo(t)
 	s := auth.NovoStore(p)
 	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
