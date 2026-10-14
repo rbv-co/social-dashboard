@@ -264,24 +264,31 @@ func TestBeautyPracasEEdicoes(t *testing.T) {
 	_ = strings.TrimSpace
 }
 
-// Paridade com produção, documentada: DUAS funções que gravam usam portão de "ver" do Private Edit
-// (vessel_convite_marcar e vessel_chave_da_convidada; o comentário da primeira diz "a mesma trava de
-// vessel_situacao_do_atendimento", que exige editar). Quem só VÊ marca o convite e faz nascer a chave. Se o dono
-// apertar a regra (portão e função), este teste é o que muda.
-func TestPortaoDeVerQueGrava(t *testing.T) {
+// Dos dois "ver que grava" de produção, UM foi apertado (migração 00009): vessel_convite_marcar exige editar, a mesma trava de
+// vessel_situacao_do_atendimento (o comentário da função sempre disse isso). vessel_chave_da_convidada segue com "ver" do
+// Private Edit de propósito: só sorteia a chave do link do cartão da convidada quando ela ainda não existe, e quem vê o
+// encontro precisa abrir o cartão.
+func TestConviteMarcarExigeEditarEChaveSegueComVer(t *testing.T) {
 	m := novoMundo(t)
-	const soVe = "ver:" + privateEdit
+	const soVe, edita = "ver:" + privateEdit, "editar:" + privateEdit
 	id := m.Um(t, `select id::text from vessel_atendimentos where evento_codigo = 'PE-20270301-CPS-01'`)
 	m.P.Exec(t.Context(), `update vessel_atendimentos set chave_convite = null where id = $1::bigint`, id)
 	deu(t, m, soVe, "vessel_chave_da_convidada", `{"p_id":`+id+`}`, "ok")
 	if m.Um(t, `select (coalesce(chave_convite, '') <> '')::text from vessel_atendimentos where id = $1::bigint`, id) != "true" {
 		t.Error("quem só vê não fez a chave nascer: o portão de vessel_chave_da_convidada mudou")
 	}
-	deu(t, m, soVe, "vessel_convite_marcar", `{"p_id":`+id+`,"p_marca":"enviado"}`, "ok")
-	if m.Um(t, `select (convite_enviado_em is not null)::text from vessel_atendimentos where id = $1::bigint`, id) != "true" {
-		t.Error("quem só vê não marcou o convite: o portão de vessel_convite_marcar mudou")
+	for _, quem := range []string{soVe, "ver:" + atend} {
+		if st, _ := m.Pedir(t, quem, "POST", "/rpc/vessel_convite_marcar", `{"p_id":`+id+`,"p_marca":"enviado"}`); st != 403 {
+			t.Errorf("convite_marcar como %s = %d, esperava 403", quem, st)
+		}
 	}
-	// e as que exigem editar continuam fechadas para quem só vê
+	if m.Um(t, `select (convite_enviado_em is null)::text from vessel_atendimentos where id = $1::bigint`, id) != "true" {
+		t.Error("o convite foi marcado por quem só vê")
+	}
+	deu(t, m, edita, "vessel_convite_marcar", `{"p_id":`+id+`,"p_marca":"enviado"}`, "ok")
+	if m.Um(t, `select (convite_enviado_em is not null)::text from vessel_atendimentos where id = $1::bigint`, id) != "true" {
+		t.Error("quem edita não marcou o convite")
+	}
 	if st, _ := m.Pedir(t, soVe, "POST", "/rpc/vessel_situacao_do_atendimento", `{"p_id":`+id+`,"p_situacao":"realizado"}`); st != 403 {
 		t.Errorf("situacao do atendimento como quem só vê = %d, esperava 403", st)
 	}
