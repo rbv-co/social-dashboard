@@ -236,3 +236,17 @@ func TestParaTesteSoLoopbackHTTP(t *testing.T) {
 		}
 	}
 }
+
+// O POST do token carrega client_secret e refresh_token: um 307/308 não o reenvia a outro host; o GET do download
+// segue (https, até 3).
+func TestRedirecionamentoSoDoGet(t *testing.T) {
+	seguir := Novo(nil).http.CheckRedirect
+	destino, _ := http.NewRequest(http.MethodPost, "https://outro.example/x", strings.NewReader("client_secret=SEGREDO"))
+	if err := seguir(destino, []*http.Request{{Method: http.MethodPost}}); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Errorf("POST seguiu o redirecionamento: %v", err)
+	}
+	get, _ := http.NewRequest(http.MethodGet, "https://outro.example/x", nil)
+	if err := seguir(get, []*http.Request{{Method: http.MethodGet}}); err != nil {
+		t.Errorf("GET https devia seguir: %v", err)
+	}
+}

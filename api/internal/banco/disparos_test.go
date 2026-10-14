@@ -223,3 +223,16 @@ func TestAtenderDisparo(t *testing.T) {
 		t.Error("atendeu o pedido de outro robô")
 	}
 }
+
+// Se o atendimento passa de 30 min e a reconciliação marca 'incerto' no meio, o resultado não se perde calado: erro.
+func TestAtenderDisparoReconciliadoNoMeio(t *testing.T) {
+	p := testebanco.Novo(t)
+	executar(t, p, `select disparar_robo('espelho', 'f', 's')`)
+	atendeu, err := banco.AtenderDisparo(context.Background(), p, "espelho", func(context.Context, banco.Disparo) error {
+		executar(t, p, `update disparos_pendentes set situacao = 'incerto' where robo = 'espelho'`)
+		return nil
+	})
+	if !atendeu || err == nil || !strings.Contains(err.Error(), "já não estava atendendo") {
+		t.Fatalf("atendimento reconciliado no meio = %v %v", atendeu, err)
+	}
+}

@@ -87,9 +87,10 @@ func semResposta(ctx context.Context, msg string) error {
 func Novo(p *pgxpool.Pool) *Cliente {
 	return &Cliente{pool: p, http: &http.Client{Timeout: 50 * time.Second,
 		// segue até 3 redirecionamentos, só para https (o download do WorkDrive pode mudar de host; o Go tira o
-		// Authorization quando o domínio muda, como o fetch da edge); http ou o 4º = 3xx devolvido (ErroHTTP)
+		// Authorization quando o domínio muda, como o fetch da edge); http ou o 4º = 3xx devolvido (ErroHTTP). Só GET
+		// segue: o POST do token (client_secret e refresh_token no corpo) nunca é reenviado a outro host por 307/308.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 3 || req.URL.Scheme != "https" {
+			if len(via) >= 3 || req.URL.Scheme != "https" || via[0].Method != http.MethodGet {
 				return http.ErrUseLastResponse
 			}
 			return nil

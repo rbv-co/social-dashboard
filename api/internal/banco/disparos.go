@@ -72,8 +72,11 @@ func AtenderDisparo(ctx context.Context, p *pgxpool.Pool, robo string, fazer fun
 	// contexto próprio: o prazo da tarefa que estourou dentro de `fazer` não pode deixar a linha em 'atendendo'
 	c, cancela := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancela()
-	_, errGravar := p.Exec(c, `update disparos_pendentes set situacao = $2::text, erro = left($3::text, 500), atualizado_em = now()
+	tag, errGravar := p.Exec(c, `update disparos_pendentes set situacao = $2::text, erro = left($3::text, 500), atualizado_em = now()
 		 where id = $1::bigint and situacao = 'atendendo'`, d.ID, situacao, texto)
+	if errGravar == nil && tag.RowsAffected() == 0 { // passou de 30 min: a reconciliação já a marcou 'incerto' e o resultado se perderia calado
+		errGravar = fmt.Errorf("disparo %d: já não estava atendendo (reconciliado como incerto); resultado %q não gravado", d.ID, situacao)
+	}
 	if errGravar != nil { // a linha fica 'atendendo' e a reconciliação a leva a 'incerto' em 30 min: nunca roda de novo
 		errGravar = fmt.Errorf("disparo %d: gravar %q: %w", d.ID, situacao, errGravar)
 	}
