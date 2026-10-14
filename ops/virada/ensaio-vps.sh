@@ -106,7 +106,7 @@ trocar_host() {
 clone() { for i in 1 2 3 4 5; do psql "$ALVO" -X -q -c "create database api_base template api" && return 0; sleep 3; done; return 1; }
 foto() { sh "$AQUI/delta.sh" base "$BASE" "$OUT/delta" "$OUT/tabelas-supabase.txt"; }
 subir() {
-  v "$DC up -d --no-build && for i in \$(seq 50); do a=\$(docker inspect -f '{{.State.Health.Status}}' api-ensaio-api-1); w=\$(docker inspect -f '{{.State.Health.Status}}' api-ensaio-worker-1)
+  v "$DC up -d --no-build --pull never && for i in \$(seq 50); do a=\$(docker inspect -f '{{.State.Health.Status}}' api-ensaio-api-1); w=\$(docker inspect -f '{{.State.Health.Status}}' api-ensaio-worker-1)
        [ \"\$a\" = healthy ] && [ \"\$w\" = healthy ] && exit 0; sleep 3; done; docker logs --tail 20 api-ensaio-worker-1; exit 1"
 }
 listar() {
@@ -157,7 +157,7 @@ etapa "6. preparar a pasta do ensaio na VPS" preparar_vps
 etapa "7. papel api_app (sem superusuário)" janela papel
 etapa "7b. trocar o host do Storage no banco" janela trocar_host
 etapa "8. clone do corte (api_base)" janela clone
-etapa "9. api migrar (como api_app)" janela v "$DC run --rm --no-build api migrar"
+etapa "9. api migrar (como api_app)" janela v "$DC run --rm --pull never api migrar"
 etapa "10. API e worker no ar (healthy)" janela subir
 etapa "11. api worker conferir" janela v "$DC exec -T worker api worker conferir"
 etapa "11b. foto do corte (do clone, fora da janela)" foto
