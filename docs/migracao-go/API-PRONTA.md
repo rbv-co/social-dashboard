@@ -6,7 +6,7 @@
 
 **Regra da trilha C.** Lê este arquivo do `origin/main` e só troca o que está listado. Se o texto divergir do código, vale `rotas.go`: abra a correção aqui, não improvise no front.
 
-**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.13, 5.6, 5.7, 5.2, 5.8 (SEM `fabrica-candidatos`, que passa a depender só da Task 7 do 5.8), 5.9, 5.3 e 5.5 (o 5.13 não traz rota nova). 216 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, com 14 funções registradas), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Patrimônio e cadastros 30, Frota 27, Fábrica 21 (9 leituras e 12 escritas: 1 de catálogo, 4 edges e 7 de robô), Conteúdo 21 (20 de tabela e o `POST /conteudo-trigger`), Comercial 18 (14 leituras e 4 escritas), Outras 2.
+**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.13, 5.6, 5.7, 5.2, 5.8, 5.9, 5.3 e 5.5 (o 5.13 não traz rota nova). 217 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, com 14 funções registradas), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Patrimônio e cadastros 30, Frota 27, Fábrica 22 (9 leituras e 13 escritas: 1 de catálogo, 5 edges e 7 de robô), Conteúdo 21 (20 de tabela e o `POST /conteudo-trigger`), Comercial 18 (14 leituras e 4 escritas), Outras 2.
 
 ## Convenções que valem para todas as rotas
 
@@ -210,7 +210,7 @@ Não há rota nova: o 5.13 muda COMO a API reconhece quem chama. O robô manda `
 
 ## Fábrica de anúncios (5.8)
 
-21 rotas no grupo de domínio de `web.Rotas` (`fabrica.Montar`: 9 leituras e 12 escritas), prazo de 30 s do grupo. **Falta `POST /fabrica-candidatos`** (Task 7): depende das tabelas `gc_*` do 5.5; o front NÃO troca `use-candidatos.js:7` ainda. Nenhuma RPC.
+22 rotas no grupo de domínio de `web.Rotas` (`fabrica.Montar`: 9 leituras e 13 escritas), prazo de 30 s do grupo. Nenhuma RPC.
 
 **Valem para todas as linhas (detalhe em `NOTAS-DA-IMPLANTACAO.md`, "Plano 5.8"):**
 
@@ -233,6 +233,7 @@ Não há rota nova: o 5.13 muda COMO a API reconhece quem chama. O robô manda `
 | `POST /fabrica/criativos/escolher` | os dois `.update` de `fabrica_criativos` (`curar:33, 48`) | catálogo (`fab_criativos_write`: papel admin, super pela ficha ou `meta.fabrica`), sessão própria, painel | corpo `{"ids":[uuid,…],"escolhido":bool}` → `200 {"atualizados": n}`; 1 a 500 ids numa transação (um negado ou inexistente desfaz tudo) | `6d97e4ce` |
 | `POST /fabrica-trigger` | `functions.invoke('fabrica-trigger')` (`gerar:95`; `conferir:25, 39`; `subir:381`; `looks:58`) | Fabricante, sessão própria, painel | corpo `{"tipo":"gerar"\|"subir"\|"ativar"\|"preview","params":{…}}` → `200 {"job_id","campanha_id"}`. **`excluir` segue `400 tipo_invalido`** (como a edge; o botão de `conferir:39` nunca funcionou: achado 2). Erros novos: `503 github_nao_configurado` (conferido ANTES de gravar), `429 muitas_tentativas` (30 por hora por pessoa, com `Retry-After`), `504 dispatch_incerto`, `400 pedido_invalido` (params). Rodada e job numa transação; o robô é acordado depois dela; falha do despacho marca job e rodada `erro`. `detail` do `dispatch_falhou` é frase da API (nunca o texto do GitHub) | `302cf487` |
 | `POST /fabrica-apagar` | `functions.invoke('fabrica-apagar')` (`home:106, 128`) | Fabricante, sessão própria, painel | corpo `{"campanhaId": uuid}` → `200 {"ok":true}` (também para rodada inexistente: idempotente). Apaga o banco primeiro, cancela a execução no GitHub e só então os arquivos, dentro de `<ARQUIVOS_DIR>/fabrica-criativos`. `400 campanhaId_invalido` | `8e3b8a96` |
+| `POST /fabrica-candidatos` | `functions.invoke('fabrica-candidatos')` (`use-candidatos.js:7`) | Fabricante (painel; conta de serviço não), **SÓ LÊ: "entrar como" passa** | corpo da edge `{lojas, fonte, filtros}`; `fonte` `oportunidades\|garimpo\|bcg\|abc\|manual`, outra = `400 {"error":"fonte_invalida"}`; `lojas` até 20 depósitos (só dígitos), **filtradas por `fabrica_lojas`** (depósito de fora é ignorado em TUDO: a edge deixava ler o estoque de qualquer depósito do Bling); resposta `{"candidatos":[{sku, nome, categoria, porLoja:{<depósito>:{preco, pctPrevisto, precoComDesconto, estoque}}}]}`. Lê `gc_*` como a edge (sem as restritivas do 5.5) e **sem o teto de 1000 linhas** do PostgREST; a ordem pode diferir da edge (SKU na primeira aparição; `abc` por faturamento) | este PR |
 | `POST /fabrica-looks` | `functions.invoke('fabrica-looks')` (`looks:23, 38, 48, 53`) | Fabricante, sessão própria, painel | corpo e frases da edge (`acao` `salvar`\|`ordenar`\|`excluir`, com `look`, `ordem` ou `chave`); `chave` no formato `^[a-z0-9][a-z0-9_-]{0,79}$`; `sync` aposentado = `400 acao_invalida`; ordenar numa transação | `11189d98` |
 | `POST /fabrica-publicos` | `functions.invoke('fabrica-publicos')` (`subir:294, 303`) | Fabricante, sessão própria, painel | corpo e frases da edge (`acao` `salvar`\|`apagar`); `salvar` com `id` inexistente = `404` | `11189d98` |
 | `PATCH /fabrica/robo/jobs/{id}` | `sbPatch('fabrica_jobs')` do `fabrica-job-runner.mjs` | **só sessão de serviço** com `meta.fabrica` | corpo `{status?, github_run_id?, resultado?, erro?}` (status `enfileirado\|rodando\|concluido\|erro`; `resultado` até 256 KiB) → `204`; `updated_at` do servidor | `f2abf578` |
@@ -430,4 +431,4 @@ Sem equivalente no Supabase e sem troca no front; servem à operação (health c
 
 ## Ainda NÃO pronto
 
-`POST /fabrica-candidatos` (5.8, Task 7: as tabelas `gc_*` já têm rota no 5.5), 5.4, 5.10 e 5.11 (um sub-plano cada, incluindo as 78 RPC pendentes: 5.10 = 16, 5.11 = 62; as do 5.2, 5.3, 5.7 e 5.9 estão registradas) e Plano 6 (Storage, páginas públicas da Vessel, Zoho/Microsoft); consulte o plano-mãe `docs/superpowers/plans/2026-10-11-api-go-plano-5-dominios.md`, seção IV.2, para o dono de cada área e as telas a trocar.
+5.4, 5.10 e 5.11 (um sub-plano cada, incluindo as 78 RPC pendentes: 5.10 = 16, 5.11 = 62; as do 5.2, 5.3, 5.7 e 5.9 estão registradas) e Plano 6 (Storage, páginas públicas da Vessel, Zoho/Microsoft); consulte o plano-mãe `docs/superpowers/plans/2026-10-11-api-go-plano-5-dominios.md`, seção IV.2, para o dono de cada área e as telas a trocar.
