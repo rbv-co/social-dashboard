@@ -78,7 +78,7 @@ var publicas = map[string]bool{
 	// Plano 6: Storage. URL pública (só bucket público), URL assinada (HMAC com vencimento) e o envio de currículo (só as
 	// duas pastas consultor-*; chave do Core ou limite por IP): arquivos/*_test.go
 	"GET /storage/v1/object/public/{bucket}/*": true, "GET /storage/v1/object/sign/{bucket}/*": true,
-	"POST /storage/v1/object/vessel-curriculos/{pasta}/{arquivo}": true,
+	"POST /storage/v1/object/vessel-curriculos/{pasta}/{arquivo}": true, "OPTIONS /storage/v1/object/vessel-curriculos/{pasta}/{arquivo}": true,
 }
 
 func webhooksPublicos() []string {
