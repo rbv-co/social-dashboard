@@ -41,6 +41,13 @@ export const TETO_DE_LINHAS = 1000
 // valor (`is.true`, `not.eq.x`) não tem tradução.
 const nulo = (sim) => (v) => { if (v !== 'null') throw new ErroDeTraducao(`is.${v} sem tradução`); return sim }
 const naoNulo = (sim) => (v) => { if (v !== 'is.null') throw new ErroDeTraducao(`not.${v} sem tradução`); return sim }
+// Upsert em lote (`POST …/gravar`, até 1000 linhas por chamada): uma chamada por fatia.
+const POR_LOTE = 1000
+const lotes = (caminho, linhas) => {
+  const chamadas = []
+  for (let i = 0; i < linhas.length; i += POR_LOTE) chamadas.push({ metodo: 'POST', caminho, corpo: { linhas: linhas.slice(i, i + POR_LOTE) } })
+  return chamadas
+}
 const ROTAS = {
   // ── 5.1 — admin, equipes e acesso ──
   profiles: {
@@ -197,6 +204,43 @@ const ROTAS = {
   frota_plano_revisao: { area: 'frota', rota: '/frota/plano-revisao', filtros: {}, ordens: ['ordem'] },
   frota_revisoes: { area: 'frota', rota: '/frota/revisoes', filtros: {}, ordens: [] },
   frota_abastecimentos: { area: 'frota', rota: '/frota/abastecimentos', filtros: {}, ordens: ['abastecido_em'], autoria: ['criado_por'] },
+  // ── 5.5 — Comercial: Bling e Shopify (`/comercial/*`) ──
+  bling_lojas: {
+    area: 'comercial', rota: '/comercial/lojas', filtros: {}, ordens: ['nome', 'loja_id'],
+    chave: 'loja_id', // PATCH /comercial/lojas/{loja_id}
+  },
+  bling_depositos: { area: 'comercial', rota: '/comercial/depositos', filtros: {}, ordens: ['nome'] },
+  bling_metas: { area: 'comercial', rota: '/comercial/metas-lojas', filtros: { year: eq('ano'), month: eq('mes') }, ordens: [] },
+  bling_vendedor_metas: { area: 'comercial', rota: '/comercial/metas-vendedoras', filtros: { year: eq('ano'), month: eq('mes') }, ordens: [] },
+  bling_vendedores: {
+    area: 'comercial', rota: '/comercial/vendedoras', filtros: {}, ordens: ['nome'],
+    upsert: (linhas) => lotes('/comercial/vendedoras/gravar', linhas),
+  },
+  bling_pedido_vendedor: {
+    area: 'comercial', rota: '/comercial/pedidos-vendedor', filtros: { pedido_id: { in: 'pedido_id', eq: 'pedido_id' } }, ordens: ['pedido_data'],
+    paginaAteOLimite: true, // admin: `.limit(5000)` dos últimos pedidos
+    upsert: (linhas) => lotes('/comercial/pedidos-vendedor/gravar', linhas),
+  },
+  bling_pedido_nota: {
+    area: 'comercial', rota: '/comercial/notas', filtros: {}, ordens: [],
+    // o `.or(and(data_da_venda…),and(data_pedido…))` da tela é a `janela` da rota
+    ou: (texto) => {
+      const m = /^and\(data_da_venda\.gte\.(\d{4}-\d\d-\d\d),data_da_venda\.lte\.(\d{4}-\d\d-\d\d)\),and\(data_pedido\.gte\.(\d{4}-\d\d-\d\d),data_pedido\.lte\.(\d{4}-\d\d-\d\d)\)$/.exec(texto)
+      if (!m || m[1] !== m[3] || m[2] !== m[4]) throw new ErroDeTraducao(`or sem tradução: ${texto}`)
+      return { janela: `[${m[1]},${m[2]}]` }
+    },
+  },
+  bling_pedido_ajuste_valor: { area: 'comercial', rota: '/comercial/ajustes-de-valor', filtros: {}, ordens: [] },
+  bling_pedido_ajuste_vendedor: { area: 'comercial', rota: '/comercial/ajustes-de-vendedor', filtros: {}, ordens: [] },
+  bling_pedido_forma_pagamento: { area: 'comercial', rota: '/comercial/formas-de-pagamento', filtros: { eh_devolucao: eq('eh_devolucao') }, ordens: [] },
+  gc_estoque_item: { area: 'comercial', rota: '/comercial/estoque', filtros: { deposito_id: { in: 'deposito_id', eq: 'deposito_id' } }, ordens: [] },
+  gc_vendas_item: { area: 'comercial', rota: '/comercial/vendas-por-item', filtros: { mes: { in: 'mes', eq: 'mes' } }, ordens: [] },
+  shopify_pedidos: {
+    area: 'comercial', rota: '/comercial/pedidos-shopify',
+    // `criado_ate` é EXCLUSIVO na rota (`<`), como o `.lt` da tela
+    filtros: { criado_em_shopify: { gte: 'criado_de', lt: 'criado_ate' }, status_financeiro: { in: 'status_financeiro', eq: 'status_financeiro' } }, ordens: [],
+  },
+  gestao_comercial_briefings: { area: 'comercial', rota: '/comercial/briefings', filtros: {}, ordens: ['created_at', 'rodada'] },
   // ── 5.4 — Colaboradores e Acessos (`/acessos/*`). Sem rota: recursos (escrita), vínculos (PATCH/DELETE),
   // termos (escrita) e a foto — o código que os usava saiu da tela ou fica atrás de aviso ──
   acessos_pessoas: {
@@ -375,6 +419,11 @@ function valorDoIlike(v) {
 function parametrosDosFiltros(def, tabela, filtros) {
   const params = {}
   for (const f of filtros) {
+    if (f.op === 'or') {
+      if (!def.ou) throw new ErroDeTraducao(`${tabela}: a rota ${def.rota} não tem tradução para or`)
+      for (const [k, v] of Object.entries(def.ou(f.val))) { if (k in params) throw new ErroDeTraducao(`${tabela}: filtro repetido ${k}`); params[k] = v }
+      continue
+    }
     const alvo = def.filtros[f.col]?.[f.op]
     if (!alvo) throw new ErroDeTraducao(`${tabela}: a rota ${def.rota} não filtra por ${f.col}=${f.op}`)
     const [p, converter, padrao] = Array.isArray(alvo) ? alvo : [alvo, null, false]
@@ -471,7 +520,7 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
   // Filtro que a rota não declara: só `eq`/`in`, só sem limite (a leitura vem
   // INTEIRA, paginada abaixo) e numa coluna que a rota devolve — aí a tela filtra
   // as mesmas linhas que o banco filtraria. Qualquer outro caso recusa alto.
-  const naTela = partes.filtros.filter((f) => !def.filtros[f.col]?.[f.op])
+  const naTela = partes.filtros.filter((f) => f.op !== 'or' && !def.filtros[f.col]?.[f.op])
   if (naTela.length && (partes.limite || naTela.some((f) => f.op !== 'eq' && f.op !== 'in'))) {
     throw new ErroDeTraducao(`${partes.tabela}: a rota ${def.rota} não filtra por ${naTela.map((f) => f.col + '=' + f.op).join(', ')}`)
   }
@@ -485,14 +534,19 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
   if (partes.ordem.length && !naRota && partes.limite) {
     throw new ErroDeTraducao(`${partes.tabela}: a rota não ordena por ${partes.ordem.map((o) => o.col)} e o pedido corta em ${partes.limite}`)
   }
-  if (partes.limite > TETO_DE_LINHAS) throw new ErroDeTraducao(`${partes.tabela}: limite ${partes.limite} acima do teto de ${TETO_DE_LINHAS} linhas da API`)
-  if (partes.limite) params.limite = partes.limite
+  // `.limit(N)` acima do teto de UMA resposta é recusado (cortar calado daria número menor), salvo a rota que
+  // declara `paginaAteOLimite`: aí lê em páginas até N (ou até acabar), todas com a mesma ordem da rota.
+  const acima = partes.limite > TETO_DE_LINHAS && !!def.paginaAteOLimite && !partes.deslocamento
+  if (partes.limite > TETO_DE_LINHAS && !acima) throw new ErroDeTraducao(`${partes.tabela}: limite ${partes.limite} acima do teto de ${TETO_DE_LINHAS} linhas da API`)
+  if (acima && Math.ceil(partes.limite / TETO_DE_LINHAS) > PAGINAS_NO_MAXIMO) throw new ErroDeTraducao(`${partes.tabela}: limite ${partes.limite} passa de ${PAGINAS_NO_MAXIMO} páginas`)
+  if (partes.limite && !acima) params.limite = partes.limite
+  if (partes.deslocamento) params.deslocamento = partes.deslocamento
   // SEM LIMITE, A LEITURA VEM INTEIRA. A API (como o PostgREST, `max_rows`) para
   // em 1000 linhas por pedido; uma tela que não pediu limite queria TUDO, e cortar
   // em 1000 calado é número menor sem aviso. Conta o total e busca as páginas
   // seguintes por `deslocamento` (a ordem das rotas tem desempate: não repete
   // nem pula linha).
-  if (contar || !partes.limite) params.contar = 1
+  if (contar || !partes.limite || acima) params.contar = 1
   let linhas = []
   let total = null
   for (let pagina = 0; ; pagina++) {
@@ -501,7 +555,8 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
     if (!Array.isArray(r.data)) return { data: null, error: { message: 'Resposta inesperada do servidor.', code: '502' }, count: null }
     linhas = linhas.concat(r.data)
     total = r.total
-    if (partes.limite || total === null || linhas.length >= total || r.data.length === 0) break
+    if ((partes.limite && !acima) || total === null || linhas.length >= total || r.data.length === 0) break
+    if (acima && linhas.length >= partes.limite) { linhas = linhas.slice(0, partes.limite); break }
     if (pagina + 1 >= PAGINAS_NO_MAXIMO) throw new ErroDeTraducao(`${partes.tabela}: ${total} linhas — passa de ${PAGINAS_NO_MAXIMO} páginas`)
   }
   if (naTela.length) {
@@ -530,8 +585,8 @@ function semAutoria(def, linha) {
   return l
 }
 
-function idDoFiltro(partes, oQue) {
-  if (partes.filtros.length === 1 && partes.filtros[0].col === 'id' && partes.filtros[0].op === 'eq') return valorDoEq(partes.filtros[0].val)
+function idDoFiltro(partes, oQue, chave = 'id') {
+  if (partes.filtros.length === 1 && partes.filtros[0].col === chave && partes.filtros[0].op === 'eq') return valorDoEq(partes.filtros[0].val)
   throw new ErroDeTraducao(`${partes.tabela}: ${oQue} pela API só por id (pediu ${partes.filtros.map((f) => f.col + '=' + f.op).join('&') || 'sem filtro'})`)
 }
 
@@ -551,10 +606,12 @@ export async function escreverPelaApi(operacao, partes, corpo) {
   let res = []
   if (operacao === 'upsert') {
     if (!def.upsert) throw new ErroDeTraducao(`${partes.tabela}: sem upsert na API`)
-    const p = def.upsert(linhas)
-    const r = await um(p.metodo, p.caminho, p.corpo)
-    if (r.erro) return { data: null, error: r.erro }
-    res = Array.isArray(r.linha) ? r.linha : (r.linha ? [r.linha] : [])
+    const chamadas = [].concat(def.upsert(linhas))
+    for (const p of chamadas) {
+      const r = await um(p.metodo, p.caminho, p.corpo)
+      if (r.erro) return { data: null, error: r.erro }
+      res = res.concat(Array.isArray(r.linha) ? r.linha : (r.linha ? [r.linha] : []))
+    }
   } else if (operacao === 'inserir') {
     for (const l of linhas) {
       const r = await um('POST', def.rota, l)
@@ -564,7 +621,7 @@ export async function escreverPelaApi(operacao, partes, corpo) {
   } else if (operacao === 'editar') {
     if (linhas.length !== 1) throw new ErroDeTraducao(`${partes.tabela}: editar pede um corpo`)
     // linha única: o filtro da tela é `id=true` e a rota não tem id no caminho
-    const caminho = def.linhaUnica ? def.rota : `${def.rota}/${encodeURIComponent(idDoFiltro(partes, 'editar'))}`
+    const caminho = def.linhaUnica ? def.rota : `${def.rota}/${encodeURIComponent(idDoFiltro(partes, 'editar', def.chave))}`
     const r = await um('PATCH', caminho, linhas[0])
     if (r.erro) return { data: null, error: r.erro }
     res = [r.linha]
@@ -630,6 +687,10 @@ class ConsultaPelaApi {
   in(col, vals) { this.p.filtros.push({ col, op: 'in', val: vals.join(',') }); return this }
   gte(col, val) { this.p.filtros.push({ col, op: 'gte', val: String(val) }); return this }
   lte(col, val) { this.p.filtros.push({ col, op: 'lte', val: String(val) }); return this }
+  lt(col, val) { this.p.filtros.push({ col, op: 'lt', val: String(val) }); return this }
+  or(texto) { this.p.filtros.push({ col: '', op: 'or', val: String(texto) }); return this }
+  // `.range(de, ate)` (inclusivo, como o supabase-js) = `limite` + `deslocamento` da rota
+  range(de, ate) { this.p.limite = ate - de + 1; this.p.deslocamento = de; return this }
   order(col, { ascending = true, nullsFirst } = {}) {
     // a ordem dos nulos não tem par na rota: recusa na execução (o encadeado não lança)
     if (nullsFirst !== undefined) this.recusa = `ordem com nullsFirst não tem tradução: ${col}`

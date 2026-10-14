@@ -255,6 +255,8 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `comercial` (Plano 7): gc_* pela API em Go (5.5).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 
 const CANAIS = [
@@ -399,7 +401,7 @@ async function carregar() {
 async function fetchVendas(meses) {
   const size = 1000, rows = []
   for (let from = 0; ; from += size) {
-    const { data, error } = await sbClient.from('gc_vendas_item')
+    const { data, error } = await deOnde(sbClient).from('gc_vendas_item')
       .select('mes,canal_loja_id,sku,produto,categoria,unidades,faturamento')
       .in('mes', meses).range(from, from + size - 1)
     if (error) throw error
@@ -411,7 +413,7 @@ async function fetchVendas(meses) {
 async function fetchEstoque() {
   const size = 1000, rows = []
   for (let from = 0; ; from += size) {
-    const { data, error } = await sbClient.from('gc_estoque_item')
+    const { data, error } = await deOnde(sbClient).from('gc_estoque_item')
       .select('deposito_id,sku,produto,categoria,saldo').range(from, from + size - 1)
     if (error) throw error
     rows.push(...(data || []))
@@ -423,7 +425,7 @@ async function fetchEstoque() {
 async function fetchPrimeiraVenda() {
   const size = 1000, m = new Map()
   for (let from = 0; ; from += size) {
-    const { data, error } = await sbClient.from('gc_vendas_item').select('sku,mes').range(from, from + size - 1)
+    const { data, error } = await deOnde(sbClient).from('gc_vendas_item').select('sku,mes').range(from, from + size - 1)
     if (error) { primeiraVendaPorSku.value = m; return }
     for (const r of (data || [])) { const mes = String(r.mes).slice(0, 7); const cur = m.get(r.sku); if (!cur || mes < cur) m.set(r.sku, mes) }
     if (!data || data.length < size) break

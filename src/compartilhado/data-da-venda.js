@@ -6,6 +6,7 @@
 // Mesmo arranjo de `checklist.js` na Frota.
 import { ajustarPelaDataDaNota } from '../../supabase/functions/_shared/data-da-venda.js'
 
+import { deOnde } from './banco-pela-api.js';
 export { ajustarPelaDataDaNota }
 
 const soDia = (v) => String(v ?? '').slice(0, 10);
@@ -24,7 +25,7 @@ export async function buscarLinhasDaJanela(sbClient, di, df) {
   const PAGINA = 1000;   // o PostgREST corta em 1000 sem avisar — paginar sempre
   try {
     for (let inicio = 0; inicio < 20000; inicio += PAGINA) {
-      const { data, error } = await sbClient
+      const { data, error } = await deOnde(sbClient)
         .from('bling_pedido_nota')
         // ⚠️ `nota_situacao` ENTROU EM 22/09/2026 e não é enfeite: sem ela a regra não
         // tem como saber se a nota foi autorizada, e a tela volta a mostrar pedido

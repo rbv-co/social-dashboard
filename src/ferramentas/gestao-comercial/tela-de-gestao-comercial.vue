@@ -278,7 +278,7 @@ function _gcMarkdown(md){
 async function loadGestao(){
   const body=document.getElementById('gc-body');
   body.innerHTML='<div class="gc-empty"><h3>Carregando…</h3></div>';
-  const{data,error}=await sbClient.from('gestao_comercial_briefings')
+  const{data,error}=await deOnde(sbClient).from('gestao_comercial_briefings')
     .select('rodada,periodo,resumo,conteudo,dados_json,created_at')
     .order('created_at',{ascending:false}).limit(20);
   if(error){body.innerHTML='<div class="gc-empty"><h3>Erro ao carregar</h3><p>'+_npEsc(error.message)+'</p></div>';return;}
