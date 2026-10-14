@@ -130,12 +130,28 @@ func (c *Catalogo) PodeCriar(ctx context.Context, b Banco, e *Escopo, tab string
 	return nil
 }
 
-// PodeEditar trava a linha `id` (for update) e confere: a linha antiga é lida e passa no USING
+var reColunaDaChave = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+
+// PodeEditar: a linha `id` (o caso comum). Ver PodeEditarPor.
+func (c *Catalogo) PodeEditar(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id string, mudancas map[string]any) error {
+	return c.PodeEditarPor(ctx, tx, e, tab, "id", id, mudancas)
+}
+
+// PodeApagar: a linha `id`. Ver PodeApagarPor.
+func (c *Catalogo) PodeApagar(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id string) error {
+	return c.PodeApagarPor(ctx, tx, e, tab, "id", id)
+}
+
+// PodeEditarPor trava a linha cuja `coluna` vale `valor` (for update) e confere: a linha antiga é lida e passa no USING
 // de update (senão ErrNaoEncontrado/ErrNegado), e a linha NOVA (a antiga com `mudancas`) passa
 // no WITH CHECK (mover uma linha para uma conta/loja que a pessoa não vê é negado). `tx` tem de
 // ser a MESMA transação que grava (o lock vale até o commit). Linha que a pessoa não lê = 404,
 // sem travá-la e sem avaliar `mudancas` nela (nenhum erro de tipo denuncia que ela existe).
-func (c *Catalogo) PodeEditar(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id string, mudancas map[string]any) error {
+// `coluna` vem da declaração da rota (a chave da tabela), nunca do pedido (Ruling 5.5-2).
+func (c *Catalogo) PodeEditarPor(ctx context.Context, tx pgx.Tx, e *Escopo, tab, coluna, id string, mudancas map[string]any) error {
+	if !reColunaDaChave.MatchString(coluna) {
+		return ErrDeclaracao
+	}
 	fe, err := c.Filtro(e, tab, Editar, "autz_velha")
 	if err != nil {
 		return err
@@ -154,18 +170,21 @@ func (c *Catalogo) PodeEditar(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id
 	if err != nil {
 		return err
 	}
-	return c.conferirExistente(ctx, tx, e, tab, id, fe, `coalesce((select `+fn.SQL+` from jsonb_populate_record(null::`+
+	return c.conferirExistente(ctx, tx, e, tab, coluna, id, fe, `coalesce((select `+fn.SQL+` from jsonb_populate_record(null::`+
 		pgx.Identifier{tab}.Sanitize()+`, to_jsonb(autz_velha) || @autz_mudancas::jsonb) as autz_nova), false)`,
 		fn.Juntar(pgx.NamedArgs{"autz_mudancas": string(j)}))
 }
 
-// PodeApagar trava a linha `id` e confere Ler + USING de delete.
-func (c *Catalogo) PodeApagar(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id string) error {
+// PodeApagarPor trava a linha cuja `coluna` vale `valor` e confere Ler + USING de delete.
+func (c *Catalogo) PodeApagarPor(ctx context.Context, tx pgx.Tx, e *Escopo, tab, coluna, id string) error {
+	if !reColunaDaChave.MatchString(coluna) {
+		return ErrDeclaracao
+	}
 	fa, err := c.Filtro(e, tab, Apagar, "autz_velha")
 	if err != nil {
 		return err
 	}
-	return c.conferirExistente(ctx, tx, e, tab, id, fa, "true", nil)
+	return c.conferirExistente(ctx, tx, e, tab, coluna, id, fa, "true", nil)
 }
 
 // conferirExistente: (1) trava a linha `id` SE a pessoa a lê (a regra de Ler está no WHERE do
@@ -176,13 +195,13 @@ func (c *Catalogo) PodeApagar(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id
 // tipo do parâmetro). Um id que não converte (22xxx: "abc" numa chave uuid/inteira) é 404 como
 // um id inexistente, e a leitura roda num savepoint para esse erro não abortar a transação. A
 // chave tem de ser única: mais de uma linha é ErrDeclaracao (a rota/tabela está errada).
-func (c *Catalogo) conferirExistente(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id string, fop Filtro, extra string, extraArgs pgx.NamedArgs) error {
+func (c *Catalogo) conferirExistente(ctx context.Context, tx pgx.Tx, e *Escopo, tab, coluna, id string, fop Filtro, extra string, extraArgs pgx.NamedArgs) error {
 	fl, err := c.Filtro(e, tab, Ler, "autz_velha")
 	if err != nil {
 		return err
 	}
-	nome := pgx.Identifier{tab}.Sanitize()
-	if err := c.travar(ctx, tx, nome, id, fl); err != nil {
+	nome, col := pgx.Identifier{tab}.Sanitize(), pgx.Identifier{coluna}.Sanitize()
+	if err := c.travar(ctx, tx, nome, col, id, fl); err != nil {
 		return err
 	}
 	args := fop.Juntar(pgx.NamedArgs{"autz_id": id})
@@ -190,7 +209,7 @@ func (c *Catalogo) conferirExistente(ctx context.Context, tx pgx.Tx, e *Escopo, 
 		args[k] = v
 	}
 	var pode bool
-	err = tx.QueryRow(ctx, `select coalesce(`+fop.SQL+`, false) and `+extra+` from `+nome+` as autz_velha where autz_velha.id = @autz_id`, args).Scan(&pode)
+	err = tx.QueryRow(ctx, `select coalesce(`+fop.SQL+`, false) and `+extra+` from `+nome+` as autz_velha where autz_velha.`+col+` = @autz_id`, args).Scan(&pode)
 	switch {
 	case err != nil:
 		return err
@@ -200,12 +219,12 @@ func (c *Catalogo) conferirExistente(ctx context.Context, tx pgx.Tx, e *Escopo, 
 	return nil
 }
 
-func (c *Catalogo) travar(ctx context.Context, tx pgx.Tx, tabela, id string, fl Filtro) error {
+func (c *Catalogo) travar(ctx context.Context, tx pgx.Tx, tabela, col, id string, fl Filtro) error {
 	sp, err := tx.Begin(ctx) // savepoint
 	if err != nil {
 		return err
 	}
-	rows, err := sp.Query(ctx, `select 1 from `+tabela+` as autz_velha where autz_velha.id = @autz_id and (`+fl.SQL+`) for update limit 2`,
+	rows, err := sp.Query(ctx, `select 1 from `+tabela+` as autz_velha where autz_velha.`+col+` = @autz_id and (`+fl.SQL+`) for update limit 2`,
 		fl.Juntar(pgx.NamedArgs{"autz_id": id}))
 	n := 0
 	if err == nil {
@@ -229,7 +248,7 @@ func (c *Catalogo) travar(ctx context.Context, tx pgx.Tx, tabela, id string, fl 
 	case n == 0:
 		return ErrNaoEncontrado
 	case n > 1:
-		return fmt.Errorf("%w: %s.id não é único", ErrDeclaracao, tabela)
+		return fmt.Errorf("%w: %s.%s não é único", ErrDeclaracao, tabela, col)
 	}
 	return nil
 }

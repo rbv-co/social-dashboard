@@ -50,39 +50,49 @@ var colunasDoWorker = map[string]string{
 	"access_requests":             "id,name,email,message,status,created_at", // esquema PRESUMIDO no 5.1: o conferir é quem pega divergência
 	"audit_log":                   "actor_id,actor_email,action,detail",
 	"canais_grupos_membros":       "id,grupo_id,profile_id,papel,concedido_por,concedido_em",
-	"bling_lojas":                 "loja_id,nome,grupo,grupo_id",
-	"bling_pedido_nota":           "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
-	"bling_pedido_ajuste_valor":   "pedido_id,total_corrigido",
-	"bling_pedido_vendedor":       "pedido_id,qtd_itens",
-	"acessos_pessoas":             "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id", // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
-	"frota_veiculos":              "id,placa,nome,marca,ano,cor,combustivel,renavam,chassi,tipo_oleo,contrato,codigo_patrimonial,aluguel_centavos,fipe_centavos,categoria_comercial,blindado,situacao,pessoa_id,local_texto,observacao,criado_em,atualizado_em,seguro_seguradora,seguro_apolice,seguro_vence_em,seguro_valor_centavos,tag_pedagio,rastreador,bem_id,contato_nome,contato_telefone,contato_papel,oficina_nome,oficina_telefone,empresa_id,local_id,comodo_id",
-	"frota_uso":                   "id,veiculo_id,pessoa_id,pessoa_nome,saida_em,km_saida,volta_em,km_volta,destino,finalidade,tanque_quartos,observacao,criado_em,tipo,aceite_em,aceite_por,aceite_nome,aceite_rabisco,aceite_checklist_id,aceite_checklist_hash",
-	"frota_requisicoes":           "id,veiculo_id,pessoa_id,pessoa_nome,departamento,destino,finalidade,retirada_prevista,devolucao_prevista,situacao,criada_por,criada_em,decidida_por,decidida_em,motivo_decisao,uso_id,observacao,encerrada_por,encerrada_em,encerrada_motivo,arquivada_em,arquivada_por",
-	"frota_requisicoes_historico": "requisicao_id,campo,de,para,motivo,quem,quando",
-	"frota_checklist":             "id,veiculo_id,pessoa_id,pessoa_nome,feita_em,cadencias,hodometro,hodometro_justificativa,resultado,anomalias,criada_em,criada_por,aberta_em,assinada_em,assinada_por,assinatura_hash,assinatura_hash_anterior,sem_assinatura_motivo,assinatura_rabisco,assinatura_versao",
-	"frota_checklist_respostas":   "id,checklist_id,item_id,item_texto,cadencia,estado,observacao,ordem",
-	"frota_checklist_pdf":         "checklist_id,situacao,tentativas,ultimo_erro,criado_em,enviado_em",
-	"frota_uso_pdf":               "uso_id,situacao",
-	"frota_checklist_itens":       "id,ordem,item,cadencia,ativo,observacao,impede_uso",
-	"frota_checklist_config":      "id,dia_semanal,semana_mensal,dia_mensal",
-	"frota_plano_revisao":         "id,item,a_cada_km,ordem,ativo,observacao",
-	"frota_manutencoes":           "id,veiculo_id,km,feita_em,oficina,total_centavos,observacao,criada_em,criada_por",
-	"frota_revisoes":              "id,veiculo_id,item,km,feita_em,oficina,custo_centavos,observacao,criada_em,criada_por,manutencao_id",
-	"frota_abastecimentos":        "id,veiculo_id,pessoa_id,pessoa_nome,abastecido_em,km,litros,total_centavos,tanque_depois,combustivel,posto,observacao,criado_em,criado_por",
-	"conteudo_pecas":              "id,account_id,titulo,formato,status,legenda,hashtags,observacoes,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel,criado_por,aprovado_por,aprovado_em,motivo_reprovacao,created_at,updated_at", // + Plano 5.9
-	"conteudo_eventos":            "id,peca_id,de,para,acao,detalhe,quem,quando",                                                                                                                                                                           // + Plano 5.9
-	"conteudo_casamentos":         "id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo,decidido_por,decidido_em,created_at",                                                                                    // + Plano 5.9
-	"conteudo_metricas":           "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
-	"checkout_abandono":           "token,status",
-	"contatos_sem_mensagem":       "telefone,motivo",
-	"chatwoot_eventos":            "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
-	"shopify_pedidos":             "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
-	"carrinho_eventos":            "tipo,cart_token,evento_shopify_id",
-	"vessel_rd_envios":            "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
-	"vessel_pessoas":              "id,email",
-	"fabrica_campanhas":           "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
-	"fabrica_criativos":           "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
-	"robos_execucoes":             "robo,disparado_em,status_code,ok,resposta,conferido_em",
+	// Plano 5.5 (Comercial): as colunas que as rotas de internal/vendas leem e gravam (o D0 vem do pg_dump do ensaio)
+	"bling_lojas":                  "loja_id,nome,grupo,grupo_id,fechado_em",
+	"bling_depositos":              "deposito_id,nome,ativo,padrao",
+	"bling_metas":                  "id,loja_id,year,month,meta_valor,daily_goals",
+	"bling_vendedor_metas":         "id,vendor_id,year,month,meta_valor,daily_goals",
+	"bling_vendedores":             "vendor_id,nome,updated_at",
+	"bling_pedido_vendedor":        "pedido_id,vendor_id,pedido_data,qtd_itens,loja_id",
+	"bling_pedido_nota":            "pedido_id,pedido_numero,data_pedido,data_da_venda,total,loja_id,nota_situacao",
+	"bling_pedido_ajuste_valor":    "pedido_id,loja_id,total_corrigido",
+	"bling_pedido_ajuste_vendedor": "pedido_id,loja_id,vendor_id_corrigido",
+	"bling_pedido_forma_pagamento": "parcela_id,pedido_id,loja_id,valor,eh_devolucao",
+	"gc_estoque_item":              "deposito_id,sku,produto,categoria,saldo",
+	"gc_vendas_item":               "mes,canal_loja_id,sku,produto,categoria,unidades,faturamento",
+	"gestao_comercial_briefings":   "id,rodada,periodo,resumo,conteudo,dados_json,created_at",
+	"acessos_pessoas":              "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id", // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
+	"frota_veiculos":               "id,placa,nome,marca,ano,cor,combustivel,renavam,chassi,tipo_oleo,contrato,codigo_patrimonial,aluguel_centavos,fipe_centavos,categoria_comercial,blindado,situacao,pessoa_id,local_texto,observacao,criado_em,atualizado_em,seguro_seguradora,seguro_apolice,seguro_vence_em,seguro_valor_centavos,tag_pedagio,rastreador,bem_id,contato_nome,contato_telefone,contato_papel,oficina_nome,oficina_telefone,empresa_id,local_id,comodo_id",
+	"frota_uso":                    "id,veiculo_id,pessoa_id,pessoa_nome,saida_em,km_saida,volta_em,km_volta,destino,finalidade,tanque_quartos,observacao,criado_em,tipo,aceite_em,aceite_por,aceite_nome,aceite_rabisco,aceite_checklist_id,aceite_checklist_hash",
+	"frota_requisicoes":            "id,veiculo_id,pessoa_id,pessoa_nome,departamento,destino,finalidade,retirada_prevista,devolucao_prevista,situacao,criada_por,criada_em,decidida_por,decidida_em,motivo_decisao,uso_id,observacao,encerrada_por,encerrada_em,encerrada_motivo,arquivada_em,arquivada_por",
+	"frota_requisicoes_historico":  "requisicao_id,campo,de,para,motivo,quem,quando",
+	"frota_checklist":              "id,veiculo_id,pessoa_id,pessoa_nome,feita_em,cadencias,hodometro,hodometro_justificativa,resultado,anomalias,criada_em,criada_por,aberta_em,assinada_em,assinada_por,assinatura_hash,assinatura_hash_anterior,sem_assinatura_motivo,assinatura_rabisco,assinatura_versao",
+	"frota_checklist_respostas":    "id,checklist_id,item_id,item_texto,cadencia,estado,observacao,ordem",
+	"frota_checklist_pdf":          "checklist_id,situacao,tentativas,ultimo_erro,criado_em,enviado_em",
+	"frota_uso_pdf":                "uso_id,situacao",
+	"frota_checklist_itens":        "id,ordem,item,cadencia,ativo,observacao,impede_uso",
+	"frota_checklist_config":       "id,dia_semanal,semana_mensal,dia_mensal",
+	"frota_plano_revisao":          "id,item,a_cada_km,ordem,ativo,observacao",
+	"frota_manutencoes":            "id,veiculo_id,km,feita_em,oficina,total_centavos,observacao,criada_em,criada_por",
+	"frota_revisoes":               "id,veiculo_id,item,km,feita_em,oficina,custo_centavos,observacao,criada_em,criada_por,manutencao_id",
+	"frota_abastecimentos":         "id,veiculo_id,pessoa_id,pessoa_nome,abastecido_em,km,litros,total_centavos,tanque_depois,combustivel,posto,observacao,criado_em,criado_por",
+	"conteudo_pecas":               "id,account_id,titulo,formato,status,legenda,hashtags,observacoes,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel,criado_por,aprovado_por,aprovado_em,motivo_reprovacao,created_at,updated_at", // + Plano 5.9
+	"conteudo_eventos":             "id,peca_id,de,para,acao,detalhe,quem,quando",                                                                                                                                                                           // + Plano 5.9
+	"conteudo_casamentos":          "id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo,decidido_por,decidido_em,created_at",                                                                                    // + Plano 5.9
+	"conteudo_metricas":            "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
+	"checkout_abandono":            "token,status",
+	"contatos_sem_mensagem":        "telefone,motivo",
+	"chatwoot_eventos":             "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
+	"shopify_pedidos":              "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
+	"carrinho_eventos":             "tipo,cart_token,evento_shopify_id",
+	"vessel_rd_envios":             "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
+	"vessel_pessoas":               "id,email",
+	"fabrica_campanhas":            "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
+	"fabrica_criativos":            "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
+	"robos_execucoes":              "robo,disparado_em,status_code,ok,resposta,conferido_em",
 	// Plano 5.6 (rotas /redes): os presumidos (sem DDL no repositório) são conferidos aqui no banco restaurado
 	"account_insights":      "account_id,captured_at,period_days,spend,impressions,clicks,reach,frequency",
 	"social_metas":          "account_id,periodo,indicador,valor",
@@ -221,6 +231,13 @@ var tiposDoWorker = map[string]string{
 	// Plano 5.10: o filtro ?codigo= (text[]), o cartão (pecas @> array[codigo]) e o recálculo da garantia (date)
 	"vessel_pecas.codigo": "text", "vessel_pecas.lote_id": "uuid", "vessel_lotes.id": "uuid", "vessel_cartao_pedidos.pecas": "text[]",
 	"vessel_registros.garantia_ate": "date", "vessel_registros.nascimento": "date",
+	// Plano 5.5: filtros com cast, chaves das escritas, dinheiro e datas do Comercial
+	"bling_lojas.loja_id": "bigint", "bling_lojas.grupo_id": "uuid", "bling_lojas.fechado_em": "date",
+	"bling_metas.loja_id": "bigint|integer", "bling_metas.year": "integer|bigint", "bling_metas.month": "integer|bigint",
+	"bling_metas.daily_goals": "jsonb", "bling_vendedor_metas.vendor_id": "bigint|integer", "bling_vendedor_metas.daily_goals": "jsonb",
+	"bling_vendedores.vendor_id": "bigint|integer", "bling_pedido_vendedor.pedido_data": "date",
+	"bling_pedido_forma_pagamento.eh_devolucao": "boolean", "gc_estoque_item.deposito_id": "bigint",
+	"gc_vendas_item.mes": "date", "gc_vendas_item.canal_loja_id": "bigint", "shopify_pedidos.criado_em_shopify": "timestamp with time zone",
 }
 
 // anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).
@@ -249,6 +266,9 @@ var unicosDoWorker = []string{
 	"gt_config_metricas(balde)", "gt_objetivo_interacao(alvo_id)", "gt_problemas_meta(ad_id,codigo)", "interesses_sugeridos(marca_id,objetivo)",
 	"acessos_perfis(nome)",     // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 	"patrimonio_config(chave)", // Plano 5.2: PUT /patrimonio/config/{chave} é upsert por este único
+	// Plano 5.5: Tabela.Gravar (on conflict) nos dois caches; e o único (chave, ano, mês) das metas, que o salvamento do mês presume
+	"bling_pedido_vendedor(pedido_id)", "bling_vendedores(vendor_id)",
+	"bling_metas(loja_id,year,month)", "bling_vendedor_metas(vendor_id,year,month)",
 	// Plano 5.3: os 409 das rotas da Frota dependem destes únicos completos
 	"frota_veiculos(placa)", "frota_checklist(veiculo_id,feita_em)", "frota_checklist_respostas(checklist_id,ordem)",
 	"frota_checklist_itens(item)", "frota_plano_revisao(item)",

@@ -802,3 +802,31 @@ Nenhuma nova. O Zoho do cartão usa a conexão de `acessos_conexoes` (provedor `
 
 ### Limites conhecidos (revisão do 5.3)
 - `POST /frota/usos/trocar` com `para_estoque` trava a posse e depois o carro; `PATCH /frota/veiculos/{id}` com `pessoa_id: null` trava o carro e depois a posse (gatilho `frota_fechar_posse_orfa`). Os dois ao mesmo tempo podem dar deadlock (`40P01`): a transação é desfeita, nada fica pela metade, e a resposta hoje é `500` (o certo seria pedir para tentar de novo). Mesma janela do PostgREST de hoje; rara (duas pessoas mexendo no MESMO carro no mesmo instante). Tratar `40P01` como `409` em `dados.ErroDoBanco` se aparecer em produção.
+
+## Plano 5.5 — Comercial (Bling e Shopify)
+
+Pacote `api/internal/vendas`, rotas em `/comercial/…` (18: 14 leituras, 4 escritas). Contratos e Rulings: `docs/superpowers/plans/2026-10-12-api-go-plano-5-5-comercial.md`. O `internal/comercial` (proxy do Bling e push de vendas) não mudou.
+
+### Rotas novas (com sessão; regra = catálogo de produção; escrita de sessão "entrar como" = 403)
+- Leitura com escopo de canal/depósito: `/comercial/notas`, `/comercial/ajustes-de-valor`, `/comercial/ajustes-de-vendedor`, `/comercial/formas-de-pagamento`, `/comercial/estoque`, `/comercial/vendas-por-item`, `/comercial/pedidos-shopify` (sem `cliente_nome`, `cliente_email` nem `bruto`).
+- Leitura de toda sessão (como em produção): `/comercial/lojas`, `/comercial/depositos`, `/comercial/metas-lojas`, `/comercial/metas-vendedoras`, `/comercial/vendedoras`, `/comercial/pedidos-vendedor`, `/comercial/briefings`.
+- Escrita: `PATCH /comercial/lojas/{loja_id}` (só super-admin pela ficha), `POST /comercial/metas/salvar` (papel admin), `POST /comercial/vendedoras/gravar` e `POST /comercial/pedidos-vendedor/gravar` (quem vê vendas: admin, super-admin ou `sales`).
+- Nenhuma RPC (`meus_vinculos` não é chamada pelo front).
+
+### Mudanças de contrato que o Plano 7 absorve
+- Metas numa chamada: `POST /comercial/metas/salvar {ano, mes, lojas:{gravar,apagar}, vendedoras:{gravar,apagar}}` substitui `_mtGravar`/`_mtApagar` (tela-de-admin.vue:4223-4245) e o laço de :4256-4257; tudo ou nada (a frase "N já foram gravadas" sai).
+- Fechar/agrupar canal: `PATCH /comercial/lojas/{loja_id}` com `{fechado_em}` ou `{grupo_id}`; recusa = 403/404.
+- Caches: `POST /comercial/pedidos-vendedor/gravar {linhas}` e `POST /comercial/vendedoras/gravar {linhas}` (antes `.upsert(onConflict)`); coluna ausente não muda (o PostgREST punha nulo nas linhas sem a chave da primeira). **`bling_pedido_vendedor.vendor_id` é NOT NULL em produção**: linha NOVA sem `vendor_id` (a consulta de tela-de-analise-vendas.vue:630-641 sem vendedor) volta 400, como já voltava pelo PostgREST; `vendor_id: null` também.
+- Notas: `?janela=[AAAA-MM-DD,AAAA-MM-DD]`. Pedidos Shopify: `?criado_de=&criado_ate=&status_financeiro=a,b`. Formas de pagamento: `?eh_devolucao=true`. Estoque: `?deposito_id=a,b`. Vendas por item: `?mes=AAAA-MM-01,…`. Metas: `?ano=&mes=`. Cache: `?pedido_id=a,b` (até 1000).
+- Paginação por `limite`/`deslocamento`; `limit(5000)` de tela-de-admin.vue:560 e :4111 vira `limite=1000`.
+- `dados.ValidarOrdem` passou a aceitar a expressão de linha `(a, b)` como desempate de chave composta (estoque e vendas por item); lista solta continua recusada.
+
+### Antes do corte (conferido em 14/10/2026 no `api-db` de ensaio, só leitura)
+- `api worker conferir` no banco restaurado: colunas, tipos, os únicos `bling_pedido_vendedor(pedido_id)`, `bling_vendedores(vendor_id)`, `bling_metas(loja_id,year,month)` e `bling_vendedor_metas(vendor_id,year,month)`, e `espelhar_grupo_do_canal()`.
+- **Metas duplicadas: não existem e não podem existir.** O plano presumia `bling_metas` sem único; o `pg_dump` do ensaio mostra `unique (loja_id, year, month)` nas duas tabelas de meta. Consulta de duplicatas = 0 linhas nas duas (10 metas de loja, 3 de vendedora). O salvamento do mês mantém a trava (`pg_advisory_xact_lock`) só para a criação simultânea não cair no único (23505); o ramo de 409 por duplicata saiu.
+- **`bling_pedido_vendedor.vendor_id`: `NOT NULL`** (o plano esperava `YES`). 885 linhas no cache, nenhuma sem vendedor. Para o Plano 7: a Análise de Vendas não pode gravar linha nova sem vendedor.
+- Ajustes de valor e de vendedor continuam sem tela (decisão de 15/09, pendências B6): o "comando de banco de super-admin" passa a rodar no Postgres próprio, preenchendo `criado_por` à mão.
+- A fatia `api/internal/testebanco/esquema/01-tabelas-5-05.sql` vem do `pg_dump --schema-only` do ensaio (14/10): `bling_metas.loja_id` é `integer` e `meta_valor` `numeric(14,2) not null default 0`; `bling_vendedores.nome` e `updated_at` são NOT NULL; `bling_lojas` ganhou `updated_at`.
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.5; o 6 — `bling_metas` sem único — deixa de valer: o único existe)

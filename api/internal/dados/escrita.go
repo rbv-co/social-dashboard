@@ -1,6 +1,7 @@
 package dados
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -51,6 +52,17 @@ type Tabela struct {
 	// autz.ErrNegado = 403, autz.ErrNaoEncontrado = 404; outro erro segue ErroDeEscrita. campos é SÓ LEITURA: o gancho não deve alterar o mapa (o que ele mudasse
 	// iria ao SQL sem o PodeX). Plano 5.9 (Ruling 5.9-4).
 	Conferir func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error
+
+	// Chave: a coluna que acha a linha em Editar/Apagar/Gravar (o {id} da URL é o valor dela) e que vai
+	// no {"<chave>": …} quando quem grava não lê. Vazia = "id" (Ruling 5.5-2).
+	Chave string
+}
+
+func (t Tabela) chave() string {
+	if t.Chave == "" {
+		return "id"
+	}
+	return t.Chave
 }
 
 var reColuna = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
@@ -71,6 +83,8 @@ func (t Tabela) Validar(cat *autz.Catalogo) error {
 		return fmt.Errorf("tabela %s: Resposta obrigatória", t.Nome)
 	case t.Autor != "" && !reColuna.MatchString(t.Autor):
 		return fmt.Errorf("tabela %s: Autor %q inválido", t.Nome, t.Autor)
+	case t.Chave != "" && !reColuna.MatchString(t.Chave):
+		return fmt.Errorf("tabela %s: Chave %q inválida", t.Nome, t.Chave)
 	}
 	return nil
 }
@@ -132,6 +146,11 @@ func colunas(campos map[string]any) ([]string, error) {
 // Criar confere a linha nova (WITH CHECK de insert), grava SÓ as colunas presentes e devolve a linha.
 // Rode dentro de banco.ComUsuario.
 func (t Tabela) Criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, campos map[string]any) ([]byte, error) {
+	return t.criar(ctx, tx, cat, e, campos, "")
+}
+
+// criar: Criar com um sufixo FIXO antes do returning (Gravar usa ` on conflict (<chave>) do nothing`).
+func (t Tabela) criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, campos map[string]any, seConflito string) ([]byte, error) {
 	if e == nil {
 		return nil, autz.ErrNegado
 	}
@@ -158,7 +177,7 @@ func (t Tabela) Criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *aut
 	}
 	tab, lista := pgx.Identifier{t.Nome}.Sanitize(), strings.Join(cols, ", ")
 	linha, err := t.devolver(ctx, tx, cat, e, `insert into `+tab+` (`+lista+`) select `+lista+
-		` from jsonb_populate_record(null::`+tab+`, @dados_campos::jsonb) returning *`,
+		` from jsonb_populate_record(null::`+tab+`, @dados_campos::jsonb)`+seConflito+` returning *`,
 		pgx.NamedArgs{"dados_campos": string(j)}, t.CriarSoLegivel)
 	var pe *pgconn.PgError
 	if t.CriarSoLegivel && errors.As(err, &pe) && pe.Code == "23503" {
@@ -176,11 +195,14 @@ func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	if err := t.recusarReservadas(campos); err != nil {
 		return nil, err
 	}
+	if _, muda := campos[t.chave()]; muda { // a chave identifica a linha: o corpo nunca a muda (com Chave = "id" já recusada acima)
+		return nil, fmt.Errorf("%w: %q", ErrColunaProibida, t.chave())
+	}
 	cols, err := colunas(campos)
 	if err != nil {
 		return nil, err
 	}
-	if err := cat.PodeEditar(ctx, tx, e, t.Nome, id, campos); err != nil {
+	if err := cat.PodeEditarPor(ctx, tx, e, t.Nome, t.chave(), id, campos); err != nil {
 		return nil, err
 	}
 	if err := t.conferir(ctx, tx, e, id, campos); err != nil {
@@ -197,7 +219,7 @@ func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	tab := pgx.Identifier{t.Nome}.Sanitize()
 	return t.devolver(ctx, tx, cat, e, `update `+tab+` as dados_alvo set `+strings.Join(sets, ", ")+
 		` from jsonb_populate_record(null::`+tab+`, @dados_campos::jsonb) as dados_r`+
-		` where dados_alvo.id = @dados_id returning dados_alvo.*`,
+		` where dados_alvo.`+pgx.Identifier{t.chave()}.Sanitize()+` = @dados_id returning dados_alvo.*`,
 		pgx.NamedArgs{"dados_campos": string(j), "dados_id": id}, false)
 }
 
@@ -206,15 +228,69 @@ func (t Tabela) Apagar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	if e == nil {
 		return autz.ErrNegado
 	}
-	if err := cat.PodeApagar(ctx, tx, e, t.Nome, id); err != nil {
+	if err := cat.PodeApagarPor(ctx, tx, e, t.Nome, t.chave(), id); err != nil {
 		return err
 	}
 	if err := t.conferir(ctx, tx, e, id, nil); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `delete from `+pgx.Identifier{t.Nome}.Sanitize()+` where id = @dados_id`,
+	_, err := tx.Exec(ctx, `delete from `+pgx.Identifier{t.Nome}.Sanitize()+` where `+pgx.Identifier{t.chave()}.Sanitize()+` = @dados_id`,
 		pgx.NamedArgs{"dados_id": id})
 	return err
+}
+
+// Gravar é o `.upsert(…, {onConflict: <chave>})` das telas, sem corrida (Ruling 5.5-3): se a linha existe
+// e quem pede a lê, Editar (PodeEditarPor trava a linha: USING na antiga, WITH CHECK na nova; só as
+// colunas presentes além da chave); se não existe, Criar com `on conflict (<chave>) do nothing`
+// (PodeCriar antes) e, se outra transação a criou entre um passo e outro, Editar de novo. Existe e não
+// se lê = ErrNaoEncontrado (404). Só use em tabela que toda sessão lê: para quem PODE criar, linha existente
+// e invisível dá 404 e linha inexistente dá 200 (oráculo de existência). A chave TEM de vir em campos e nunca muda. Rode dentro
+// de banco.ComUsuario.
+func (t Tabela) Gravar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, campos map[string]any) ([]byte, error) {
+	k := t.chave()
+	if t.CriarSoLegivel || k == "id" {
+		return nil, autz.ErrDeclaracao // o "do nothing" responderia ErrNegado; e Criar recusa o `id` no corpo
+	}
+	valor, err := textoDaChave(campos[k])
+	if err != nil {
+		return nil, fmt.Errorf("dados: %s.%s: %w", t.Nome, k, err)
+	}
+	mudancas := maps.Clone(campos)
+	delete(mudancas, k)
+	if len(mudancas) == 0 {
+		return nil, ErrSemCampos
+	}
+	linha, err := t.Editar(ctx, tx, cat, e, valor, mudancas)
+	if !errors.Is(err, autz.ErrNaoEncontrado) {
+		return linha, err
+	}
+	linha, err = t.criar(ctx, tx, cat, e, maps.Clone(campos), ` on conflict (`+pgx.Identifier{k}.Sanitize()+`) do nothing`)
+	if !errors.Is(err, autz.ErrNaoEncontrado) {
+		return linha, err // criou; ou PodeCriar negou (403, que não depende de a linha existir)
+	}
+	return t.Editar(ctx, tx, cat, e, valor, mudancas) // outra transação criou no meio; ou existe e não se lê: 404
+}
+
+// textoDaChave: o valor da chave como texto (PodeEditarPor o põe no tipo da coluna). Vem do corpo
+// (json.RawMessage: número ou texto JSON) ou da rota (string).
+func textoDaChave(v any) (string, error) {
+	switch x := v.(type) {
+	case string:
+		return x, nil
+	case json.RawMessage:
+		d := json.NewDecoder(bytes.NewReader(x))
+		d.UseNumber()
+		var y any
+		if d.Decode(&y) == nil {
+			switch z := y.(type) {
+			case string:
+				return z, nil
+			case json.Number:
+				return z.String(), nil
+			}
+		}
+	}
+	return "", errors.New("chave ausente ou não é número/texto")
 }
 
 // conferir roda Tabela.Conferir, se houver.
@@ -233,7 +309,7 @@ func (t Tabela) devolver(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *
 	if err != nil {
 		return nil, err
 	}
-	seNaoLe := `(select row_to_json(y) from (select t.id from t) y)`
+	seNaoLe := `(select row_to_json(y) from (select t.` + pgx.Identifier{t.chave()}.Sanitize() + ` from t) y)`
 	if soLegivel {
 		seNaoLe = `null::json`
 	}
