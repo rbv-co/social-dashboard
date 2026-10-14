@@ -195,6 +195,9 @@ func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	if err := t.recusarReservadas(campos); err != nil {
 		return nil, err
 	}
+	if _, muda := campos[t.chave()]; muda { // a chave identifica a linha: o corpo nunca a muda (com Chave = "id" já recusada acima)
+		return nil, fmt.Errorf("%w: %q", ErrColunaProibida, t.chave())
+	}
 	cols, err := colunas(campos)
 	if err != nil {
 		return nil, err
@@ -240,7 +243,8 @@ func (t Tabela) Apagar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 // e quem pede a lê, Editar (PodeEditarPor trava a linha: USING na antiga, WITH CHECK na nova; só as
 // colunas presentes além da chave); se não existe, Criar com `on conflict (<chave>) do nothing`
 // (PodeCriar antes) e, se outra transação a criou entre um passo e outro, Editar de novo. Existe e não
-// se lê = ErrNaoEncontrado (404, sem oráculo). A chave TEM de vir em campos e nunca muda. Rode dentro
+// se lê = ErrNaoEncontrado (404). Só use em tabela que toda sessão lê: para quem PODE criar, linha existente
+// e invisível dá 404 e linha inexistente dá 200 (oráculo de existência). A chave TEM de vir em campos e nunca muda. Rode dentro
 // de banco.ComUsuario.
 func (t Tabela) Gravar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, campos map[string]any) ([]byte, error) {
 	k := t.chave()

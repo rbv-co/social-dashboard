@@ -90,6 +90,9 @@ func TestTabelaComChave(t *testing.T) {
 	if _, err := editar(soA1, "1", map[string]any{"conta": raw(`"A2"`)}); !errors.Is(err, autz.ErrNegado) || linha("1") != "A1/um!/10" {
 		t.Errorf("mover para conta que não vê = %v", err)
 	}
+	if _, err := editar(soA1, "1", map[string]any{"loja_id": raw(`9`)}); !errors.Is(err, ErrColunaProibida) || linha("1") != "A1/um!/10" {
+		t.Errorf("mudar a própria chave = %v", err)
+	}
 	if _, err := editar(soA1, "x", map[string]any{"nome": raw(`"x"`)}); !errors.Is(err, autz.ErrNaoEncontrado) {
 		t.Errorf("chave que não é número = %v", err)
 	}
