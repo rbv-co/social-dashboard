@@ -648,7 +648,7 @@ O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` j
 
 ## Plano 5.8 — Fábrica de anúncios
 
-**Fica de fora, esperando o 5.5:** `POST /fabrica-candidatos` (Task 7) lê `gc_vendas_item`, `gc_estoque_item` e `gestao_comercial_briefings`, que são do 5.5. Quando o 5.5 entrar, a Task 7 acrescenta a rota (portão `soFabricante`, sem `soSessaoPropria`: só lê, "entrar como" passa; `soPainel` também vale), as 3 tabelas no `conferir` e `gc_estoque_item.deposito_id = bigint` em `tiposDoWorker`. Até lá a Fábrica não consegue gerar por candidatos: o front não troca `use-candidatos.js:7`.
+**`POST /fabrica-candidatos` (Task 7, feita depois do 5.5):** portão `soPainel` + `soFabricante`, sem `soSessaoPropria` (só lê: "entrar como" passa; conta de serviço não). Lê `gc_vendas_item`, `gc_estoque_item` e `gestao_comercial_briefings` pelo pool (como a edge lia com a chave de serviço), só dos depósitos e canais de `fabrica_lojas`, sem o teto de 1000 linhas. As 3 tabelas e `gc_estoque_item.deposito_id = bigint` estão no `conferir` desde o 5.5. O front pode trocar `use-candidatos.js:7`.
 
 ### Variáveis de ambiente (serviço `api`)
 | Variável | Observação |
