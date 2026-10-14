@@ -9,7 +9,7 @@
 # O replay roda no Supabase (ainda congelado) como `postgres`: psql -X -v ON_ERROR_STOP=1 -f DIR/replay.sql.
 # Uma transação com session_replication_role=replica (sem gatilho nem checagem de FK, como o pg_restore; o
 # supautils libera esse parâmetro ao postgres): apaga as chaves que sumiram, faz upsert das novas/alteradas e
-# acerta as sequências. Tabela sem chave primária que mudou: só acusa (replay à mão). auth.users não entra.
+# acerta as sequências (identity "generated always" inclusive: overriding system value). Tabela sem chave primária que mudou: só acusa (replay à mão). auth.users não entra.
 # Saída: 0 ok (comparar: igual); 1 falhou (comparar: diferente; exportar: tabela sem chave mudou); 2 uso.
 set -eu
 ACAO=${1:-}; URL=${2:-}; DIR=${3:-}
@@ -18,9 +18,9 @@ AQUI=$(cd "$(dirname "$0")" && pwd)
 . "$AQUI/../migracao/oculta.sh"
 umask 077; mkdir -p "$DIR"; DIR=$(cd "$DIR" && pwd)
 TAB=$(printf '\t')
-# o texto da linha depende destes parâmetros: fixos nas duas fotos e no replay
-export PGOPTIONS='-c TimeZone=UTC -c DateStyle=ISO,MDY -c IntervalStyle=postgres -c extra_float_digits=3 -c bytea_output=hex'
-q() { _q=0; psql "$URL" -X -q -v ON_ERROR_STOP=1 -At -F "$TAB" "$@" 2> "$DIR/.erro" || _q=$?; oculta < "$DIR/.erro" >&2; rm -f "$DIR/.erro"; return $_q; }
+# o texto da linha depende destes parâmetros: fixos nas fotos e no replay (SET, não PGOPTIONS: passa pelo pooler)
+AJUSTES="set timezone = 'UTC'; set datestyle = 'ISO, MDY'; set intervalstyle = 'postgres'; set extra_float_digits = 3; set bytea_output = 'hex'"
+q() { _q=0; psql "$URL" -X -q -v ON_ERROR_STOP=1 -At -F "$TAB" -c "$AJUSTES" "$@" 2> "$DIR/.erro" || _q=$?; oculta < "$DIR/.erro" >&2; rm -f "$DIR/.erro"; return $_q; }
 pk_de() {
   q -c "select coalesce(string_agg(quote_ident(a.attname), ',' order by k.n), '')
           from pg_index i cross join lateral unnest(i.indkey::int2[]) with ordinality k(att, n)
@@ -89,7 +89,7 @@ EOF
         "delete from public.$t where row($pk)::text in (select k from _k$i);" \
         "create temp table _r$i on commit drop as select $cols from public.$t limit 0;" \
         "\\copy _r$i from '$DIR/delta/$t.csv' csv" \
-        "insert into public.$t ($cols) select $cols from _r$i on conflict ($pk) $acao;"
+        "insert into public.$t ($cols) overriding system value select $cols from _r$i on conflict ($pk) $acao;"
       # sequência de coluna serial/identity: nunca atrás do maior id que voltou
       [ "$novas" = 0 ] || q -c "select format('select setval(%L, m) from (select max(%I) m from public.%I) s where m > (select last_value from %s);',
                                               q.s, q.c, '$t', q.s)

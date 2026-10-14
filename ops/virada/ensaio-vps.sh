@@ -8,7 +8,7 @@
 # desligadas -> `api worker conferir` -> foto do corte -> 5 rotas medidas (Go x Supabase) -> escritas reais da API -> parar a API
 # (1º passo do rollback) -> delta, replay no clone e comparação linha a linha -> limpeza.
 # Recusa se /root/api-db/PRODUCAO existir (o corte cria esse arquivo; dali em diante o api-db é produção).
-# Uso: sh ops/virada/ensaio-vps.sh   (ORIGEM_DATABASE_URL, SUPABASE_URL e SUPABASE_SERVICE_KEY do ambiente ou de
+# Uso: [ENSAIO_SEM_STORAGE=1] sh ops/virada/ensaio-vps.sh   (ORIGEM_DATABASE_URL, SUPABASE_URL e SUPABASE_SERVICE_KEY do ambiente ou de
 #      ENV_COLETOR, padrão coletor/.env: DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_KEY; nada disso é impresso)
 # Saída: 0 = tudo conferido; 1 = falhou (relatório em ops/migracao/saida/ensaio-vps-*/relatorio.txt).
 set -u
@@ -31,13 +31,13 @@ rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
 FALHAS=""; TUNEL=""; JANELA=0
 # etapa NOME [janela] cmd...: cronometra; "janela" soma no tempo de manutenção; falha aborta (com limpeza)
 etapa() {
-  nome=$1; shift; conta=0; [ "$1" = janela ] && { conta=1; shift; }
-  echo "== $nome" >> "$OUT/etapas.log"; t0=$(date +%s); s=0
-  "$@" >> "$OUT/etapas.log" 2>&1 || s=$?
-  d=$(( $(date +%s) - t0 )); [ $conta = 0 ] || JANELA=$((JANELA + d))
-  if [ $s = 0 ]; then rel "$(printf '%-44s %5ss  OK' "$nome" "$d")"; return 0; fi
-  rel "$(printf '%-44s %5ss  FALHOU (saída %s)' "$nome" "$d" "$s")"; FALHAS="$FALHAS
-  - $nome"; tail -15 "$OUT/etapas.log" | oculta >&2; exit 1
+  _n=$1; shift; _c=0; [ "$1" = janela ] && { _c=1; shift; }
+  echo "== $_n" >> "$OUT/etapas.log"; _t0=$(date +%s); _st=0
+  "$@" >> "$OUT/etapas.log" 2>&1 || _st=$?
+  _d=$(( $(date +%s) - _t0 )); [ $_c = 0 ] || JANELA=$((JANELA + _d))
+  if [ $_st = 0 ]; then rel "$(printf '%-44s %5ss  OK' "$_n" "$_d")"; return 0; fi
+  rel "$(printf '%-44s %5ss  FALHOU (saída %s)' "$_n" "$_d" "$_st")"; FALHAS="$FALHAS
+  - $_n"; tail -15 "$OUT/etapas.log" | oculta >&2; exit 1
 }
 limpa() {
   s=$?; trap - EXIT INT TERM HUP
@@ -69,9 +69,10 @@ tunel() {
   for i in $(seq 20); do psql "$ALVO" -X -Atqc 'select 1' > /dev/null 2>&1 && return 0; sleep 1; done; echo "túnel não abriu"; return 1
 }
 ensaio_sh() {
-  s=0; ALVO_DATABASE_URL="$ALVO" ENSAIO_SAIDA="$OUT/ensaio" sh "$RAIZ/ops/migracao/ensaio.sh" --permitir-alvo-remoto || s=$?
+  _r=0; ALVO_DATABASE_URL="$ALVO" ENSAIO_SAIDA="$OUT/ensaio" sh "$RAIZ/ops/migracao/ensaio.sh" --permitir-alvo-remoto ${ENSAIO_SEM_STORAGE:+--sem-storage} || _r=$?
   cp "$OUT"/ensaio/*/relatorio.txt "$OUT/ensaio-relatorio.txt" 2> /dev/null
-  [ $s = 3 ] && { echo "CONFIRA: contagem divergente em tabela quente (ver ensaio-relatorio.txt)"; return 0; }; return $s
+  # 3 = só contagem divergente: sem congelar o Supabase, tabela quente cresce durante o dump (no corte, congelado, tem de dar 0)
+  [ $_r = 3 ] && { echo "CONFIRA: contagem divergente em tabela quente (ver ensaio-relatorio.txt)"; return 0; }; return $_r
 }
 tabelas() {
   psql "$ORIGEM" -X -q -At -c "begin read only" -c "select tablename from pg_tables where schemaname = 'public' order by 1" -c "commit" \
@@ -92,8 +93,14 @@ papel() {
   v "umask 077; openssl rand -hex 24 > $E/app.senha
      { printf '\\\\set senha %s\n' \"\$(cat $E/app.senha)\"; cat $E/papel-da-api.sql; } | docker exec -i api-db sh -c 'psql -X -q -At -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -f -'
      s=\$(cat $E/app.senha); printf 'DATABASE_URL=postgres://api_app:%s@api-db:5432/api?sslmode=disable&connect_timeout=5\n' \"\$s\" > $E/api.env
-     cp $E/api.env $E/worker.env; echo 'WORKER_TAREFAS_DESLIGADAS=*' >> $E/worker.env" > "$OUT/papel.txt" || return 1
+     cp $E/api.env $E/worker.env; echo 'WORKER_TAREFAS_DESLIGADAS=*' >> $E/worker.env
+     openssl rand -hex 24 > $E/shopify.segredo; echo \"SHOPIFY_WEBHOOK_SEGREDOS=\$(cat $E/shopify.segredo)\" >> $E/api.env" > "$OUT/papel.txt" || return 1
   cat "$OUT/papel.txt"; grep -q '^sobrou_de_outro_dono|0$' "$OUT/papel.txt" && grep -q '^api_app|f|f|f|f|f$' "$OUT/papel.txt"
+}
+trocar_host() {
+  psql "$ALVO" -X -q -v ON_ERROR_STOP=1 -v de="${SUPABASE_URL%/}" -v para=https://central.rbvcompany.com/api \
+    -f "$AQUI/trocar-host-storage.sql" 2>&1 | sed 's/^psql:[^ ]* NOTICE: *//' | tee "$OUT/storage-host.txt"
+  grep -q '^total trocado:' "$OUT/storage-host.txt"
 }
 # o corte guarda um clone do banco recém-restaurado (segundos, na janela): é a base do delta se for preciso voltar
 clone() { for i in 1 2 3 4 5; do psql "$ALVO" -X -q -c "create database api_base template api" && return 0; sleep 3; done; return 1; }
@@ -107,8 +114,14 @@ listar() {
   echo "tarefas: $(grep -c . "$OUT/worker-listar.txt"), desligadas: $(grep -c DESLIGADA "$OUT/worker-listar.txt")"
   [ "$(grep -c DESLIGADA "$OUT/worker-listar.txt")" -ge 15 ]
 }
+# robô novo (profiles), um webhook de checkout assinado como o do Core (carrinho_eventos: identity "generated always")
+# e duas tarefas seguras do worker (robos_execucoes): o delta tem de levar tudo isso de volta
 escritas_reais() {
   v "umask 077; $DC exec -T api api servico criar ensaio-medida ensaio-medida@robos.invalid --modulos meta > $E/token 2> /dev/null && test -s $E/token" &&
+  v "cd $E && c='{\"cart_token\":\"ensaio-virada-'\$(date +%s)'\"}'; h=\$(printf '%s' \"\$c\" | openssl dgst -sha256 -hmac \"\$(cat shopify.segredo)\" -binary | base64)
+     r=\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H \"X-Shopify-Hmac-Sha256: \$h\" \
+          -H 'X-Shopify-Topic: checkouts/create' -H \"X-Shopify-Event-Id: ensaio-\$(date +%s%N)\" --data \"\$c\" http://127.0.0.1:18080/receber-webhook-checkout)
+     echo \"webhook de checkout assinado: HTTP \$r\"; [ \"\$r\" = 200 ]" &&
   v "$DC exec -T worker api worker rodar conferir-robos --forcar && $DC exec -T worker api worker rodar faxina-da-api --forcar"
 }
 medir() {
@@ -142,6 +155,7 @@ etapa "4. tabelas do Supabase (só leitura)" tabelas
 etapa "5. ensaio.sh: dump/restore/usuários/conferências" ensaio_sh
 etapa "6. preparar a pasta do ensaio na VPS" preparar_vps
 etapa "7. papel api_app (sem superusuário)" janela papel
+etapa "7b. trocar o host do Storage no banco" janela trocar_host
 etapa "8. clone do corte (api_base)" janela clone
 etapa "9. api migrar (como api_app)" janela v "$DC run --rm --no-build api migrar"
 etapa "10. API e worker no ar (healthy)" janela subir
@@ -149,7 +163,7 @@ etapa "11. api worker conferir" janela v "$DC exec -T worker api worker conferir
 etapa "11b. foto do corte (do clone, fora da janela)" foto
 etapa "12. todas as tarefas DESLIGADAS" listar
 etapa "13. 5 rotas: Go x Supabase (20 cada)" medir
-etapa "14. escritas reais da API (robô, robôs)" escritas_reais
+etapa "14. escritas reais (robô, webhook, worker)" escritas_reais
 etapa "15. rollback: parar API e worker" parar
 etapa "16. delta, replay no clone, comparação" delta_replay
 impressao > "$OUT/vps-depois.txt"
