@@ -2,7 +2,7 @@
 // colaboradores (acessos_pessoas), da estrutura (organizações, setores), das pastas e vínculos e a
 // trilha. Não confundir com o pacote acesso (5.1: contas de login, perfis de acesso, equipes). A regra
 // de toda tabela é a do catálogo de produção (autz.Producao: is_acessos_admin() nas 13); o Zoho, a
-// Microsoft, o OAuth, os segredos de acessos_conexoes e os arquivos são do Plano 6, que se monta aqui.
+// Microsoft, o OAuth, os segredos das conexões (tabela fora do catálogo) e os arquivos são do Plano 6, que se monta aqui.
 package acessos
 
 import (
