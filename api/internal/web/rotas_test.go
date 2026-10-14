@@ -322,6 +322,12 @@ var rotas54 = []string{
 	"GET /acessos/recursos", "GET /acessos/vinculos", "POST /acessos/vinculos", "GET /acessos/termos",
 }
 
+// Plano 5.10: as 6 leituras do selo. Portão = catálogo (is_vessel_admin), provado pela matriz de `internal/vessel`
+// (TestLeiturasDoSelo, TestNadaVazaDoSelo). O cartão (POST /vessel-baixar-cartao, portão do selo DENTRO do handler)
+// e a rota de robô da Fábrica NÃO entram: TestNenhumaRotaNovaFicaAberta prova o 403 sem módulo.
+var rotas510 = []string{"GET /autenticidade/lotes", "GET /autenticidade/pecas", "GET /autenticidade/registros",
+	"GET /autenticidade/baixas", "GET /autenticidade/cartao-pedidos", "GET /autenticidade/lembretes"}
+
 // Plano 5.3: as 27 rotas de frota.Montar (11 leituras e 16 escritas), no grupo de DOMÍNIO. Portão = catálogo
 // (is_frota_admin()), provado pela matriz de cada rota em `internal/frota`; vazamento e impersonado por
 // `TestNadaVazaParaQuemNaoTemFrota` e `TestEscritasRecusamImpersonado` (lá). As 2 RPCs entram por
@@ -352,7 +358,7 @@ var rotas55 = []string{
 }
 
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas53, rotas55, rotas54) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas53, rotas55, rotas510, rotas54) {
 		soSessao[c] = true
 	}
 }
@@ -532,8 +538,10 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		// Plano 5.12: fatura real das contas de IA (grupo autenticado, FORA do de domínio)
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
-		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, rotas54, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3, 5.5 e 5.4: no grupo de domínio, com o prazo dele
+		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa,
+		// Plano 5.10: o cartão EAN do Zoho, no grupo de SESSÃO com prazo próprio
+		"POST /vessel-baixar-cartao": PrazoCartao}
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, rotas510, rotas54, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3, 5.5, 5.10 e 5.4: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -822,8 +830,9 @@ func TestContaCaminhosFelizesPelaMontagemReal(t *testing.T) {
 // registrada, como cada sub-plano fará): 401 sem sessão, 403 sem o portão (e a função NÃO roda), 200 com
 // ele, 404 para nome não registrado, e o portão vem antes da validação do corpo.
 func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
-	const nome = "vessel_gerar_lote"
 	original, pendentes := FuncoesRPC, RPCPendentes
+	// um nome AINDA pendente: o 5.10 registrou o vessel_gerar_lote que estava aqui
+	nome := pendentes[len(pendentes)-1]
 	t.Cleanup(func() { FuncoesRPC, RPCPendentes = original, pendentes })
 	// ACRESCENTA: com as funções dos sub-planos já registradas (e fora de RPCPendentes), trocar a lista inteira
 	// derrubaria a soma de TotalRPCDoPainel.
@@ -1418,5 +1427,61 @@ func TestComercialPelaMontagemReal(t *testing.T) {
 	var fechado *string
 	if err := p.QueryRow(ctx, `select fechado_em::text from bling_lojas where loja_id = 1`).Scan(&fechado); err != nil || fechado != nil {
 		t.Errorf("a loja 1 mudou: %v %v", fechado, err)
+	}
+}
+
+// Plano 5.10: o selo pela montagem de PRODUÇÃO (web.Rotas): as leituras no grupo de domínio, as 16 RPCs registradas e
+// o cartão com o portão do selo antes do Zoho (sem conexão do Zoho no banco de teste: 503 depois do portão).
+func TestSeloPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `create table if not exists acessos_conexoes (provedor text primary key, client_id text, client_secret text,
+		refresh_token text, org_id text, data_center text default '.com', escopos text, conectado_por uuid, conectado_em timestamptz,
+		atualizado_em timestamptz not null default now())`); err != nil {
+		t.Fatal(err)
+	}
+	quem := map[string]string{}
+	for i, c := range []struct{ nome, features string }{{"selo", "{autenticidade}"}, {"so-meta", "{meta}"}} {
+		id := fmt.Sprintf("5a10a000-0000-4000-a000-00000000000%d", i+1)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, c.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, role, features) values ($1::uuid, $2::text, 'viewer', $3::text[])`, id, c.nome+"@x.com", c.features); err != nil {
+			t.Fatal(err)
+		}
+		tok, err := s.Criar(ctx, id, "painel", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		quem[c.nome] = tok
+	}
+	if _, err := p.Exec(ctx, `insert into vessel_lotes (id, modelo, sku, quantidade) values ('5a10b000-0000-4000-a000-000000000001', 'Linear', 'SS1', 1);
+		insert into vessel_pecas (codigo, lote_id, numero_na_serie, cartao_gerado_em) values ('VBMONTA001', '5a10b000-0000-4000-a000-000000000001', 1, now())`); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, rota, corpo string
+		status                          int
+		tem                             string
+	}{
+		{"leitura sem sessão", "", "GET", "/autenticidade/pecas", "", 401, "nao_autenticado"},
+		{"leitura de quem não é do selo", "so-meta", "GET", "/autenticidade/pecas", "", 200, "[]"},
+		{"leitura do selo", "selo", "GET", "/autenticidade/pecas", "", 200, "VBMONTA001"},
+		{"RPC registrada, quem não é do selo", "so-meta", "POST", "/rpc/vessel_alertas", "{}", 403, "sem_permissao"},
+		{"RPC registrada, o selo", "selo", "POST", "/rpc/vessel_marcar_gravada", `{"p_codigo":"VBMONTA001"}`, 200, `"ja_estava" : false`},
+		{"cartão, quem não é do selo", "so-meta", "POST", "/vessel-baixar-cartao", `{"codigo":"VBMONTA001","face":"frente","formato":"png"}`, 403, "sem_permissao"},
+		{"cartão passa o portão e para sem o Zoho", "selo", "POST", "/vessel-baixar-cartao", `{"codigo":"VBMONTA001","face":"frente","formato":"png"}`, 503, "zoho_desconectado"},
+	} {
+		req := httptest.NewRequest(c.metodo, c.rota, strings.NewReader(c.corpo))
+		if c.quem != "" {
+			req.Header.Set("Authorization", "Bearer "+quem[c.quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != c.status || !strings.Contains(w.Body.String(), c.tem) {
+			t.Errorf("%s: %s %s = %d %s; esperava %d com %q", c.nome, c.metodo, c.rota, w.Code, w.Body, c.status, c.tem)
+		}
 	}
 }

@@ -742,6 +742,39 @@ O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` j
 ### Achados para o dono
 (ver a seção "Achados para o dono" do plano 5.9)
 
+## Plano 5.10 — Autenticidade (selo Vessel)
+
+### Variáveis de ambiente (serviço `api`)
+Nenhuma nova. O Zoho do cartão usa a conexão de `acessos_conexoes` (provedor `zoho`, a mesma da tela de Acessos e do robô de cartões); a raiz das fotos é a padrão do robô (`ZOHO_PASTA_FOTOS` nunca foi definida nas edges).
+
+### Rotas novas
+- Com sessão, regra = catálogo (`is_vessel_admin()`: o módulo `autenticidade` em `features` ou `is_superadmin` da ficha; o papel `admin` sozinho NÃO passa): `GET /autenticidade/lotes`, `/pecas` (`?codigo=A,B`), `/registros` (SEM CPF e nascimento), `/baixas` (só as ativas), `/cartao-pedidos`, `/lembretes` (sem `token_hash`).
+- `POST /rpc/<nome>` para as 16 `vessel_*` do painel (portão = o da função; as 14 que gravam recusam "entrar como"; `vessel_decidir_pedido_de_registro` só com `p_quem_decidiu = "na_mao"` e sem `p_conferencia`).
+- `POST /vessel-baixar-cartao` (portão do selo; prazo 60 s; "entrar como" baixa).
+- `GET /fabrica/robo/material-do-sku?sku=` (só o robô da Fábrica, sessão de serviço).
+
+### A fila `disparos_pendentes` (Ruling 28 do mestre; Rulings 5.10-1 a 5.10-3)
+- A migração `00007` cria `disparos_pendentes` e troca `public.disparar_robo`: ela só grava (ou junta) um pedido pendente por robô, nunca chama rede. Quem chamava a função antiga e ainda existe no banco novo: o gatilho `vessel_lista_espera_espelhar` (cadastro da lista de espera do site). Sem a troca, todo cadastro quebrava no corte (o `pg_net` não vem).
+- O restore (`ops/migracao/restaurar.sh`) roda `api migrar` ANTES do `schema.sql`: o `limpar-dump.mjs` tira a `disparar_robo` antiga do dump (contagem `substituidas` = 2: a função e o comentário). Restaurar com um dump limpo por versão anterior do script = `function already exists`, e o restore para (é o certo).
+- Atendente: nenhum no 5.10. O Plano 6 atende `vessel-espelhar-lista` pela tarefa do espelho (`banco.AtenderDisparo`). Até lá os disparos se juntam num pedido pendente só (uma linha), e o espelho de 3 em 3 minutos do Plano 6 cobre.
+- `disparar_robo` NÃO grava mais `robos_execucoes` (a linha de cada `net.http_post`): a saúde de cada robô vem de quem o executa.
+
+### nginx
+- `location = /api/vessel-baixar-cartao { proxy_read_timeout 70s; proxy_buffering off; proxy_pass http://127.0.0.1:8080/vessel-baixar-cartao; }` (o prazo da rota é 60 s, o padrão do nginx também; o download vem em fluxo).
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas e tipos do 5.10 — em especial as PRESUMIDAS `vessel_registros.nascimento` (date) e `bling_atualizado_em`, sem DDL no repositório —, os 6 gatilhos do selo ligados, as 16 RPCs pelo `conferirRPC`, a `disparar_robo` da `00007` e os 2 gatilhos do Actions AUSENTES.
+- `select tgname from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'vessel\_%' order by 1` = os 6 do selo + `vessel_lista_espera_espelhar` + os do 5.11 (`vessel_atendimentos_atualizado`, `vessel_pessoas_atualizado`, `vessel_private_edits_funil`, `vessel_stylist*`, `vessel_rd_na_fila`). Nenhum `vessel_lote_novo_pede_foto` nem `vessel_cartao_pedido_novo_acorda_o_robo`.
+- As frases e os corpos verbatim: `select md5(string_agg(prosrc, '|' order by proname)) from pg_proc where proname in (<as 35 de 03-funcoes-5-10.sql>)` no banco restaurado = o mesmo `select` num Postgres de teste com as fatias carregadas; diferente = alguém mudou a função em produção depois do levantamento: refaça o `TestPortoesIguaisAsFuncoes` com a nova antes do corte.
+- No ensaio, numa transação desfeita: `insert into vessel_lista_espera (...) values (...)` (um cadastro de prova) não falha e deixa 1 pedido `vessel-espelhar-lista` em `disparos_pendentes`.
+- No ensaio, o botão "Baixar" de um cartão de verdade (frente e verso, PNG e PDF) pela API: o Zoho pode redirecionar o download; o cliente segue até 3 redirecionamentos `https` (Ruling 5.10-12). Se falhar com 502 `zoho_recusou` 3xx, pare e reporte.
+- A conta do robô da Fábrica (5.8) lê `GET /fabrica/robo/material-do-sku` com o token dela (um SKU com lote em canvas devolve `canvas`).
+
+### Mudanças de contrato que o Plano 7 absorve
+(ver a seção "Mudanças de contrato" do plano 5.10)
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.10)
 ## Plano 5.3 — Frota
 
 ### Rotas novas (com sessão; regra = catálogo de produção, `is_frota_admin()`; escrita de sessão "entrar como" = 403)

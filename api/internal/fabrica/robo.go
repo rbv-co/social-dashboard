@@ -535,5 +535,29 @@ func montarRobo(r chi.Router, p *pgxpool.Pool) {
 		r.Patch("/fabrica/robo/looks/{chave}", atualizarLook(p))
 		r.Post("/fabrica/robo/meta-jobs", criarMetaJob(p))
 		r.Post("/fabrica/robo/execucoes", criarExecucao(p))
+		r.Get("/fabrica/robo/material-do-sku", materialDoSku(p)) // Plano 5.10 (Ruling 5.8-13)
 	})
+}
+
+// materialDoSku: GET /fabrica/robo/material-do-sku?sku= — o material do lote MAIS RECENTE do SKU com material, para a
+// pílula de garantia da arte (coletor/hero-ia/texto-da-garantia.mjs:42-47, a mesma consulta). Contrato do 5.8
+// (Ruling 5.8-13), implementado pelo 5.10, dono de vessel_lotes: UMA coluna para o robô da Fábrica, sem dar a ele o
+// módulo autenticidade (que abriria as RPCs do selo). Sem lote com material: {"material": null} (sem pílula).
+func materialDoSku(p *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		sku := q.Get("sku")
+		if len(q) != 1 || len(q["sku"]) != 1 || strings.TrimSpace(sku) == "" || utf8.RuneCountInString(sku) > 80 {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "sku é obrigatório (até 80 caracteres) e é o único parâmetro.")
+			return
+		}
+		var material *string
+		err := p.QueryRow(r.Context(), `select material from vessel_lotes where sku = $1::text and material is not null
+			order by criado_em desc, id desc limit 1`, sku).Scan(&material)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			dados.ErroDoBanco(w, err)
+			return
+		}
+		responder(w, http.StatusOK, map[string]*string{"material": material})
+	}
 }

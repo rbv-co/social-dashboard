@@ -149,6 +149,19 @@ var colunasDoWorker = map[string]string{
 	"fabrica_looks":     "chave,nome,arquetipo,objetivos,ativo,excluido,ordem,preview_url,tipo,canva_formato_map,campo_map,created_at",
 	"fabrica_publicos":  "id,nome,marca_id,geo,idade_min,idade_max,generos,interesses,custom_audiences,ativo,criado_por,created_at",
 	"fabrica_meta_jobs": "id,tipo,loja,ad_account_id,meta_campaign_id,adset_ids,ad_ids,payload,status,erro,created_at",
+
+	// Plano 5.10: o que as 6 leituras projetam, o que o cartão e o material-do-sku leem, e as 2 colunas de
+	// vessel_registros SEM DDL no repositório (nascimento, bling_atualizado_em: a decisão de registro as grava).
+	// As 16 RPCs são conferidas por conferirRPC (assinatura e EXECUTE); as tabelas que só elas tocam, pelo D0.
+	"vessel_lotes":           "id,modelo,cor,sku,quantidade,fabricado_em,criado_por,criado_em,fotos,os,teste,material,material_fonte",
+	"vessel_pecas":           "codigo,lote_id,numero_na_serie,gravada_em,criado_em,cartao_gerado_em",
+	"vessel_registros":       "codigo,nome,whatsapp,onde_comprou,comprado_em,garantia_ate,registrado_em,bling_pedido,cpf,pedido_id,bling_contato_id,cliente_id,nascimento,bling_atualizado_em",
+	"vessel_baixas":          "id,codigo,motivo,baixada_em,desfeita_em",
+	"vessel_cartao_pedidos":  "id,pecas,situacao,pasta,erro,criado_por,criado_em,comecou_em,terminou_em",
+	"vessel_cartao_arquivos": "codigo,nome,zoho_id",
+	"vessel_lembretes":       "id,peca_codigo,email,criado_em,enviado_7_em,enviado_30_em,cancelado_em,cancelado_por",
+	"vessel_clientes":        "id,atualizado_em",                                           // o gatilho vessel_clientes_atualizado
+	"acessos_conexoes":       "provedor,client_id,client_secret,refresh_token,data_center", // internal/zoho
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
@@ -225,6 +238,9 @@ var tiposDoWorker = map[string]string{
 	"fabrica_meta_jobs.payload": "jsonb", "fabrica_meta_jobs.adset_ids": "jsonb", "fabrica_meta_jobs.ad_ids": "jsonb",
 	"fabrica_looks.objetivos": "text[]", "fabrica_publicos.id": "uuid", "fabrica_publicos.generos": "integer[]",
 	"fabrica_publicos.geo": "jsonb", "fabrica_publicos.idade_min": "integer", "fabrica_publicos.idade_max": "integer",
+	// Plano 5.10: o filtro ?codigo= (text[]), o cartão (pecas @> array[codigo]) e o recálculo da garantia (date)
+	"vessel_pecas.codigo": "text", "vessel_pecas.lote_id": "uuid", "vessel_lotes.id": "uuid", "vessel_cartao_pedidos.pecas": "text[]",
+	"vessel_registros.garantia_ate": "date", "vessel_registros.nascimento": "date",
 	// Plano 5.5: filtros com cast, chaves das escritas, dinheiro e datas do Comercial
 	"bling_lojas.loja_id": "bigint", "bling_lojas.grupo_id": "uuid", "bling_lojas.fechado_em": "date",
 	"bling_metas.loja_id": "bigint|integer", "bling_metas.year": "integer|bigint", "bling_metas.month": "integer|bigint",
@@ -305,6 +321,10 @@ var gatilhosDoWorker = [][2]string{
 	{"trg_bem_de_veiculo_segue_a_frota", "patrimonio_bens"}, {"trg_patrimonio_espelha_responsavel", "patrimonio_bens"},
 	{"trg_patrimonio_espelha_situacao", "patrimonio_bens"},
 	{"conteudo_pecas_guarda", "conteudo_pecas"}, // Plano 5.9: sem ele, quem não aprova aprova pelo PATCH
+	// Plano 5.10: os 6 gatilhos vivos do selo (a garantia recalcula pelo material, o lembrete morre com o registro...)
+	{"trg_vessel_lotes_marcar_teste", "vessel_lotes"}, {"trg_vessel_lote_novo_herda_material", "vessel_lotes"},
+	{"trg_vessel_lote_material_recalcula_garantia", "vessel_lotes"}, {"vessel_clientes_atualizado", "vessel_clientes"},
+	{"vessel_registros_preencher_cliente_id", "vessel_registros"}, {"vessel_registros_mata_o_lembrete", "vessel_registros"},
 	// Plano 5.3: decisão, arquivamento, histórico, aceite e assinatura imutáveis, filas de PDF e o espelho do carro
 	{"trg_frota_checar_decisao", "frota_requisicoes"}, {"trg_frota_checar_arquivamento", "frota_requisicoes"},
 	{"trg_frota_gravar_historico", "frota_requisicoes"}, {"trg_frota_aceite_imutavel", "frota_uso"},
@@ -559,6 +579,7 @@ func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 			return conferirLeituraDoCatalogo(ctx, tx, autz.Producao.Tabelas())
 		},
 		func(ctx context.Context, tx pgx.Tx) ([]string, error) { return conferirRPC(ctx, tx, web.FuncoesRPC) },
+		conferirDisparos, // Plano 5.10
 	} {
 		mais, err := conferir(ctx, tx)
 		if err != nil {
@@ -603,4 +624,35 @@ func conferirComando(ctx context.Context, p *pgxpool.Pool, cfg config.Config) in
 	}
 	fmt.Println("schema confere com o que o worker presume")
 	return 0
+}
+
+// conferirDisparos (Plano 5.10, Ruling 28 do mestre): a disparar_robo que vale é a da migração 00007 (grava em
+// disparos_pendentes); a de produção chamava net.http_post (pg_net não existe aqui) e, restaurada por um dump não
+// limpo ou fora de ordem, quebraria o cadastro da lista de espera do site (gatilho vessel_lista_espera_espelhar). E
+// os 2 gatilhos que acordavam o GitHub Actions (removidos de produção em 10/10) não podem voltar: o Actions não
+// alcança este banco e os robôs rodam na VPS.
+func conferirDisparos(ctx context.Context, tx pgx.Tx) ([]string, error) {
+	var faltam []string
+	var nova bool
+	if err := tx.QueryRow(ctx, `select coalesce(bool_and(prosrc like '%disparos_pendentes%' and prosrc not like '%net.http_post%'), false)
+		  from pg_proc where proname = 'disparar_robo' and pronamespace = current_schema()::regnamespace`).Scan(&nova); err != nil {
+		return nil, err
+	}
+	if !nova {
+		faltam = append(faltam, "função disparar_robo: ausente ou a de produção (pg_net): rode `api migrar` (00007) e restaure com o limpar-dump.mjs atual")
+	}
+	linhas, err := tx.Query(ctx, `select t.tgname::text from pg_trigger t join pg_class c on c.oid = t.tgrelid
+		 where not t.tgisinternal and c.relnamespace = current_schema()::regnamespace
+		   and t.tgname in ('vessel_lote_novo_pede_foto', 'vessel_cartao_pedido_novo_acorda_o_robo') order by 1`)
+	if err != nil {
+		return nil, err
+	}
+	voltaram, err := pgx.CollectRows(linhas, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range voltaram {
+		faltam = append(faltam, "gatilho "+g+": removido de produção em 10/10 e de volta (acordaria o GitHub Actions, que não alcança o banco): derrube-o")
+	}
+	return faltam, nil
 }
