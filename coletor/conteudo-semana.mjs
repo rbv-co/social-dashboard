@@ -18,37 +18,20 @@
 // Para rodar na sua máquina: node --env-file=.env conteudo-semana.mjs --conta <uuid>
 import { OPUS, structured, usageSummary } from './lib-llm.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
+import { abrirBanco, lerJob, lerMarca, metricasDasPecas, concorrentesDoPortal, concluirJob, falharJob } from './lib/conteudo-banco.mjs';
 import { montarContextoDaMarca } from './conteudo-contexto.mjs';
 import {
   CADENCIA_PADRAO, proximaSegunda, slotsDaSemana, casarSlotsComIdeias, conferirPlano,
 } from '../src/ferramentas/conteudo/semana.js';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const DB_URL = process.env.CONTEUDO_DATABASE_URL;
+let db = null;
 
 const arg = (nome, padrao = null) => {
   const i = process.argv.indexOf(`--${nome}`);
   return i > -1 ? (process.argv[i + 1] || true) : padrao;
 };
 const SECO = process.argv.includes('--seco');
-
-async function sb(caminho, opcoes = {}) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${caminho}`, {
-    ...opcoes,
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      'Content-Type': 'application/json',
-      ...(opcoes.headers || {}),
-    },
-  });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  // Corpo vazio não é erro: com `Prefer: return=minimal` o PostgREST responde
-  // 201 sem corpo, e `r.json()` estouraria. (Já derrubou uma rodada que tinha
-  // dado certo no robô de pauta.)
-  const texto = await r.text();
-  return texto ? JSON.parse(texto) : null;
-}
 
 const ESQUEMA = {
   type: 'object',
@@ -114,35 +97,25 @@ Regras:
 8. Português do Brasil, direto, sem jargão de marketing.`;
 
 async function carregar(accountId) {
-  const [contas, blocos, pecas, ideias, doNicho] = await Promise.all([
-    sb(`accounts?id=eq.${accountId}&select=id,name,username,conteudo_usa_portal`),
-    sb(`conteudo_blocos?account_id=eq.${accountId}&ativo=eq.true&select=tipo,nome,texto`),
-    sb(`conteudo_pecas?account_id=eq.${accountId}&select=id,titulo,formato,status,publicar_em,publicado_em&order=publicar_em.desc&limit=60`),
+  const { conta, blocos, pecas, ideias, doNicho } = await lerMarca(db, accountId, {
+    pecasColunas: 'id, titulo, formato, status, publicar_em, publicado_em',
     // Só o que ainda não virou peça: propor uma ideia já usada seria repetir.
-    sb(`conteudo_ideias?account_id=eq.${accountId}&situacao=in.(nova,favorita)&select=id,titulo,gancho,formato,pilar,por_que_agora&order=created_at.desc&limit=40`),
-    sb(`conteudo_concorrentes?account_id=eq.${accountId}&ativo=eq.true&select=handle,nome,observacao`),
-  ]);
-
-  const conta = (contas || [])[0] || {};
+    ideiasSql: `select id, titulo, gancho, formato, pilar, por_que_agora from conteudo_ideias
+                where account_id = $1 and situacao in ('nova','favorita') order by created_at desc limit 40`,
+    ideiasValores: [accountId],
+  });
   const publicadas = (pecas || []).filter(p => p.status === 'publicada');
   let publicados = publicadas;
 
   if (publicadas.length) {
-    const ids = publicadas.map(p => `"${p.id}"`).join(',');
-    const metricas = await sb(
-      `conteudo_metricas?peca_id=in.(${ids})&select=peca_id,capturado_em,alcance,curtidas&order=capturado_em.desc`,
-    );
-    const ultima = {};
-    for (const m of metricas || []) if (!ultima[m.peca_id]) ultima[m.peca_id] = m;
+    const ultima = await metricasDasPecas(db, publicadas.map(p => p.id));
     publicados = publicadas.map(p => ({ ...p, metrica: ultima[p.id] || null }));
   }
 
   let concorrentes = [];
   if (conta.conteudo_usa_portal) {
     try {
-      const linhas = await sb(
-        'noticias_concorrentes?select=marca,titulo,resumo&order=rodada.desc&limit=8',
-      ) || [];
+      const linhas = await concorrentesDoPortal(db);
       concorrentes = linhas.map(l => ({
         handle: l.marca,
         legenda: [l.titulo, l.resumo].filter(Boolean).join(' — '),
@@ -194,23 +167,14 @@ async function main() {
   let accountId = arg('conta');
   const comecou = Date.now();
 
-  if (!SERVICE_KEY) throw new Error('falta SUPABASE_SERVICE_KEY');
+  db = await abrirBanco(DB_URL);
 
   let params = {};
+  // Veio pela fila: o vigia já marcou `rodando`; aqui só se lê a conta e o pedido.
   if (jobId) {
-    const jobs = await sb(`conteudo_jobs?id=eq.${jobId}&select=id,account_id,params`);
-    const job = (jobs || [])[0];
-    if (!job) throw new Error(`job ${jobId} não encontrado`);
+    const job = await lerJob(db, jobId);
     accountId = job.account_id;
     params = job.params || {};
-    await sb(`conteudo_jobs?id=eq.${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        status: 'rodando',
-        github_run_id: process.env.GITHUB_RUN_ID || null,
-        updated_at: new Date().toISOString(),
-      }),
-    });
   }
   if (!accountId) throw new Error('informe --conta <uuid> ou --job <uuid>');
 
@@ -283,14 +247,7 @@ async function main() {
   console.log(uso.text);
 
   if (jobId && !SECO) {
-    await sb(`conteudo_jobs?id=eq.${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        status: 'concluido',
-        resultado: { ...plano, usd: uso.usd },
-        updated_at: new Date().toISOString(),
-      }),
-    });
+    await concluirJob(db, jobId, { ...plano, usd: uso.usd });
   }
 
   await registrarExecucao({
@@ -302,21 +259,19 @@ async function main() {
     itens: propostos.length, unidade: 'posts',
     status: 'ok',
     detalhe: problemas.length ? problemas.join(' ') : null,
+    db,
   });
+  await db.fechar();
 }
 
 main().catch(async (e) => {
   console.error('ERRO:', e.message);
   const jobId = arg('job');
-  if (jobId && SERVICE_KEY) {
-    await sb(`conteudo_jobs?id=eq.${jobId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'erro', erro: String(e.message).slice(0, 500), updated_at: new Date().toISOString() }),
-    }).catch(() => {});
-  }
+  if (jobId && db) await falharJob(db, jobId, e.message).catch(() => {});
   await registrarExecucao({
     robo: 'conteudo-semana', acao: 'montar a semana',
-    status: 'erro', detalhe: String(e.message).slice(0, 300),
+    status: 'erro', detalhe: String(e.message).slice(0, 300), db,
   }).catch(() => {});
+  await db?.fechar();
   process.exit(1);
 });

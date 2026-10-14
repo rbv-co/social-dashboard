@@ -1,0 +1,20 @@
+# /etc/systemd/system/conteudo-vigia.service — vigia da fila de pauta de Conteúdo (ver conteudo-vigia.sh).
+# O robô é só HTTP para a Anthropic; a VPS divide CPU e memória com PDV, Chatwoot e o api-db, então os limites são baixos.
+[Unit]
+Description=Robô de pauta de Conteúdo (vigia da fila)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/robos.env
+ExecStart=/opt/cartoes-ean/social-dashboard/coletor/vps/conteudo-vigia.sh
+Restart=always
+RestartSec=15
+Nice=10
+CPUWeight=20
+MemoryHigh=384M
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
