@@ -298,6 +298,50 @@ export function pecasDosPedidosQueAcabaram(antes, depois) {
   return [...codigos]
 }
 
+const FUSO = 'America/Sao_Paulo'
+const RECENTE_MS = 15 * 60 * 1000 // "acabou de sair": até 15 min depois de o cartão ficar pronto
+
+/**
+ * QUANDO O CARTÃO SAIU, em palavras, e se ainda é "recém-saído".
+ *
+ * ⚠️ O `cartao_gerado_em` já vinha do banco, mas a linha só dizia "Cartão pronto": quem gerava não sabia quando, e o
+ * cartão novo se misturava aos antigos. Até 15 min conta como recente (a tela o acende); depois vira "hoje às 13:20",
+ * "ontem às 13:20" ou "14/10 às 13:20". O dia e a hora são do fuso de São Paulo, e não do computador de quem olha.
+ */
+export function quandoSaiu(iso, agora = Date.now()) {
+  const t = Date.parse(iso || '')
+  if (!Number.isFinite(t)) return { texto: '', recente: false }
+  const diff = agora - t
+  const dia = (ms) => new Date(ms).toLocaleDateString('sv-SE', { timeZone: FUSO }) // AAAA-MM-DD
+  const hora = new Date(t).toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' })
+  if (diff < 60_000) return { texto: 'agora há pouco', recente: true }
+  if (diff < RECENTE_MS) return { texto: `há ${Math.floor(diff / 60_000)} min`, recente: true }
+  if (dia(t) === dia(agora)) return { texto: `hoje às ${hora}`, recente: false }
+  if (dia(t) === dia(agora - 86_400_000)) return { texto: `ontem às ${hora}`, recente: false }
+  const [, m, d] = dia(t).split('-')
+  return { texto: `${d}/${m} às ${hora}`, recente: false }
+}
+
+/**
+ * O QUE ACONTECEU COM OS PEDIDOS QUE ACABARAM entre duas leituras da fila, só os de `usuarioId`.
+ *
+ * ⚠️ O resultado ficava só na lista de pedidos, no alto da aba; quem estava lá embaixo, na linha da peça, não via nada.
+ * Isto alimenta o aviso do bloco fixo (que acompanha a rolagem). Pedido que sumiu da leitura (a fila lê só os 20 últimos)
+ * não entra: dele não se sabe o fim.
+ */
+export function resultadoDosPedidosQueAcabaram(antes, depois, usuarioId) {
+  const ativo = (q) => q.situacao === 'na_fila' || q.situacao === 'rodando'
+  const eramAtivos = new Set((antes || []).filter(ativo).map((q) => q.id))
+  const r = { prontas: [], falhas: [] }
+  if (!usuarioId) return r
+  for (const q of depois || []) {
+    if (!eramAtivos.has(q.id) || q.criado_por !== usuarioId) continue
+    if (q.situacao === 'pronto') r.prontas.push(...(q.pecas || []))
+    else if (q.situacao === 'falhou') r.falhas.push({ pecas: q.pecas || [], erro: q.erro || 'O robô não conseguiu terminar.' })
+  }
+  return r
+}
+
 /**
  * Onde a peça está na fila: 'rodando', 'na_fila' ou null.
  *

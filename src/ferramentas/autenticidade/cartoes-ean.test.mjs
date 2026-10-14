@@ -6,6 +6,7 @@ import {
   recursosDoDesenho, cssDoCartao, fraseDoPedidoRecusado, situacaoDoPedido,
   BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, pecasDosPedidosQueAcabaram,
   nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado, pedidosDaPessoa,
+  quandoSaiu, resultadoDosPedidosQueAcabaram,
 } from './cartoes-ean.js'
 
 // Um pedaço do índice publicado, com a forma REAL do arquivo que está no ar —
@@ -300,4 +301,40 @@ test('as peças de um pedido que acabou são relidas na hora, sem esperar a fila
   // Primeira leitura (ou sem dados): nada a reler.
   assert.deepEqual(pecasDosPedidosQueAcabaram([], depois), [])
   assert.deepEqual(pecasDosPedidosQueAcabaram(null, null), [])
+})
+
+test('quandoSaiu: recente até 15 min, depois hoje/ontem/data — no fuso de São Paulo', () => {
+  const agora = Date.parse('2026-10-14T16:30:00Z') // 13:30 em São Paulo
+  const ha = (ms) => new Date(agora - ms).toISOString()
+  assert.deepEqual(quandoSaiu(ha(20_000), agora), { texto: 'agora há pouco', recente: true })
+  assert.deepEqual(quandoSaiu(ha(3 * 60_000 + 5_000), agora), { texto: 'há 3 min', recente: true })
+  assert.equal(quandoSaiu(ha(15 * 60_000), agora).recente, false)
+  assert.deepEqual(quandoSaiu('2026-10-14T15:20:00Z', agora), { texto: 'hoje às 12:20', recente: false })
+  assert.deepEqual(quandoSaiu('2026-10-13T20:05:00Z', agora), { texto: 'ontem às 17:05', recente: false })
+  assert.deepEqual(quandoSaiu('2026-10-09T18:40:00Z', agora), { texto: '09/10 às 15:40', recente: false })
+  // 01:30 UTC de 14/10 ainda é 22:30 de 13/10 em São Paulo: "ontem", e não "hoje".
+  assert.equal(quandoSaiu('2026-10-14T01:30:00Z', agora).texto, 'ontem às 22:30')
+  assert.deepEqual(quandoSaiu(null, agora), { texto: '', recente: false })
+})
+
+test('resultadoDosPedidosQueAcabaram: só os MEUS pedidos que estavam ativos e terminaram', () => {
+  const antes = [
+    { id: '1', situacao: 'rodando', pecas: ['A', 'B'], criado_por: 'eu' },
+    { id: '2', situacao: 'na_fila', pecas: ['C'], criado_por: 'eu' },
+    { id: '3', situacao: 'rodando', pecas: ['D'], criado_por: 'outro' },
+    { id: '4', situacao: 'pronto', pecas: ['E'], criado_por: 'eu' },
+  ]
+  const depois = [
+    { id: '1', situacao: 'pronto', pecas: ['A', 'B'], criado_por: 'eu' },
+    { id: '2', situacao: 'falhou', pecas: ['C'], criado_por: 'eu', erro: 'sem pasta de fotos' },
+    { id: '3', situacao: 'pronto', pecas: ['D'], criado_por: 'outro' },
+    { id: '4', situacao: 'pronto', pecas: ['E'], criado_por: 'eu' },
+  ]
+  assert.deepEqual(resultadoDosPedidosQueAcabaram(antes, depois, 'eu'),
+    { prontas: ['A', 'B'], falhas: [{ pecas: ['C'], erro: 'sem pasta de fotos' }] })
+  // Ainda rodando, sumido da leitura ou sem usuário: nada a dizer.
+  const aindaRodando = [{ id: '1', situacao: 'rodando', pecas: ['A'], criado_por: 'eu' }]
+  assert.deepEqual(resultadoDosPedidosQueAcabaram(antes, aindaRodando, 'eu'), { prontas: [], falhas: [] })
+  assert.deepEqual(resultadoDosPedidosQueAcabaram(antes, [], 'eu'), { prontas: [], falhas: [] })
+  assert.deepEqual(resultadoDosPedidosQueAcabaram(antes, depois, null), { prontas: [], falhas: [] })
 })

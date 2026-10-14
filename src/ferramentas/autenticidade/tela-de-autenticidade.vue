@@ -1355,6 +1355,26 @@
              os dois blocos formam UM só, que acompanha a rolagem logo abaixo da
              barra de topo do app — o botão de gerar nunca sai da tela. -->
         <div class="au-fixo-cartoes">
+          <!-- O RESULTADO DO PEDIDO, PERTO DE ONDE A PESSOA ESTÁ. Este bloco acompanha a rolagem; a lista de
+               pedidos lá em cima não. Só existe quando um pedido seu acabou de terminar (aviso que aparece sempre
+               vira paisagem) e fecha no X ou ao mandar outro pedido. -->
+          <div v-if="avisoDoResultado" class="au-resultado" role="status">
+            <div class="au-resultado-texto">
+              <p v-if="avisoDoResultado.prontas.length" class="au-resultado-linha">
+                <span class="selo selo-ok">Pronto</span>
+                <strong>{{ avisoDoResultado.prontas.length }} cartão(ões) entregue(s) no Zoho.</strong>
+              </p>
+              <p v-for="(f, i) in avisoDoResultado.falhas" :key="i" class="au-resultado-linha">
+                <span class="selo selo-erro">Falhou</span>
+                <strong>{{ f.pecas.length }} cartão(ões) não saiu(ram):</strong> {{ f.erro }}
+              </p>
+            </div>
+            <div class="au-resultado-acoes">
+              <button v-if="avisoDoResultado.prontas.length" class="btn" type="button"
+                      @click="verOsCartoesProntos">Ver na lista</button>
+              <button class="btn" type="button" aria-label="Fechar o aviso" @click="avisoDoResultado = null">Fechar</button>
+            </div>
+          </div>
           <div v-if="podeEditar" class="au-acoes au-pedir-cartoes">
             <p class="au-aviso-menor">
               {{ resumoDosCartoes.total }} peça(s) marcada(s) — {{ resumoDosCartoes.arquivos }} arquivos
@@ -1380,7 +1400,8 @@
         <div v-for="ln in linhasDosCartoes" :key="ln.codigo" class="au-card id-cartao"
              :id="'cartao-' + ln.codigo"
              :class="[classeDoTom(ln.jaTemCartao ? 'selo-ok' : !ln.podeGerar ? 'selo-atencao' : ''),
-                      { 'au-destaque': pecaEmDestaque === ln.codigo }]">
+                      { 'au-recente': ln.jaTemCartao && quandoOCartaoSaiu(ln).recente,
+                        'au-destaque': pecaEmDestaque === ln.codigo }]">
           <div class="au-card-topo">
             <!-- ⚠️ A MARCA É UM `checkbox` DE VERDADE, e não uma div clicável: é
                  o que o leitor de tela anuncia e o que o teclado alcança. -->
@@ -1410,12 +1431,21 @@
               <span class="au-andamento-trilho"><span class="au-andamento-barra"
                     :class="{ 'au-andamento-parada': andamentoDaPeca(ln.codigo, pedidosDeCartao) === 'na_fila' }"></span></span>
             </span>
-            <span v-else-if="ln.jaTemCartao" class="selo selo-ok">
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none"
-                   stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="5 13 10 18 19 7" />
-              </svg>
-              Cartão pronto
+            <!-- QUANDO SAIU fica embaixo do selo: sem ele, o cartão que você acabou de gerar era igual aos
+                 de semana passada. Até 15 min o selo diz "Acabou de sair" e a linha inteira acende. O título
+                 (hover) traz o dia e a hora exatos. -->
+            <span v-else-if="ln.jaTemCartao" class="au-pronto">
+              <span class="selo selo-ok">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none"
+                     stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="5 13 10 18 19 7" />
+                </svg>
+                {{ quandoOCartaoSaiu(ln).recente ? 'Acabou de sair' : 'Cartão pronto' }}
+              </span>
+              <span v-if="quandoOCartaoSaiu(ln).texto" class="au-quando"
+                    :title="new Date(ln.cartaoGeradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })">
+                {{ quandoOCartaoSaiu(ln).texto }}
+              </span>
             </span>
             <span v-else-if="!ln.podeGerar" class="selo selo-atencao">Não dá</span>
             <span v-else class="selo">Sem cartão</span>
@@ -2427,6 +2457,7 @@ import {
   BASE_DOS_RECURSOS, MOTIVO_DO_IMPEDIMENTO, linhasDeCartao, marcadasPorPadrao,
   resumoDoPedido, pecaParaODesenho, fraseDoPedidoRecusado, situacaoDoPedido,
   andamentoDaPeca, temPedidoAtivo, pecasDosPedidosQueAcabaram, bolsasDoPedido, pedidosDaPessoa, nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
+  quandoSaiu, resultadoDosPedidosQueAcabaram,
 } from './cartoes-ean.js'
 import { pdfComDuasPaginas, zipDosArquivos } from './cartao-junto.js'
 
@@ -3814,6 +3845,23 @@ const resumoDosCartoes = computed(() =>
 // esteja em outro lote.
 const todasAsLinhasDeCartao = computed(() =>
   linhasDeCartao(pecas.value, lotesPorId.value, indiceDosCartoes.value || {}))
+
+// "Há 3 min" tem de andar sozinho: o relógio da tela bate a cada 30 s (ligado em onMounted, desligado em onUnmounted).
+const agoraDaTela = ref(Date.now())
+/** Quando o cartão da linha saiu, em palavras, e se é recém-saído (a linha acende). */
+const quandoOCartaoSaiu = (ln) => quandoSaiu(ln.cartaoGeradoEm, agoraDaTela.value)
+
+/**
+ * O RESULTADO DO PEDIDO, NO BLOCO FIXO. A lista de pedidos fica no alto da aba e sai da vista quando se rola até a peça;
+ * este aviso gruda junto do botão de gerar e só some quando a pessoa o fecha ou manda outro pedido.
+ * `{ prontas: [códigos], falhas: [{ pecas, erro }] }` ou null.
+ */
+const avisoDoResultado = ref(null)
+const totalDeFalhas = computed(() => (avisoDoResultado.value?.falhas || []).reduce((n, f) => n + f.pecas.length, 0))
+async function verOsCartoesProntos() {
+  const primeira = avisoDoResultado.value?.prontas?.[0]
+  if (primeira) await irAteALinha(primeira)
+}
 const bolsasDe = (pedido) => bolsasDoPedido(pedido, todasAsLinhasDeCartao.value)
 
 /** A cor do selo do pedido: pronto verde, falhou vermelho, e o que o robô ainda está fazendo na cor do robô. */
@@ -3887,6 +3935,11 @@ async function carregarAFilaDeCartoes() {
   // quando o ÚLTIMO pedido termina, ficava assim até a fila inteira esvaziar (com 2 robôs, o tempo todo).
   const acabadas = pecasDosPedidosQueAcabaram(pedidosDeCartao.value, data)
   if (acabadas.length) await atualizarAsPecas(acabadas)
+  const resultado = resultadoDosPedidosQueAcabaram(pedidosDeCartao.value, data, estadoDoLogin.user?.id)
+  if (resultado.prontas.length || resultado.falhas.length) {
+    agoraDaTela.value = Date.now()
+    avisoDoResultado.value = resultado
+  }
   pedidosDeCartao.value = data || []
 }
 
@@ -4009,6 +4062,7 @@ async function baixarOCartao(linha, face, formato) {
 async function enviarPedido(codigos) {
   pedindoCartoes.value = true
   erroDosCartoes.value = ''
+  avisoDoResultado.value = null // o resultado do pedido anterior já foi visto; este é outro
   try {
     const { data, error } = await sbClient.rpc('vessel_pedir_cartoes', { p_pecas: codigos })
     if (error) throw error
@@ -4055,6 +4109,7 @@ async function pedirUmCartao(linha) {
 const INTERVALO_DA_FILA = 3000 // o robô leva ~20 s por pedido: 8 s de intervalo era quase metade do tempo
 let relogioDaFila = null
 let observadorDoTopo = null
+let relogioDaTela = null
 
 /** Relê só estas peças (em blocos: o filtro vai na URL) e troca no lugar. Falha avisa na faixa da aba, como a leitura inteira. */
 async function atualizarAsPecas(codigos) {
@@ -5159,6 +5214,7 @@ onMounted(() => {
   if (podeEditar.value && !guiaJaVisto()) guiaAberto.value = true
   // A prévia do cartão fala por `postMessage` quando não consegue desenhar.
   window.addEventListener('message', ouvirAPrevia)
+  relogioDaTela = setInterval(() => { agoraDaTela.value = Date.now() }, 30_000)
   // A barra de topo do app é sticky; o bloco do pedido gruda logo abaixo dela.
   const barraDoTopo = document.querySelector('.bt-barra')
   const raiz = document.querySelector('.tela-autenticidade')
@@ -5175,6 +5231,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('message', ouvirAPrevia)
   clearInterval(relogioDaFila)
+  clearInterval(relogioDaTela)
   observadorDoTopo?.disconnect()
 })
 </script>
@@ -6766,6 +6823,25 @@ onUnmounted(() => {
 .au-fila-resto{padding-top:var(--sp-1);}
 /* O botão não estica: `.au-botao-claro` é `flex:1` para as linhas de baixar do modal. */
 .au-fila-ir{flex:none; white-space:nowrap; padding:0 var(--sp-3);}
+/* O CARTÃO QUE ACABOU DE SAIR (até 15 min): a linha acende em verde, o tom de "pronto", para não se perder entre os
+   antigos. Vem ANTES de `.au-destaque` — se a pessoa clicar em "Ver na lista", o destaque (accent) vale por cima. */
+.au-card.au-recente{
+  background:color-mix(in srgb, var(--green) 12%, var(--surface));
+  box-shadow:inset 0 0 0 2px color-mix(in srgb, var(--green) 55%, var(--surface));
+}
+.au-pronto{display:flex; flex-direction:column; align-items:flex-start; gap:var(--sp-1); min-width:0;}
+.au-quando{font-size:var(--texto-corpo); color:var(--muted); overflow-wrap:anywhere;}
+/* O aviso do resultado, no bloco fixo: mesma receita do aviso colorido do padrão (token misturado à superfície, texto em --text). */
+.au-resultado{
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--sp-3);
+  margin-bottom:var(--sp-2); padding:var(--sp-3) var(--sp-4);
+  background:color-mix(in srgb, var(--green) 10%, var(--surface));
+  border:1px solid color-mix(in srgb, var(--green) 38%, var(--surface)); border-radius:var(--card-radius);
+  color:var(--text); font-size:var(--texto-corpo);
+}
+.au-resultado-texto{flex:1 1 16em; min-width:0; display:flex; flex-direction:column; gap:var(--sp-1);}
+.au-resultado-linha{margin:0; display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); overflow-wrap:anywhere;}
+.au-resultado-acoes{display:flex; flex-wrap:wrap; gap:var(--sp-2);}
 /* A linha que o botão acabou de mostrar: acende com o accent misturado à superfície (o tema cuida do escuro). */
 .au-card.au-destaque{
   background:color-mix(in srgb, var(--accent) 12%, var(--surface));
