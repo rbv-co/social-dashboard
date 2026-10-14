@@ -1,7 +1,7 @@
 // Package github dispara workflows do GitHub Actions e cancela execuções com um token pessoal (PAT) que
 // SÓ vem do chamador (config.GitHubPAT = GITHUB_PAT). Lista FECHADA: o pedido escolhe o nome de um
 // Disparo e os valores das entradas declaradas; repositório, arquivo e ref são texto deste arquivo.
-// Consumidores: fabrica (5.8), Plano 6. Novo consumidor = uma entrada em
+// Consumidores: fabrica (5.8) e o espelho da Vessel (Plano 6, vessel.Espelho). Novo consumidor = uma entrada em
 // Disparos e o caso dela em TestDispararListaFechada (Ruling 5.8-4).
 package github
 
@@ -45,9 +45,11 @@ type Disparo struct {
 }
 
 // Disparos: a lista fechada. O 5.10 não acrescenta entrada: os robôs do selo rodam na VPS e o Actions não alcança o
-// banco (Ruling 5.10-2); o Plano 6 acrescenta as dele.
+// banco (Ruling 5.10-2). O Plano 6 acrescenta UMA: o espelho da planilha da Vessel (o workflow lê a API pelo
+// CENTRAL_API_*, não o banco), sem entradas.
 var Disparos = map[string]Disparo{
-	"fabrica": {Repo: repoDoPainel, Workflow: "fabrica.yml", Ref: "main", Entradas: map[string]*regexp.Regexp{"job_id": reUUID}},
+	"fabrica":        {Repo: repoDoPainel, Workflow: "fabrica.yml", Ref: "main", Entradas: map[string]*regexp.Regexp{"job_id": reUUID}},
+	"espelho-vessel": {Repo: repoDoPainel, Workflow: "espelho-da-vessel.yml", Ref: "main", Entradas: map[string]*regexp.Regexp{}},
 }
 
 var (

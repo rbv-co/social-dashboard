@@ -188,3 +188,35 @@ func TestCORS(t *testing.T) {
 		t.Errorf("cabeçalhos da resposta: %v", h)
 	}
 }
+
+// O User-Agent e o IP do visitante chegam à função (`vessel_verificar` grava os dois lidos de request.headers); o
+// Core repassa o User-Agent do visitante e o X-Forwarded-For dele.
+func TestUserAgentEIPDoVisitanteChegamAFuncao(t *testing.T) {
+	m := novoMundo(t)
+	if st, r, _ := m.pedido(t, "/rest/v1/rpc/vessel_verificar", `{"p_codigo":"VBAAAA0001"}`, "User-Agent: Safari/17 (iPhone)", "X-Real-IP: 198.51.100.7"); st != 200 {
+		t.Fatalf("anônimo = %d %s", st, r)
+	}
+	if st, r, _ := m.pedido(t, "/rest/v1/rpc/vessel_verificar", `{"p_codigo":"VBAAAA0002"}`, comCore, "User-Agent: Chrome/120", "X-Forwarded-For: 203.0.113.9"); st != 200 {
+		t.Fatalf("Core = %d %s", st, r)
+	}
+	for codigo, quer := range map[string]string{"VBAAAA0001": "Safari/17 (iPhone)|" + hashDoIP("198.51.100.7"), "VBAAAA0002": "Chrome/120|" + hashDoIP("203.0.113.9")} {
+		if got := m.um(t, `select agente || '|' || ip_hash from vessel_leituras where codigo = $1`, codigo); got != quer {
+			t.Errorf("leitura de %s = %s, esperava %s", codigo, got, quer)
+		}
+	}
+}
+
+// Corpo vazio vale {} (função sem parâmetro); a resposta varia com a origem (Vary), com ou sem CORS.
+func TestCorpoVazioEVary(t *testing.T) {
+	m := novoMundo(t)
+	st, r, h := m.pedido(t, "/rest/v1/rpc/vessel_pre_venda_restantes", ``)
+	if st != 200 || !strings.Contains(r, `"restam"`) {
+		t.Errorf("corpo vazio = %d %s, esperava 200", st, r)
+	}
+	if !strings.Contains(strings.Join(h.Values("Vary"), ","), "Origin") {
+		t.Errorf("Vary = %v, esperava Origin mesmo sem CORS", h.Values("Vary"))
+	}
+	if st, _, _ := m.pedido(t, "/rest/v1/rpc/vessel_entrar_na_lista", ``); st != 400 {
+		t.Errorf("corpo vazio com parâmetros obrigatórios = %d, esperava 400", st)
+	}
+}

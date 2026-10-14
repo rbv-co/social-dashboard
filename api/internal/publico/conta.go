@@ -18,7 +18,7 @@ func (s *Servico) Conta(m Mailer) Edge {
 			responder(w, http.StatusBadRequest, map[string]any{"ok": false, "motivo": "dados_invalidos"})
 			return
 		}
-		c := s.chamadas(r.Context(), ip)
+		c := s.chamadas(r, ip)
 		ipHash := s.hashDoIP(ip)
 		falhou := map[string]any{"ok": false, "motivo": "falhou"}
 		// repassa: a resposta da função como veio; erro de infraestrutura ou null = a resposta padrão da ação

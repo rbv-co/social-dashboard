@@ -79,14 +79,15 @@ func lit(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 
 // chamadasDoBanco roda as funções de uma edge, cada uma na sua transação (como cada `.rpc` da edge).
 type chamadasDoBanco struct {
-	s   *Servico
-	ctx context.Context
-	ip  string
-	fns map[string]rpc.Funcao
+	s      *Servico
+	ctx    context.Context
+	ip     string
+	agente string
+	fns    map[string]rpc.Funcao
 }
 
-func (s *Servico) chamadas(ctx context.Context, ip string) *chamadasDoBanco {
-	return &chamadasDoBanco{s: s, ctx: ctx, ip: ip, fns: porNome(deEdge)}
+func (s *Servico) chamadas(r *http.Request, ip string) *chamadasDoBanco {
+	return &chamadasDoBanco{s: s, ctx: r.Context(), ip: ip, agente: r.UserAgent(), fns: porNome(deEdge)}
 }
 
 // chamar devolve o JSON da função ("null" vira nil). Parâmetro com valor nil não é enviado.
@@ -107,7 +108,7 @@ func (c *chamadasDoBanco) chamar(nome string, args map[string]json.RawMessage) (
 		return nil, errors.New(msg)
 	}
 	var saida []byte
-	err := banco.ComAnonimo(c.ctx, c.s.Pool, "dono", c.ip, func(tx pgx.Tx) (err error) {
+	err := banco.ComAnonimo(c.ctx, c.s.Pool, "dono", c.ip, c.agente, func(tx pgx.Tx) (err error) {
 		saida, err = f.Rodar(c.ctx, tx, ped)
 		return err
 	})

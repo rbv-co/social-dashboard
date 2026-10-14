@@ -172,7 +172,7 @@ func TestCompatFalhaSeExtensaoEstaEmOutroSchema(t *testing.T) {
 
 // comAnonimoBool roda uma consulta de uma coluna booleana dentro de ComAnonimo.
 func comAnonimoBool(ctx context.Context, p *pgxpool.Pool, papel, ip, sql string, destino *bool) error {
-	return banco.ComAnonimo(ctx, p, papel, ip, func(tx pgx.Tx) error { return tx.QueryRow(ctx, sql).Scan(destino) })
+	return banco.ComAnonimo(ctx, p, papel, ip, "", func(tx pgx.Tx) error { return tx.QueryRow(ctx, sql).Scan(destino) })
 }
 
 // ComAnonimo: papel fora da lista fechada é recusado; o IP chega em request.headers e some no fim da transação; a
@@ -180,12 +180,12 @@ func comAnonimoBool(ctx context.Context, p *pgxpool.Pool, papel, ip, sql string,
 func TestComAnonimo(t *testing.T) {
 	p := testebanco.Novo(t)
 	ctx := context.Background()
-	if err := banco.ComAnonimo(ctx, p, "service_role", "1.2.3.4", func(pgx.Tx) error { return nil }); !errors.Is(err, banco.ErrPapelInvalido) {
+	if err := banco.ComAnonimo(ctx, p, "service_role", "1.2.3.4", "", func(pgx.Tx) error { return nil }); !errors.Is(err, banco.ErrPapelInvalido) {
 		t.Errorf("papel fora da lista = %v, esperava ErrPapelInvalido", err)
 	}
 	var ip, papel string
 	var semUsuario bool
-	err := banco.ComAnonimo(ctx, p, "anon", "203.0.113.9", func(tx pgx.Tx) error {
+	err := banco.ComAnonimo(ctx, p, "anon", "203.0.113.9", "Navegador/1.0", func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `select current_setting('request.headers')::json ->> 'x-forwarded-for'`).Scan(&ip); err != nil {
 			return err
 		}
@@ -197,12 +197,24 @@ func TestComAnonimo(t *testing.T) {
 	if err != nil || ip != "203.0.113.9" || papel != "anon" || !semUsuario {
 		t.Errorf("ip %q papel %q semUsuario %t err %v", ip, papel, semUsuario, err)
 	}
+	var agente string
+	if err := banco.ComAnonimo(ctx, p, "anon", "203.0.113.9", "Navegador/1.0 (ç ã)", func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `select current_setting('request.headers')::json ->> 'user-agent'`).Scan(&agente)
+	}); err != nil || agente != "Navegador/1.0 (ç ã)" {
+		t.Errorf("user-agent em request.headers = %q (err %v)", agente, err)
+	}
+	// valores com aspas e barras viram JSON certo (nunca montado por texto)
+	if err := banco.ComAnonimo(ctx, p, "anon", `1.2.3.4"}, "x": {"`, `a"b\c`, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `select current_setting('request.headers')::json ->> 'user-agent'`).Scan(&agente)
+	}); err != nil || agente != `a"b\c` {
+		t.Errorf("user-agent com aspas = %q (err %v)", agente, err)
+	}
 	var depois *string
 	if err := p.QueryRow(ctx, `select nullif(current_setting('request.headers', true), '')`).Scan(&depois); err != nil || depois != nil {
 		t.Errorf("request.headers vazou para fora da transação: %v (err %v)", depois, err)
 	}
 	// sem IP: cabeçalhos vazios, a função cai em "sem-ip"
-	if err := banco.ComAnonimo(ctx, p, "anon", "", func(tx pgx.Tx) error {
+	if err := banco.ComAnonimo(ctx, p, "anon", "", "", func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `select coalesce(current_setting('request.headers')::json ->> 'x-forwarded-for', 'sem-ip')`).Scan(&ip)
 	}); err != nil || ip != "sem-ip" {
 		t.Errorf("sem IP = %q (err %v)", ip, err)

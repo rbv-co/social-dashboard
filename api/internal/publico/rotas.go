@@ -13,13 +13,16 @@
 package publico
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
+	"io"
 	"mime"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -69,6 +72,20 @@ func nunca(*autz.Escopo) bool { return false }
 
 func d(nome string, ps ...rpc.Param) rpc.Funcao {
 	return rpc.Funcao{Nome: nome, Params: ps, Retorno: rpc.Valor, Portao: nunca}
+}
+
+// Funcoes: os nomes de todas as funções do banco que as rotas e as edges chamam (as 14 de escrita, as 10 leituras e as
+// 21 das duas edges): o `api worker conferir` as exige no banco restaurado antes da virada.
+func Funcoes() []string {
+	var nomes []string
+	for _, l := range [][]rpc.Funcao{interno, publico, deEdge} {
+		for _, f := range l {
+			if !slices.Contains(nomes, f.Nome) {
+				nomes = append(nomes, f.Nome)
+			}
+		}
+	}
+	return nomes
 }
 
 // dt: função `returns table`/`setof`, devolvida como lista JSON.
@@ -132,6 +149,12 @@ func (s *Servico) Montar(r chi.Router) {
 	})
 }
 
+// Quem: o IP do cliente e se a chave é a do Core, para quem monta rotas irmãs com a mesma regra (o envio de currículo).
+func (s *Servico) Quem(r *http.Request) (string, bool) {
+	core := s.ehCore(r)
+	return s.ipDe(r, core), core
+}
+
 // ehCore: Authorization: Bearer <segredo>, comparado em tempo constante (hash dos dois: tamanho fixo). Sem segredo
 // configurado, ninguém é o Core.
 func (s *Servico) ehCore(r *http.Request) bool {
@@ -190,11 +213,11 @@ func soJSON(next http.Handler) http.Handler {
 // cors: só as origens configuradas; preflight responde 204 sem tocar no banco.
 func (s *Servico) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Origin") // a resposta muda com a origem: cache não pode misturar
 		if og := r.Header.Get("Origin"); og != "" {
 			for _, ok := range s.Origens {
 				if og == ok {
 					w.Header().Set("Access-Control-Allow-Origin", og)
-					w.Header().Set("Vary", "Origin")
 					w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 					w.Header().Set("Access-Control-Allow-Headers", "apikey, authorization, content-type, x-client-info, prefer")
 					w.Header().Set("Access-Control-Max-Age", "600")
@@ -211,10 +234,17 @@ func (s *Servico) cors(next http.Handler) http.Handler {
 
 // corpoDe lê o corpo (objeto JSON, ≤ TetoCorpo; vazio vale {}) para o mapa de parâmetros.
 func corpoDe(w http.ResponseWriter, r *http.Request) (map[string]json.RawMessage, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, TetoCorpo)
-	corpo := map[string]json.RawMessage{}
-	if !dados.LerCorpo(w, r, &corpo) {
+	bruto, err := io.ReadAll(http.MaxBytesReader(w, r.Body, TetoCorpo))
+	if err != nil {
+		dados.Erro(w, http.StatusRequestEntityTooLarge, "corpo_grande_demais", "")
 		return nil, false
+	}
+	corpo := map[string]json.RawMessage{}
+	if len(bytes.TrimSpace(bruto)) > 0 { // corpo vazio vale {} (função sem parâmetro)
+		r.Body = io.NopCloser(bytes.NewReader(bruto))
+		if !dados.LerCorpo(w, r, &corpo) {
+			return nil, false
+		}
 	}
 	return corpo, true
 }
@@ -236,7 +266,7 @@ func (s *Servico) chamar(w http.ResponseWriter, r *http.Request, f rpc.Funcao, i
 	ctx, cancela := context.WithTimeout(r.Context(), prazoDaChamada)
 	defer cancela()
 	var saida []byte
-	err := banco.ComAnonimo(ctx, s.Pool, "anon", ip, func(tx pgx.Tx) (err error) {
+	err := banco.ComAnonimo(ctx, s.Pool, "anon", ip, r.UserAgent(), func(tx pgx.Tx) (err error) {
 		saida, err = f.Rodar(ctx, tx, ped)
 		return err
 	})
