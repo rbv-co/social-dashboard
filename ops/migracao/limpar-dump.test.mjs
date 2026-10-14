@@ -158,3 +158,23 @@ end $$;
   assert.match(r.sql, /CREATE FUNCTION public\.disparar_coletor/)
   assert.match(r.sql, /perform public\.disparar_robo\('vessel-espelhar-lista'/)
 })
+
+test('limpar tira a vessel_convite_marcar do dump (a versão com portão de editar vem da migração 00009 da API)', () => {
+  const sql = `
+CREATE FUNCTION public.vessel_convite_marcar(p_id bigint, p_marca text) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  if not public.vessel_pode('atendimentos.private-edit', 'ver') then
+    return json_build_object('ok', false);
+  end if;
+  return json_build_object('ok', true);
+end $$;
+CREATE FUNCTION public.vessel_situacao_do_atendimento(p_id bigint, p_situacao text) RETURNS json LANGUAGE sql AS $$ select '{}'::json $$;
+`
+  const r = limpar(sql)
+  assert.equal(r.removidos.substituidas, 1)
+  assert.doesNotMatch(r.sql, /vessel_convite_marcar/)
+  assert.match(r.sql, /CREATE FUNCTION public\.vessel_situacao_do_atendimento/)
+})

@@ -1,5 +1,5 @@
 -- VERBATIM de levantamento/02-funções.csv (gerado por fatia511.mjs, Plano 5.11): as 62 RPCs de atendimentos da
--- Vessel e o fecho do que elas chamam que as outras fatias ainda não carregam (159 funções).
+-- Vessel e o fecho do que elas chamam que as outras fatias ainda não carregam (158 funções).
 set check_function_bodies = off;
 
 CREATE OR REPLACE FUNCTION public.is_vessel_atendimentos()
@@ -1641,44 +1641,6 @@ begin
     -- uma semana depois merece saber que o dia passou, não um "não encontrado"
     -- que parece link quebrado.
     'ja_passou', v_linha.quando < now());
-end;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.vessel_convite_marcar(p_id bigint, p_marca text)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare
-  v_marca text := lower(nullif(trim(coalesce(p_marca, '')), ''));
-begin
-  -- ⚠️ A MESMA TRAVA DE `vessel_situacao_do_atendimento`, que é por onde a
-  -- presença é marcada: marcar "convite enviado" e marcar "veio" são o mesmo
-  -- tipo de gesto, feitos pela mesma pessoa, no mesmo cartão.
-  if not public.vessel_pode('atendimentos.private-edit', 'ver') then
-    return json_build_object('ok', false, 'situacao', 'sem_permissao');
-  end if;
-  if v_marca is null or v_marca not in ('enviado', 'sim', 'nao', 'sem_resposta') then
-    return json_build_object('ok', false, 'situacao', 'marca_invalida');
-  end if;
-  -- ⚠️ SÓ CONVIDADA DE ENCONTRO. Uma visita comum não tem convite, e esta
-  -- função não pode virar um jeito de reescrever `rsvp` de qualquer linha.
-  if not exists (select 1 from public.vessel_atendimentos
-                  where id = p_id and evento_codigo is not null) then
-    return json_build_object('ok', false, 'situacao', 'nao_achei');
-  end if;
-
-  update public.vessel_atendimentos
-     set convite_enviado_em = case when v_marca = 'enviado'
-                                   then coalesce(convite_enviado_em, now())
-                                   else convite_enviado_em end,
-         rsvp = case v_marca when 'sim' then 'sim' when 'nao' then 'nao'
-                             when 'sem_resposta' then null else rsvp end,
-         atualizado_em = now()
-   where id = p_id;
-
-  return json_build_object('ok', true, 'situacao', 'ok');
 end;
 $function$;
 

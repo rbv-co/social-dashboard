@@ -7,7 +7,7 @@
 2. **Recusa do portão = `403 sem_permissao`** sem a função rodar. Produção devolvia `200 {ok:false, situacao:"sem_permissao"}` (40), `200 {ok:false, erro:"Você não tem a permissão…"}` (3) ou `raise 42501` (16), e 3 devolvem lista vazia (Ruling 3): a tela troca por `e.recusa = "sem_permissao"` (igual ao 5.10).
 3. **Três devolvem lista vazia a quem não pode ver** (convidadas do encontro, contatos e qualificações da stylist: "bloco dentro de ficha já aberta"). Responder 403 mudaria o contrato: o portão do Go é só **conta ativa** e a função decide. O teste prova que o portão do Go deixa passar tudo o que a função deixa.
 4. **Gravar = `SoSessaoPropria`** (43): "entrar como" recebe 403 sem a função rodar. Escrita = o corpo faz DML ou chama, transitivamente, função que faz (script). As 19 leituras ficam abertas a quem entrou como.
-5. **Paridade com produção, sem apertar:** `vessel_convite_marcar` grava com `vessel_pode(private-edit, ver)` embora o comentário diga "a mesma trava de `vessel_situacao_do_atendimento`" (que é *editar*). Fica registrado como pendência de decisão do dono; o Go não fica mais estrito que a função.
+5. **Apertado (migração goose 00009, depois do 5.11):** `vessel_convite_marcar` grava e o comentário dela pede "a mesma trava de `vessel_situacao_do_atendimento`" (editar), mas produção só pedia `ver` do Private Edit. Agora o portão é editar nos dois lados (Go e função). `vessel_chave_da_convidada` fica com `ver`: só sorteia a chave do link do cartão quando ela ainda não existe.
 6. Parâmetros, DEFAULTs e retorno saem do levantamento: `returns table` vira lista JSON (`rpc.Conjunto`); o resto é `to_json`.
 
 ## Tabela de rotas (`POST /rpc/{nome}`)
@@ -25,7 +25,7 @@
 | vessel_conta_das_private_edits | private-edit:ver ou material-grafico:ver | lê | dias?, incluir_arquivadas? |
 | vessel_convidadas_do_encontro | conta ativa (a função decide; vazio sem permissão) | lê | codigo, dias? |
 | vessel_convidar_para_encontro | private-edit:editar | grava | codigo, nome, whatsapp, email? |
-| vessel_convite_marcar | private-edit:ver | grava | id, marca |
+| vessel_convite_marcar | atendimentos:editar ou private-edit:editar (migração 00009; produção: private-edit:ver) | grava | id, marca |
 | vessel_criar_private_edit | private-edit:editar | grava | stylist, quando, local?, praca?, loja?, vagas?, teste?, confirmar_sobreposicao? |
 | vessel_edicao_abrir | edicoes:editar | grava | id |
 | vessel_edicao_criar | edicoes:editar | grava | praca_id, nome, comeca_em, termina_em |

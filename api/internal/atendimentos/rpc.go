@@ -38,7 +38,8 @@ var FuncoesRPC = []rpc.Funcao{
 	le("vessel_conta_das_private_edits", qualquer(pode(privateEdit, ver), pode(grafico, ver)), o("p_dias", "integer"), o("p_incluir_arquivadas", "boolean")),
 	le("vessel_convidadas_do_encontro", contaAtiva, p("p_codigo", "text"), o("p_dias", "integer")),
 	grava("vessel_convidar_para_encontro", pode(privateEdit, editar), p("p_codigo", "text"), p("p_nome", "text"), p("p_whatsapp", "text"), o("p_email", "text")),
-	grava("vessel_convite_marcar", pode(privateEdit, ver), p("p_id", "bigint"), p("p_marca", "text")),
+	// o portão de editar é da migração 00009 (produção deixava quem só vê marcar o convite; o comentário da função pede a trava da situação)
+	grava("vessel_convite_marcar", qualquer(pode(atend, editar), pode(privateEdit, editar)), p("p_id", "bigint"), p("p_marca", "text")),
 	grava("vessel_criar_private_edit", pode(privateEdit, editar), p("p_stylist", "text"), p("p_quando", "timestamptz"), o("p_local", "text"), o("p_praca", "text"), o("p_loja", "text"), o("p_vagas", "integer"), o("p_teste", "boolean"), o("p_confirmar_sobreposicao", "boolean")),
 	grava("vessel_edicao_abrir", pode(edicoes, editar), p("p_id", "bigint")),
 	grava("vessel_edicao_criar", pode(edicoes, editar), p("p_praca_id", "bigint"), p("p_nome", "text"), p("p_comeca_em", "date"), p("p_termina_em", "date")),

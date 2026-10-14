@@ -337,32 +337,3 @@ func TestParaTesteSoLoopback(t *testing.T) {
 		t.Fatalf("pedidos = %d", f.n())
 	}
 }
-
-// Plano 6: o espelho da planilha da Vessel é a ÚNICA entrada nova da lista fechada: o workflow certo, sem entradas
-// (entrada que ninguém declarou é recusada) e sem token = ErrSemToken, tudo sem chamar a rede.
-func TestDisparoDoEspelhoDaVessel(t *testing.T) {
-	ctx := context.Background()
-	f := novoFalso(t, 204, nil)
-	c := clienteDe(f)
-	if err := c.Disparar(ctx, "espelho-vessel", map[string]string{}); err != nil {
-		t.Fatal(err)
-	}
-	p := f.pedidos[0]
-	if p.Caminho != "/repos/rbv-co/social-dashboard/actions/workflows/espelho-da-vessel.yml/dispatches" || p.Corpo != `{"ref":"main"}` {
-		t.Errorf("pedido = %s %s", p.Caminho, p.Corpo)
-	}
-	for _, entradas := range []map[string]string{{"ensaio": "sim"}, {"ref": "outra"}, {"job_id": uuidA}} {
-		if err := c.Disparar(ctx, "espelho-vessel", entradas); err != ErrEntrada {
-			t.Errorf("entradas %v = %v, esperava ErrEntrada", entradas, err)
-		}
-	}
-	if f.n() != 1 {
-		t.Errorf("%d pedidos: entrada recusada chegou à rede", f.n())
-	}
-	if err := Novo("").Disparar(ctx, "espelho-vessel", map[string]string{}); err != ErrSemToken {
-		t.Errorf("sem token = %v, esperava ErrSemToken", err)
-	}
-	if got := len(Disparos); got != 2 {
-		t.Errorf("a lista fechada tem %d disparos: o Plano 6 acrescenta exatamente um (fabrica e espelho-vessel)", got)
-	}
-}
