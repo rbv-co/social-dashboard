@@ -131,7 +131,8 @@ function _acAvatar(c,sz){sz=sz||40;
 }
 async function _acLog(acao,alvo,resultado,detalhe){
   try{const{data:{session:s}}=await sbClient.auth.getSession();
-    await sbClient.from('acessos_log').insert({quem:s?.user?.id||null,acao,alvo:alvo||null,resultado:resultado||'ok',detalhe:detalhe||null});}catch(e){}
+    // O banco só aceita 'ok'/'erro' (check): 'parcial' nunca chegou à trilha. Pela API vira 'erro', com o placar no detalhe.
+    await deOnde(sbClient).from('acessos_log').insert({quem:s?.user?.id||null,acao,alvo:alvo||null,resultado:(areaNaApi('acessos')&&resultado==='parcial')?'erro':(resultado||'ok'),detalhe:detalhe||null});}catch(e){}
 }
 async function _acProxy(action,args){
   const{data:{session:s}}=await sbClient.auth.getSession();
@@ -217,88 +218,6 @@ async function _acODAdd(id,name){
     _acPaRefreshOnedrive(id);   // atualiza a lista do visual novo e abre a pasta recém-adicionada
   }catch(e){adminToast('Erro: '+e.message,false);}
 }
-function _acOpenICloud(){_acTab='icloud';_acSel=null;_acSelSetor=null;_acSelOrg=null;_acRender();}
-async function _acRenderICloud(){
-  const body=document.getElementById('ac-body');
-  body.innerHTML=`
-    <button class="ac-btn ghost" onclick="_acSetTab('config')">← Configurações</button>
-    <div class="ac-card" style="margin-top:12px"><span class="ac-kicker">${_acLogo('apple')}iCloud — manual</span> <span class="ac-muted">A Apple não tem API. Aqui você controla quem DEVE ter acesso; o compartilhamento real é feito por você no iCloud, e você marca "feito".</span></div>
-    <div class="ac-section-h"><h3>Pastas do iCloud</h3><button class="ac-btn" style="margin-left:auto" onclick="_acICAddFolder()">+ Adicionar pasta</button></div>
-    <div id="ac-ic-list"><div class="ac-muted">Carregando…</div></div>`;
-  _acICLoadFolders();
-}
-async function _acICLoadFolders(){
-  const wrap=document.getElementById('ac-ic-list');if(!wrap)return;
-  // arquivado_em nulo = pasta ativa. Pasta arquivada não aparece na tela (a
-  // linha continua no banco, só sai de vista — dá pra desarquivar pelo banco).
-  const{data,error}=await sbClient.from('acessos_recursos').select('*').eq('tipo','icloud').is('arquivado_em',null).order('nome');
-  if(error){wrap.innerHTML='<div class="ac-card">Erro: '+_acEsc(error.message)+'</div>';return;}
-  const fs=data||[];
-  wrap.innerHTML=fs.length?fs.map(f=>`
-    <div class="ac-card">
-      <div class="ac-section-h" style="border:none;margin:0;padding:0">
-        <div class="grow"><strong>${_acEsc(f.nome)}</strong></div>
-        <button class="ac-btn ghost" onclick="_acICToggleAcessos('${f.id}')">Acessos</button>
-        <button class="ac-btn danger" onclick="_acICRemoveFolder('${f.id}')">Remover</button>
-      </div>
-      <div id="ac-ic-ac-${f.id}" style="margin-top:10px;display:none"></div>
-    </div>`).join(''):'<div class="ac-muted">Nenhuma pasta do iCloud ainda. Clique em "+ Adicionar pasta".</div>';
-}
-async function _acICAddFolder(){
-  const nome=prompt('Nome da pasta do iCloud:');if(!nome||!nome.trim())return;
-  const{error}=await sbClient.from('acessos_recursos').insert({tipo:'icloud',provedor:'apple',nome:nome.trim()});
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('icloud.pasta.criar','pasta:'+nome.trim(),'ok',null);adminToast('Pasta adicionada');_acICLoadFolders();
-}
-async function _acICRemoveFolder(id){
-  if(!confirm('Remover esta pasta do iCloud e seus acessos registrados? (não mexe no iCloud em si)'))return;
-  const{error}=await sbClient.from('acessos_recursos').delete().eq('id',id);
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('icloud.pasta.excluir','pasta:'+id,'ok',null);adminToast('Pasta removida');_acICLoadFolders();
-}
-async function _acICToggleAcessos(recursoId){
-  const el=document.getElementById('ac-ic-ac-'+recursoId);if(!el)return;
-  if(el.style.display!=='none'){el.style.display='none';el.innerHTML='';return;}
-  el.style.display='';await _acICAcessos(recursoId);
-}
-async function _acICAcessos(recursoId){
-  const el=document.getElementById('ac-ic-ac-'+recursoId);if(!el)return;
-  el.innerHTML='<div class="ac-muted">Carregando…</div>';
-  const{data,error}=await sbClient.from('acessos_vinculos').select('*').eq('recurso_id',recursoId).order('criado_em');
-  if(error){el.innerHTML='<div class="ac-muted">Erro: '+_acEsc(error.message)+'</div>';return;}
-  const vs=data||[];
-  const pOf=pid=>(_acData.pessoas||[]).find(x=>x.id===pid)||{};
-  el.innerHTML=`
-    <div class="ac-kicker">Quem deve ter acesso</div>
-    ${vs.length?vs.map(v=>{const p=pOf(v.pessoa_id);return `<div class="ac-row"><div class="grow">${_acEsc(p.nome||'?')} ${p.conta_apple?('<span class="ac-muted">'+_acLogo('apple')+_acEsc(p.conta_apple)+'</span>'):'<span class="ac-pill bad">sem conta Apple</span>'} <span class="ac-pill ${v.papel==='edicao'?'warn':'ok'}">${v.papel==='edicao'?'edição':'leitura'}</span></div>
-      <button class="ac-btn ${v.estado==='feito'?'':'ghost'}" onclick="_acICToggleFeito('${v.id}','${recursoId}',${v.estado==='feito'?'false':'true'})">${v.estado==='feito'?'✓ feito':'marcar feito'}</button>
-      <button class="ac-btn danger" onclick="_acICRemoveAcesso('${v.id}','${recursoId}')">Remover</button></div>`;}).join(''):'<div class="ac-muted">Ninguém ainda.</div>'}
-    <div class="ac-row" style="margin-top:8px">
-      <select class="ac-select" id="ac-ic-cl-${recursoId}" style="flex:1;min-width:160px"><option value="">— colaborador —</option>${(_acData.pessoas||[]).filter(p=>p.status==='ativo').map(p=>`<option value="${p.id}">${_acEsc(p.nome)}${p.conta_apple?'':' (sem Apple)'}</option>`).join('')}</select>
-      <select class="ac-select" id="ac-ic-pp-${recursoId}" style="width:auto"><option value="leitura">Leitura</option><option value="edicao">Edição</option></select>
-      <button class="ac-btn" onclick="_acICAddAcesso('${recursoId}')">Dar acesso</button>
-    </div>`;
-}
-async function _acICAddAcesso(recursoId){
-  const pid=(document.getElementById('ac-ic-cl-'+recursoId)||{}).value;
-  const papel=(document.getElementById('ac-ic-pp-'+recursoId)||{}).value||'leitura';
-  if(!pid){adminToast('Escolha o colaborador',false);return;}
-  const{error}=await sbClient.from('acessos_vinculos').insert({recurso_id:recursoId,pessoa_id:pid,papel,estado:'pendente'});
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('icloud.acesso.criar','vinculo','ok',papel);adminToast('Acesso registrado (pendente)');_acICAcessos(recursoId);
-}
-async function _acICToggleFeito(vinculoId,recursoId,feito){
-  const upd=feito?{estado:'feito',feito_em:new Date().toISOString()}:{estado:'pendente',feito_em:null};
-  const{error}=await sbClient.from('acessos_vinculos').update(upd).eq('id',vinculoId);
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('icloud.acesso.estado','vinculo:'+vinculoId,'ok',feito?'feito':'pendente');_acICAcessos(recursoId);
-}
-async function _acICRemoveAcesso(vinculoId,recursoId){
-  if(!confirm('Remover este acesso registrado?'))return;
-  const{error}=await sbClient.from('acessos_vinculos').delete().eq('id',vinculoId);
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('icloud.acesso.excluir','vinculo:'+vinculoId,'ok',null);_acICAcessos(recursoId);
-}
 async function _acImportarZoho(){
   if(!confirm('Importar os usuários do Zoho como colaboradores? (cria os novos e atualiza os já importados)'))return;
   adminToast('Importando do Zoho…');
@@ -350,81 +269,6 @@ function _acDriveSetProvedor(p){if(p===_acDriveProvedor)return;_acDriveProvedor=
 // A barra de escolher provedor sumiu junto com o OneDrive: com um provedor só,
 // um seletor de um item é ruído.
 function _acDriveProvedorBar(){return '';}
-/* ===== Zoho WorkDrive (dentro da aba Drive) ===== */
-// Pastas do WorkDrive já importadas, como vieram do banco (lista achatada).
-let _acWdPastas=[];
-// Quais ramos estão fechados. Ausente = aberto (começa tudo aberto: são poucas
-// pastas e o dono quer bater o olho e ver a estrutura inteira).
-let _acWdAberto={};
-async function _acRenderWorkdrive(){
-  const body=document.getElementById('ac-body');
-  body.innerHTML=_acDriveProvedorBar()+`
-    <div class="ac-hero">
-      <div><h2>Zoho WorkDrive</h2><div class="ac-sub">As pastas do WorkDrive sob controle, na mesma hierarquia que elas têm no Zoho. É pra cá que a empresa está migrando.</div></div>
-      <div class="ac-hero-actions"><button class="ac-btn ghost lg" id="ac-wd-importar" onclick="_acWdImportar()">Buscar pastas novas</button></div>
-    </div>
-    <div id="ac-wd-content"><div class="ac-muted">Carregando pastas…</div></div>`;
-  _acWdCarregarPastas();
-}
-async function _acWdCarregarPastas(){
-  const cont=document.getElementById('ac-wd-content');if(!cont)return;
-  // Lê DIRETO do banco (e não pelo proxy): a tela só quer mostrar o que já foi
-  // importado. Passar pelo Zoho a cada abertura deixaria a tela lenta e a
-  // deixaria refém da API estar no ar. Buscar no Zoho é só no botão.
-  const{data,error}=await sbClient.from('acessos_recursos').select('*').eq('tipo','workdrive').is('arquivado_em',null).order('caminho');
-  if(error){cont.innerHTML='<div class="ac-card">Erro ao ler as pastas: '+_acEsc(error.message)+'</div>';return;}
-  _acWdPastas=data||[];
-  _acWdRepaint();
-}
-function _acWdRepaint(){
-  const cont=document.getElementById('ac-wd-content');if(!cont)return;
-  if(!_acWdPastas.length){cont.innerHTML='<div class="ac-empty">Nenhuma pasta do WorkDrive por aqui ainda. Clique em "Buscar pastas novas" para trazer as pastas do Zoho.</div>';return;}
-  // A hierarquia não vem pronta do banco: ela está escondida no texto do campo
-  // `caminho` ("mãe/filha"). Quem desdobra isso em árvore é o módulo testado.
-  const raizes=montarArvoreDePastas(_acWdPastas);
-  // O invólucro com rolagem própria existe pro celular: um ramo fundo é largo,
-  // e sem ele a árvore empurraria a PÁGINA inteira pro lado. Assim quem rola é
-  // só a árvore.
-  cont.innerHTML=`<div class="ac-muted" style="font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin:0 0 12px">${_acWdPastas.length} pasta(s) sob controle. Clique no <b>▸</b> para abrir ou fechar um ramo.</div>
-    <div class="ac-wd-arvore"><ul class="ac-tree ac-tree-root">${raizes.map(_acWdNo).join('')}</ul></div>`;
-}
-// Desenha uma pasta e, embaixo dela, as filhas — chamando a si mesma. É a
-// recursão que dá o aninhamento; a indentação em si é do CSS (.ac-tree).
-function _acWdNo(no){
-  const temFilhas=no.filhas.length>0;
-  const aberto=_acWdAberto[no.id]!==false;
-  return `<li class="ac-tnode">
-    <div class="ac-tn-row">
-      ${temFilhas?`<button class="ac-tn-tog ${aberto?'open':''}" onclick="_acWdAlternar('${_acEsc(no.id)}')" title="${aberto?'recolher':'expandir'}">▸</button>`:'<span class="ac-tn-dot"></span>'}
-      <div class="ac-vcard ${no.nivel===0?'ac-vcard-root':''}" style="--sc:#e1251b">
-        <span class="ac-vc-ico">${no.nivel===0?'🏢':'📁'}</span>
-        <span class="ac-vc-name" title="${_acEsc(no.caminho)}">${_acEsc(no.nome)}</span>
-        ${temFilhas?`<span class="ac-vc-count">${no.filhas.length}</span>`:''}
-      </div>
-    </div>
-    ${temFilhas&&aberto?`<ul class="ac-tree">${no.filhas.map(_acWdNo).join('')}</ul>`:''}
-  </li>`;
-}
-function _acWdAlternar(id){_acWdAberto[id]=(_acWdAberto[id]===false);_acWdRepaint();}
-async function _acWdImportar(){
-  const b=document.getElementById('ac-wd-importar');
-  if(b){b.disabled=true;b.textContent='Buscando…';}
-  try{
-    // Sem parâmetro nenhum de propósito: a ação importa tudo que for novo e é
-    // idempotente — clicar duas vezes não duplica pasta (a chave é o
-    // external_id, e o banco tem índice único garantindo isso).
-    const r=await _acProxy('zoho.importarPastas');
-    const criadas=(r&&r.criadas)||0;
-    adminToast(criadas?(criadas+' pasta(s) nova(s) importada(s)'):'Nenhuma pasta nova — já estava tudo aqui');
-    await _acWdCarregarPastas();
-  }catch(e){
-    // "nao_conectado" é o caso comum e tem conserto claro; o resto é erro mesmo.
-    adminToast(e.message==='nao_conectado'?'Conecte o Zoho em Configurações antes de importar':('Erro ao importar: '+e.message),false);
-  }finally{
-    const b2=document.getElementById('ac-wd-importar');
-    if(b2){b2.disabled=false;b2.textContent='Buscar pastas novas';}
-  }
-}
 // ===================================================================
 // Aba "Pastas & Acessos" (Tarefa 3 do redesign) — master-detail de 3
 // colunas: RAIL de provedores | LISTA de pastas | DETALHE (quem tem
@@ -435,11 +279,10 @@ async function _acWdImportar(){
 //
 // OBS de arquitetura: o fluxo ANTIGO da aba Drive (marcas do OneDrive,
 // classificação por setor, arrastar-e-soltar, "liberar setor",
-// compartilhar/descompartilhar inline, e a árvore antiga do WorkDrive)
-// continua definido logo acima (funções _acDrive*/_acRenderWorkdrive/
-// _acWd*), mas NÃO é mais chamado a partir daqui. Foi preservado de
-// propósito (nada apagado em silêncio) — decidir se remove fica pra um
-// follow-up, junto do dono. Ver relatório da Tarefa 3.
+// compartilhar/descompartilhar inline) continua definido logo acima (funções
+// _acDrive*), mas NÃO é mais chamado a partir daqui. A árvore antiga do WorkDrive
+// (_acWd*) e a tela do iCloud (_acIC*) saíram no Plano 7 (área `acessos`): gravavam
+// em `acessos_recursos`/`acessos_vinculos` por rotas que a API não tem (5.4).
 // ===================================================================
 const _AC_PA_PROVS=[
   {key:'workdrive',nome:'Zoho WorkDrive',glyph:'Z',gcls:'ac-g-zoho',tagCls:'ativo',tag:'Ativo'},
@@ -490,7 +333,7 @@ function _acPaPintaRail(){
 // ar — se uma contagem falhar, fica em null ("—" seria confundido com zero).
 async function _acPaContagens(){
   const contar=async tipo=>{
-    try{const{count,error}=await sbClient.from('acessos_recursos').select('id',{count:'exact',head:true}).eq('tipo',tipo).is('arquivado_em',null);
+    try{const{count,error}=await deOnde(sbClient).from('acessos_recursos').select('id',{count:'exact',head:true}).eq('tipo',tipo).is('arquivado_em',null);
       return error?null:(count==null?null:count);}catch(e){return null;}
   };
   const[w,o,i]=await Promise.all([contar('workdrive'),contar('onedrive'),contar('icloud')]);
@@ -524,7 +367,7 @@ async function _acPaCarregarPastas(prov){
     return fs.map(f=>({id:f.id,nome:f.nome,external_id:f.external_id,tipo:'onedrive',nivel:0,temMae:false,caminho:f.caminho||null,filhas:null}));
   }
   const tipo=(prov==='icloud')?'icloud':'workdrive';
-  const{data,error}=await sbClient.from('acessos_recursos').select('*').eq('tipo',tipo).is('arquivado_em',null).order('caminho').order('nome');
+  const{data,error}=await deOnde(sbClient).from('acessos_recursos').select('*').eq('tipo',tipo).is('arquivado_em',null).order('caminho').order('nome');
   if(error)throw new Error(error.message);
   const rows=data||[];
   if(prov==='icloud'){
@@ -671,7 +514,7 @@ async function _acPaDetOnedrive(f){
 // explícito que é registro humano (chip "controle manual").
 async function _acPaDetICloud(f){
   let vs=[];
-  try{const{data,error}=await sbClient.from('acessos_vinculos').select('*').eq('recurso_id',f.id).order('criado_em');if(error)throw error;vs=data||[];}
+  try{const{data,error}=await deOnde(sbClient).from('acessos_vinculos').select('*').eq('recurso_id',f.id).order('criado_em');if(error)throw error;vs=data||[];}
   catch(e){return _acPaPintaAcesso({pessoas:[],links:[],falhas:[{erro:'leitura'}]},f,{origem:'icloud'});}
   const pOf=pid=>(_acData.pessoas||[]).find(x=>x.id===pid)||{};
   const pessoas=vs.map(v=>{const p=pOf(v.pessoa_id);
@@ -1095,7 +938,7 @@ function _acDriveDrop(e,key){e.preventDefault();e.currentTarget.classList.remove
 async function _acDriveMove(extId,key){
   const f=_acDriveTree.find(x=>x.id===extId);
   _acDriveOverrides[extId]=key;
-  try{await sbClient.from('acessos_drive_overrides').upsert({external_id:extId,setor_chave:key,nome:f?f.name:null,atualizado_em:new Date().toISOString()},{onConflict:'external_id'});}
+  try{await deOnde(sbClient).from('acessos_drive_overrides').upsert({external_id:extId,setor_chave:key,nome:f?f.name:null,atualizado_em:new Date().toISOString()},{onConflict:'external_id'});}
   catch(e){adminToast('Erro ao salvar: '+e.message,false);}
   _acDriveRepaint();
 }
@@ -1103,18 +946,18 @@ async function _acDriveAddSetor(){
   const label=prompt('Nome do novo setor:');if(!label||!label.trim())return;
   const chave='c_'+label.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,28)+'_'+Math.floor(Math.random()*9000+1000);
   const ordem=(_acDriveCustomSecs.reduce((mx,s)=>Math.max(mx,s.ordem||0),100))+1;
-  const{error}=await sbClient.from('acessos_drive_setores').insert({chave,label:label.trim(),ordem});
+  const{error}=await deOnde(sbClient).from('acessos_drive_setores').insert({chave,label:label.trim(),ordem});
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('drive.setor.add','setor:'+label.trim(),'ok',null);adminToast('Setor criado');
-  try{const{data:cs}=await sbClient.from('acessos_drive_setores').select('*').order('ordem').order('label');_acDriveCustomSecs=cs||[];}catch(e){}
+  try{const{data:cs}=await deOnde(sbClient).from('acessos_drive_setores').select('*').order('ordem').order('label');_acDriveCustomSecs=cs||[];}catch(e){}
   _acDriveRepaint();
 }
 async function _acDriveDelSetor(chave){
   const s=_acDriveCustomSecs.find(x=>x.chave===chave);if(!s)return;
   if(!confirm('Remover o setor "'+s.label+'"? As pastas dele voltam à classificação automática.'))return;
-  const{error}=await sbClient.from('acessos_drive_setores').delete().eq('chave',chave);
+  const{error}=await deOnde(sbClient).from('acessos_drive_setores').delete().eq('chave',chave);
   if(error){adminToast('Erro: '+error.message,false);return;}
-  try{await sbClient.from('acessos_drive_overrides').delete().eq('setor_chave',chave);}catch(e){}
+  try{await deOnde(sbClient).from('acessos_drive_overrides').delete().eq('setor_chave',chave);}catch(e){}
   Object.keys(_acDriveOverrides).forEach(k=>{if(_acDriveOverrides[k]===chave)delete _acDriveOverrides[k];});
   _acDriveCustomSecs=_acDriveCustomSecs.filter(x=>x.chave!==chave);
   await _acLog('drive.setor.del','setor:'+s.label,'ok',null);adminToast('Setor removido');_acDriveRepaint();
@@ -1249,7 +1092,7 @@ async function _acDriveAddMarca(){
   ov.querySelector('#x').onclick=close;
   ov.querySelectorAll('button[data-add]').forEach(b=>b.addEventListener('click',async()=>{
     const ordem=(_acDriveMarcas.reduce((mx,m)=>Math.max(mx,m.ordem||0),0))+1;
-    const{error}=await sbClient.from('acessos_drive_marcas').insert({nome:b.dataset.name,external_id:b.dataset.id,ordem});
+    const{error}=await deOnde(sbClient).from('acessos_drive_marcas').insert({nome:b.dataset.name,external_id:b.dataset.id,ordem});
     if(error){adminToast('Erro: '+error.message,false);return;}
     await _acLog('drive.marca.add','marca:'+b.dataset.name,'ok',null);adminToast('Marca adicionada');close();_acRenderDrive();
   }));
@@ -1257,7 +1100,7 @@ async function _acDriveAddMarca(){
 async function _acDriveDelMarca(id){
   const m=_acDriveMarcas.find(x=>x.id===id);if(!m)return;
   if(!confirm('Remover a marca "'+m.nome+'" do Drive? (não apaga nada no OneDrive)'))return;
-  const{error}=await sbClient.from('acessos_drive_marcas').delete().eq('id',id);
+  const{error}=await deOnde(sbClient).from('acessos_drive_marcas').delete().eq('id',id);
   if(error){adminToast('Erro: '+error.message,false);return;}
   if(_acDriveSel===id)_acDriveSel=null;
   await _acLog('drive.marca.del','marca:'+m.nome,'ok',null);adminToast('Marca removida');_acRenderDrive();
@@ -1281,7 +1124,7 @@ async function _acFixAliases(mism){
     const p=(((_acData||{}).pessoas)||[]).find(x=>x&&String(x.email_outlook||'').toLowerCase()===inv);
     let nome=null;
     if(p){
-      try{const{error}=await sbClient.from('acessos_pessoas').update({email_outlook:acct,atualizado_em:new Date().toISOString()}).eq('id',p.id);
+      try{const{error}=await deOnde(sbClient).from('acessos_pessoas').update({email_outlook:acct,atualizado_em:new Date().toISOString()}).eq('id',p.id);
         if(!error){p.email_outlook=acct;nome=p.nome;await _acLog('drive.corrigeAlias','colab:'+p.nome,'ok',m.invited+' → '+acct);}
       }catch(e){}
     }
@@ -1341,9 +1184,9 @@ async function loadAcessos(){
   const body=document.getElementById('ac-body');
   body.innerHTML='<div class="ac-muted">Carregando…</div>';
   const[og,se,p]=await Promise.all([
-    sbClient.from('acessos_organizacoes').select('*').order('ordem').order('nome'),
-    sbClient.from('acessos_setores').select('*').order('ordem').order('nome'),
-    sbClient.from('acessos_pessoas').select('*').order('nome')
+    deOnde(sbClient).from('acessos_organizacoes').select('*').order('ordem').order('nome'),
+    deOnde(sbClient).from('acessos_setores').select('*').order('ordem').order('nome'),
+    deOnde(sbClient).from('acessos_pessoas').select('*').order('nome')
   ]);
   if(p.error){body.innerHTML='<div class="ac-card">Erro: '+_acEsc(p.error.message)+'</div>';return;}
   _acData.organizacoes=og.data||[];
@@ -1458,7 +1301,7 @@ function _acOpenOrg(orgId){_acSelOrg=orgId;_acSelSetor=null;_acSel=null;_acRende
 async function _acAddOrg(){
   const nome=prompt('Nome da nova organização:');if(!nome||!nome.trim())return;
   const ordem=((_acData.organizacoes||[]).reduce((mx,o)=>Math.max(mx,o.ordem||0),0))+1;
-  const{error}=await sbClient.from('acessos_organizacoes').insert({nome:nome.trim(),ordem});
+  const{error}=await deOnde(sbClient).from('acessos_organizacoes').insert({nome:nome.trim(),ordem});
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('org.criar','org:'+nome.trim(),'ok',null);adminToast('Organização criada');await loadAcessos();
 }
@@ -1466,7 +1309,7 @@ async function _acDelOrg(id){
   const o=(_acData.organizacoes||[]).find(x=>x.id===id);if(!o)return;
   const ns=_acData.setores.filter(s=>s.organizacao_id===id).length;
   if(!confirm(`Excluir a organização "${o.nome}"?`+(ns?` Os ${ns} setor(es) ficarão sem organização.`:'')))return;
-  const{error}=await sbClient.from('acessos_organizacoes').delete().eq('id',id);
+  const{error}=await deOnde(sbClient).from('acessos_organizacoes').delete().eq('id',id);
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('org.excluir','org:'+o.nome,'ok',null);adminToast('Organização excluída');await loadAcessos();
 }
@@ -1496,7 +1339,7 @@ function _acRenderSetores(orgId){
 async function _acAddSetor(orgId){
   const nome=prompt('Nome do novo setor:');if(!nome||!nome.trim())return;
   const ordem=(_acData.setores.reduce((mx,s)=>Math.max(mx,s.ordem||0),0))+1;
-  const{error}=await sbClient.from('acessos_setores').insert({nome:nome.trim(),ordem,organizacao_id:orgId||null});
+  const{error}=await deOnde(sbClient).from('acessos_setores').insert({nome:nome.trim(),ordem,organizacao_id:orgId||null});
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('setor.criar','setor:'+nome.trim(),'ok',null);adminToast('Setor criado');await loadAcessos();
 }
@@ -1504,7 +1347,7 @@ async function _acDelSetor(id){
   const s=_acData.setores.find(x=>x.id===id);if(!s)return;
   const n=_acData.pessoas.filter(x=>x.setor_id===id).length;
   if(!confirm(`Excluir o setor "${s.nome}"?`+(n?` Os ${n} colaborador(es) ficarão sem setor.`:'')))return;
-  const{error}=await sbClient.from('acessos_setores').delete().eq('id',id);
+  const{error}=await deOnde(sbClient).from('acessos_setores').delete().eq('id',id);
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('setor.excluir','setor:'+s.nome,'ok',null);
   adminToast('Setor excluído');await loadAcessos();
@@ -1620,8 +1463,8 @@ async function _acSaveColaborador(id){
   }
   const isEdit=!!id;
   let err;
-  if(id){({error:err}=await sbClient.from('acessos_pessoas').update(rec).eq('id',id));}
-  else{const r=await sbClient.from('acessos_pessoas').insert(rec).select('id').single();err=r.error;id=r.data?.id;}
+  if(id){({error:err}=await deOnde(sbClient).from('acessos_pessoas').update(rec).eq('id',id));}
+  else{const r=await deOnde(sbClient).from('acessos_pessoas').insert(rec).select('id').single();err=r.error;id=r.data?.id;}
   if(err){adminToast('Erro: '+err.message,false);return;}
   await _acLog(isEdit?'colaborador.editar':'colaborador.criar','colab:'+rec.nome,'ok',null);
   adminToast('Colaborador salvo');
@@ -1785,7 +1628,7 @@ function _acFichaEditarCampo(id,col){
   const salvar=async()=>{
     const val=(inp.value||'').trim();
     const btn=ov.querySelector('[data-x="1"]');btn.disabled=true;btn.textContent='Salvando…';
-    const{error}=await sbClient.from('acessos_pessoas').update({[col]:val||null,atualizado_em:new Date().toISOString()}).eq('id',id);
+    const{error}=await deOnde(sbClient).from('acessos_pessoas').update({[col]:val||null,atualizado_em:new Date().toISOString()}).eq('id',id);
     if(error){adminToast('Erro: '+error.message,false);btn.disabled=false;btn.textContent='Salvar';return;}
     await _acLog('colaborador.editar.campo','colab:'+c.nome,'ok',col);
     close();adminToast('Salvo');
@@ -1823,7 +1666,7 @@ async function _acFichaCarregarContadores(id){
     const[b,v,t]=await Promise.all([
       deOnde(sbClient).from('patrimonio_bens').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
       deOnde(sbClient).from('frota_veiculos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
-      sbClient.from('acessos_termos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
+      deOnde(sbClient).from('acessos_termos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
     ]);
     if(_acSel!==id)return;
     set('ac-fx-qn-equip', (b.error||v.error)?'—':String((b.count||0)+(v.count||0)));
@@ -1860,7 +1703,7 @@ function _acDesligar(id){
     const doOd=ov.querySelector('#ac-dlg-od').checked&&!!c.email_outlook;
     const doZoho=ov.querySelector('#ac-dlg-zoho').checked&&!!c.email_corporativo;
     const okBtn=ov.querySelector('#ac-dlg-ok');okBtn.disabled=true;okBtn.textContent='Processando…';
-    const{error}=await sbClient.from('acessos_pessoas').update({status:'desligado',motivo_saida:motivo,data_fim_contrato:data,atualizado_em:new Date().toISOString()}).eq('id',id);
+    const{error}=await deOnde(sbClient).from('acessos_pessoas').update({status:'desligado',motivo_saida:motivo,data_fim_contrato:data,atualizado_em:new Date().toISOString()}).eq('id',id);
     if(error){adminToast('Erro: '+error.message,false);okBtn.disabled=false;okBtn.textContent='Confirmar desligamento';return;}
     let resumo='Desligado';
     // A caixinha "marcar equipamentos para devolução" saiu daqui (fix round 1
@@ -1883,7 +1726,7 @@ function _acDesligar(id){
     // funciona e poderia sumir com VÍNCULO, não só com pasta arquivada. Aqui a
     // consulta continua trazendo o que sempre trouxe; só a pasta arquivada é
     // pulada na hora de montar o aviso.
-    try{const{data:vs}=await sbClient.from('acessos_vinculos').select('acessos_recursos(nome,tipo,arquivado_em)').eq('pessoa_id',id);(vs||[]).forEach(v=>{const r=v.acessos_recursos;if(r&&r.tipo==='icloud'&&!r.arquivado_em)iclNomes.push(r.nome);});}catch(e){}
+    try{const{data:vs}=await deOnde(sbClient).from('acessos_vinculos').select('acessos_recursos(nome,tipo,arquivado_em)').eq('pessoa_id',id);(vs||[]).forEach(v=>{const r=v.acessos_recursos;if(r&&r.tipo==='icloud'&&!r.arquivado_em)iclNomes.push(r.nome);});}catch(e){}
     await _acLog('colaborador.desligar','colab:'+c.nome,'ok',data||null);
     close();adminToast(resumo);
     if(iclNomes.length){setTimeout(()=>adminToast('iCloud (manual): remova de '+iclNomes.join(', '),false),1300);}
@@ -1893,7 +1736,7 @@ function _acDesligar(id){
 async function _acReativar(id){
   const c=_acData.pessoas.find(x=>x.id===id);if(!c)return;
   if(!confirm(`Reativar "${c.nome}"?`+(c.email_corporativo?' (reativa também a caixa Zoho)':'')))return;
-  const{error}=await sbClient.from('acessos_pessoas').update({status:'ativo',motivo_saida:null,data_fim_contrato:null,atualizado_em:new Date().toISOString()}).eq('id',id);
+  const{error}=await deOnde(sbClient).from('acessos_pessoas').update({status:'ativo',motivo_saida:null,data_fim_contrato:null,atualizado_em:new Date().toISOString()}).eq('id',id);
   if(error){adminToast('Erro: '+error.message,false);return;}
   let extra='';
   if(c.email_corporativo){try{const r=await _acProxy('zoho.reactivate',{email:c.email_corporativo});if(r&&r.ok)extra=' · Zoho reativado';}catch(e){}}
@@ -1912,7 +1755,7 @@ async function _acProvisionar(id){
   let odFolders=[];try{const r=await _acProxy('microsoft.folders');odFolders=(r&&r.folders)||[];}catch(e){}
   // Só pasta ativa pode ser concedida a alguém: não faz sentido oferecer pasta
   // arquivada no provisionamento de um colaborador novo.
-  let icFolders=[];try{const{data}=await sbClient.from('acessos_recursos').select('id,nome').eq('tipo','icloud').is('arquivado_em',null).order('nome');icFolders=data||[];}catch(e){}
+  let icFolders=[];try{const{data}=await deOnde(sbClient).from('acessos_recursos').select('id,nome').eq('tipo','icloud').is('arquivado_em',null).order('nome');icFolders=data||[];}catch(e){}
   const ov=document.createElement('div');ov.className='ac-modal-ov open';ov.id='ac-prov-ov';
   ov.innerHTML=`<div class="ac-modal" style="max-width:560px">
     <h3 style="margin-top:0">Provisionar acessos — ${_acEsc(c.nome)}</h3>
@@ -1966,7 +1809,7 @@ async function _acProvisionar(id){
       try{
         const r=await _acProxy('zoho.create',{email,password,firstName,lastName});
         if(r&&r.ok){
-          await sbClient.from('acessos_pessoas').update({email_corporativo:email,zoho_account_id:r.accountId||null,atualizado_em:new Date().toISOString()}).eq('id',id);
+          await deOnde(sbClient).from('acessos_pessoas').update({email_corporativo:email,zoho_account_id:r.accountId||null,atualizado_em:new Date().toISOString()}).eq('id',id);
           await _acLog('colaborador.provisionar.zoho','colab:'+c.nome,'ok',email);
           resumo.push('Zoho criado: '+email);
         }else{resumo.push('Zoho falhou'+(r&&(r.detalhe||r.error)?' ('+(r.detalhe||r.error)+')':''));}
@@ -1986,7 +1829,7 @@ async function _acProvisionar(id){
     for(const b of icBoxes){
       const recurso_id=b.dataset.id;const rs=b.parentElement.querySelector('.ac-prov-ic-role');const papel=rs?rs.value:'leitura';
       if(!recurso_id)continue;
-      try{const{error}=await sbClient.from('acessos_vinculos').insert({recurso_id,pessoa_id:id,papel,estado:'pendente'});if(!error){icOk++;icNomes.push(b.dataset.nome||'');}}catch(e){}
+      try{const{error}=await deOnde(sbClient).from('acessos_vinculos').insert({recurso_id,pessoa_id:id,papel,estado:'pendente'});if(!error){icOk++;icNomes.push(b.dataset.nome||'');}}catch(e){}
     }
     if(icBoxes.length){resumo.push('iCloud: '+icOk+' acesso(s) registrado(s)');await _acLog('colaborador.provisionar.icloud','colab:'+c.nome,'ok',String(icOk));}
     close();
@@ -1995,7 +1838,11 @@ async function _acProvisionar(id){
     await loadAcessos();_acOpenPessoa(id);
   };
 }
+// Foto e termo: a linha (`avatar_url`, `acessos_termos`) não tem rota na API (5.4: "arquivo: Plano 6") e o
+// Storage de `acessos-*` só entra com a linha. Com a área ligada, o botão diz isso em vez de falhar calado.
+const _AC_SEM_ARQUIVO='Foto e termo do colaborador ainda não estão disponíveis nesta versão da Central. Avise quem administra.';
 async function _acUploadAvatar(pessoaId,file){
+  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
   if(!file)return;
   if(!file.type||!file.type.startsWith('image/')){adminToast('Envie uma imagem',false);return;}
   const ext=file.type.includes('png')?'png':file.type.includes('webp')?'webp':'jpg';
@@ -2003,7 +1850,7 @@ async function _acUploadAvatar(pessoaId,file){
   const{error}=await sbClient.storage.from('acessos-avatars').upload(path,file,{upsert:true,contentType:file.type});
   if(error){adminToast('Erro: '+error.message,false);return;}
   const url=SUPABASE_URL+'/storage/v1/object/public/acessos-avatars/'+path+'?v='+Date.now();
-  const{error:e2}=await sbClient.from('acessos_pessoas').update({avatar_url:url,atualizado_em:new Date().toISOString()}).eq('id',pessoaId);
+  const{error:e2}=await deOnde(sbClient).from('acessos_pessoas').update({avatar_url:url,atualizado_em:new Date().toISOString()}).eq('id',pessoaId);
   if(e2){adminToast('Erro: '+e2.message,false);return;}
   await _acLog('colaborador.avatar','colab:'+pessoaId,'ok',null);
   adminToast('Foto atualizada');await loadAcessos();_acOpenPessoa(pessoaId);
@@ -2013,7 +1860,7 @@ async function _acExcluirColaborador(id){
   const c=_acData.pessoas.find(x=>x.id===id);if(!c)return;
   if(!confirm('Excluir DEFINITIVAMENTE "'+c.nome+'"?\nRemove a pessoa e TODOS os dispositivos, veículos e termos dela. Sem volta.'))return;
   try{await sbClient.storage.from('acessos-avatars').remove([id+'.png',id+'.jpg',id+'.webp']);}catch(e){}
-  const{error}=await sbClient.from('acessos_pessoas').delete().eq('id',id);
+  const{error}=await deOnde(sbClient).from('acessos_pessoas').delete().eq('id',id);
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('colaborador.excluir','colab:'+c.nome,'ok',null);
   adminToast('Colaborador excluído');_acSel=null;await loadAcessos();
@@ -2175,7 +2022,7 @@ const AC_TERMO_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 // ao _acRenderPatItens faz com os dispositivos. Não redesenha card nem botão.
 async function _acRenderTermos(pessoaId){
   const wrap=document.getElementById('ac-termos-wrap');if(!wrap)return;
-  const{data,error}=await sbClient.from('acessos_termos').select('*').eq('pessoa_id',pessoaId).order('enviado_em',{ascending:false});
+  const{data,error}=await deOnde(sbClient).from('acessos_termos').select('*').eq('pessoa_id',pessoaId).order('enviado_em',{ascending:false});
   if(_acSel!==pessoaId)return; // trocou de pessoa nesse meio-tempo: não escreve em ficha velha
   if(error){wrap.innerHTML='<div class="ac-fx-empty">Não consegui carregar os termos: '+_acEsc(error.message)+'</div>';return;}
   const itens=data||[];
@@ -2205,28 +2052,31 @@ function _acTermoRow(pessoaId,t){
   </div>`;
 }
 async function _acUploadTermo(pessoaId,file){
+  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
   if(!file)return;
   const titulo=(prompt('Título do documento (opcional):',file.name)||file.name);
   const path=pessoaId+'/'+Date.now()+'-'+_acSanitizeName(file.name);
   const{error:e1}=await sbClient.storage.from('acessos-termos').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'});
   if(e1){adminToast('Erro upload: '+e1.message,false);return;}
-  const{error:e2}=await sbClient.from('acessos_termos').insert({pessoa_id:pessoaId,titulo,arquivo_path:path});
+  const{error:e2}=await deOnde(sbClient).from('acessos_termos').insert({pessoa_id:pessoaId,titulo,arquivo_path:path});
   if(e2){await sbClient.storage.from('acessos-termos').remove([path]);adminToast('Erro: '+e2.message,false);return;}
   await _acLog('termo.enviar','termo:'+titulo,'ok',null);
   adminToast('Documento enviado');_acRenderTermos(pessoaId);
 }
 async function _acDownloadTermo(termoId){
-  const{data,error}=await sbClient.from('acessos_termos').select('arquivo_path').eq('id',termoId).single();
+  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
+  const{data,error}=await deOnde(sbClient).from('acessos_termos').select('arquivo_path').eq('id',termoId).single();
   if(error||!data?.arquivo_path){adminToast('Arquivo não encontrado',false);return;}
   const{data:sg,error:e2}=await sbClient.storage.from('acessos-termos').createSignedUrl(data.arquivo_path,120);
   if(e2){adminToast('Erro URL: '+e2.message,false);return;}
   window.open(sg.signedUrl,'_blank');
 }
 async function _acDelTermo(termoId,pessoaId){
+  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
   if(!await _acConfirmar('Excluir este termo? O arquivo enviado também será apagado.',{ok:'Excluir',perigo:true}))return;
-  const{data:t}=await sbClient.from('acessos_termos').select('arquivo_path').eq('id',termoId).single();
+  const{data:t}=await deOnde(sbClient).from('acessos_termos').select('arquivo_path').eq('id',termoId).single();
   if(t&&t.arquivo_path){await sbClient.storage.from('acessos-termos').remove([t.arquivo_path]);}
-  const{error}=await sbClient.from('acessos_termos').delete().eq('id',termoId);
+  const{error}=await deOnde(sbClient).from('acessos_termos').delete().eq('id',termoId);
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('termo.excluir','termo:'+termoId,'ok',null);
   adminToast('Documento excluído');_acRenderTermos(pessoaId);
@@ -2244,15 +2094,15 @@ async function _acRenderAuditoria(){
   let orgs,setores,pessoas,bens,erroBens,veiculosAud,erroVeiculosAud,vincs;
   try{
     ([{data:orgs},{data:setores},{data:pessoas},{data:bens,error:erroBens},{data:veiculosAud,error:erroVeiculosAud},{data:vincs}]=await Promise.all([
-      sbClient.from('acessos_organizacoes').select('*').order('ordem').order('nome'),
-      sbClient.from('acessos_setores').select('*').order('nome'),
-      sbClient.from('acessos_pessoas').select('*').order('nome'),
+      deOnde(sbClient).from('acessos_organizacoes').select('*').order('ordem').order('nome'),
+      deOnde(sbClient).from('acessos_setores').select('*').order('nome'),
+      deOnde(sbClient).from('acessos_pessoas').select('*').order('nome'),
       // Limite explícito (item C): sem ele o PostgREST corta em 1000 linhas
       // SEM avisar. foiCortado() abaixo detecta quando a lista voltou exatamente
       // no limite e transforma o corte silencioso num aviso na tela.
       deOnde(sbClient).from('patrimonio_bens').select('id,nome,pessoa_id').limit(LIMITE_BENS_AUDITORIA),
       deOnde(sbClient).from('frota_veiculos').select('id,nome,pessoa_id').limit(LIMITE_VEICULOS_AUDITORIA),
-      sbClient.from('acessos_vinculos').select('pessoa_id,papel,estado,acessos_recursos(nome,tipo,arquivado_em)')
+      deOnde(sbClient).from('acessos_vinculos').select('pessoa_id,papel,estado,acessos_recursos(nome,tipo,arquivado_em)')
     ]));
   }catch(e){
     // Promise.all sem try/catch deixava a aba presa em "Carregando auditoria…"
@@ -2325,7 +2175,7 @@ function _acNorm(s){return String(s==null?'':s).toLowerCase().normalize('NFD').r
 async function _acReconcileEmail(p,email){
   if(!p||!email||(p.email_outlook&&p.email_outlook.toLowerCase()===email.toLowerCase()))return;
   const antigo=p.email_outlook||'(vazio)';
-  try{const{error}=await sbClient.from('acessos_pessoas').update({email_outlook:email,atualizado_em:new Date().toISOString()}).eq('id',p.id);
+  try{const{error}=await deOnde(sbClient).from('acessos_pessoas').update({email_outlook:email,atualizado_em:new Date().toISOString()}).eq('id',p.id);
     if(!error){p.email_outlook=email;await _acLog('drive.reconcilia','colab:'+p.nome,'ok',antigo+' → '+email);}
   }catch(e){}
 }
@@ -2449,17 +2299,17 @@ Object.assign(window, {
   _acDriveRepaint, _acDriveSecColor, _acDriveSectorOf, _acDriveSelectMarca, _acDriveSetDepth, _acDriveSetView, _acDriveShare, _acDriveToggleSec,
   _acDriveWire, _acDstMeta, _acEsc, _acExcluirColaborador, _acFieldsFor, _acFixAliases, _acFormColaborador,
   _acFichaEditarCampo, _acFichaCarregarAcessos, _acFichaCarregarContadores, _acFichaAvatarGrande,
-  _acFormSetorOpts, _acHandleZohoReturn, _acICAcessos, _acICAddAcesso, _acICAddFolder, _acICLoadFolders, _acICRemoveAcesso, _acICRemoveFolder,
-  _acICToggleAcessos, _acICToggleFeito, _acImportarZoho, _acItemTipoLabel, _acLog, _acLogo, _acNorm, _acODAdd,
+  _acFormSetorOpts, _acHandleZohoReturn, 
+  _acImportarZoho, _acItemTipoLabel, _acLog, _acLogo, _acNorm, _acODAdd,
   _acODBrowse, _acODOpen, _acODPicker, _acODUp,
-  _acODStatus, _acOdSummary, _acOpenICloud, _acOpenOrg,
+  _acODStatus, _acOdSummary, _acOpenOrg,
   _acOpenPessoa, _acOpenSetor, _acOrgIco, _acPickAll, _acPickCount, _acPickFilter, _acProvisionar, _acProxy,
   _acReativar, _acReconcileEmail, _acRender, _acRenderAuditoria, _acRenderColaboradores, _acRenderConfiguracoes, _acRenderDrive,
-  _acRenderFicha, _acRenderICloud, _acRenderOrganizacoes, _acRenderSetores, _acRenderTermos,
+  _acRenderFicha, _acRenderOrganizacoes, _acRenderSetores, _acRenderTermos,
   _acSanitizeName, _acSaveColaborador, _acSetorIco, _acSetTab, _acTiposFor, _acToggleOrg, _acVoltarSel,
   _acUploadAvatar, _acUploadTermo, _acWrapId, _acZohoStatus,
-  _acDriveSetProvedor, _acDriveProvedorBar, _acRenderWorkdrive, _acWdCarregarPastas, _acWdRepaint,
-  _acWdNo, _acWdAlternar, _acWdImportar,
+  _acDriveSetProvedor, _acDriveProvedorBar, 
+  
   // Bens & Veículos na ficha: só leitura (patrimonio_bens + frota_veiculos).
   _acRenderPatItens, _acVerPatrimonio, _acVerFrota
 })
@@ -2566,8 +2416,8 @@ async function _acGeralNumeros() {
   // Pessoas: ativos, e quantos desligados existem (contexto de quem cresce/encolhe)
   try {
     const [{ count: ativos, error: e1 }, { count: fora }] = await Promise.all([
-      sbClient.from('acessos_pessoas').select('*', { count: 'exact', head: true }).eq('status', 'ativo'),
-      sbClient.from('acessos_pessoas').select('*', { count: 'exact', head: true }).eq('status', 'desligado'),
+      deOnde(sbClient).from('acessos_pessoas').select('*', { count: 'exact', head: true }).eq('status', 'ativo'),
+      deOnde(sbClient).from('acessos_pessoas').select('*', { count: 'exact', head: true }).eq('status', 'desligado'),
     ])
     if (e1) throw e1
     setText('ac-kpi-pessoas', String(ativos ?? 0))
@@ -2579,7 +2429,7 @@ async function _acGeralNumeros() {
 
   // Cobertura de e-mail corporativo: quantos dos ATIVOS já têm conta Zoho.
   try {
-    const { data, error } = await sbClient
+    const { data, error } = await deOnde(sbClient)
       .from('acessos_pessoas').select('email_corporativo').eq('status', 'ativo')
     if (error) throw error
     const lista = data || []
@@ -2595,7 +2445,7 @@ async function _acGeralNumeros() {
 
   // Pastas sob controle no WorkDrive (as arquivadas não contam).
   try {
-    const { data, error } = await sbClient
+    const { data, error } = await deOnde(sbClient)
       .from('acessos_recursos').select('tipo').is('arquivado_em', null)
     if (error) throw error
     const doWorkdrive = (data || []).filter(r => r.tipo === 'workdrive').length
@@ -2608,8 +2458,8 @@ async function _acGeralNumeros() {
   // Estrutura: organizações e setores.
   try {
     const [{ count: orgs, error: e1 }, { count: setores }] = await Promise.all([
-      sbClient.from('acessos_organizacoes').select('*', { count: 'exact', head: true }),
-      sbClient.from('acessos_setores').select('*', { count: 'exact', head: true }),
+      deOnde(sbClient).from('acessos_organizacoes').select('*', { count: 'exact', head: true }),
+      deOnde(sbClient).from('acessos_setores').select('*', { count: 'exact', head: true }),
     ])
     if (e1) throw e1
     setText('ac-kpi-orgs', String(orgs ?? 0))
