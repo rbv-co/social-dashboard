@@ -105,6 +105,7 @@ trocar_host() {
      S=\$(sed -n 's/^POSTGRES_PASSWORD=//p' /root/secrets/api-db.env) &&
      DATABASE_URL=\"postgres://api:\$S@\$IP:5432/api\" node trocar-host-das-urls-de-storage.mjs --host-novo https://central.rbvcompany.com --aplicar" \
     | tee "$OUT/storage-host.txt"
+  grep -q 'sobraram 0 coluna' "$OUT/storage-host.txt"   # o tee esconde a saída do node: confere pelo texto
 }
 # o corte guarda um clone do banco recém-restaurado (segundos, na janela): é a base do delta se for preciso voltar
 clone() { for i in 1 2 3 4 5; do psql "$ALVO" -X -q -c "create database api_base template api" && return 0; sleep 3; done; return 1; }
