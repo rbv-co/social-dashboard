@@ -3,7 +3,7 @@
 # produção: o Supabase só é lido (pg_dump e contagens em transação somente leitura, 5 leituras REST medidas);
 # nginx, DNS, front, core, crontab e pg_cron ficam como estão (impressão digital da VPS antes x depois).
 # Etapas cronometradas: recriar o api-db do zero -> ops/migracao/ensaio.sh pelo túnel (dump, restore, usuários,
-# contagens, órfãos, triggers, Storage) -> papel sem superusuário -> foto do corte e clone (o "Supabase
+# contagens, órfãos, triggers, Storage) -> papel sem superusuário -> host do Storage no banco -> foto do corte e clone (o "Supabase
 # congelado") -> imagem, `api migrar` como api_app -> API e worker no ar SEM credenciais e com TODAS as tarefas
 # desligadas -> `api worker conferir` -> foto do corte -> 5 rotas medidas (Go x Supabase) -> escritas reais da API -> parar a API
 # (1º passo do rollback) -> delta, replay no clone e comparação linha a linha -> limpeza.
@@ -97,10 +97,14 @@ papel() {
      openssl rand -hex 24 > $E/shopify.segredo; echo \"SHOPIFY_WEBHOOK_SEGREDOS=\$(cat $E/shopify.segredo)\" >> $E/api.env" > "$OUT/papel.txt" || return 1
   cat "$OUT/papel.txt"; grep -q '^sobrou_de_outro_dono|0$' "$OUT/papel.txt" && grep -q '^api_app|f|f|f|f|f$' "$OUT/papel.txt"
 }
+# o script do Plano 6 (coletor/), na VPS, com o `pg` dos robôs: relatório, depois --aplicar (backup em bkp_urls_*)
 trocar_host() {
-  psql "$ALVO" -X -q -v ON_ERROR_STOP=1 -v de="${SUPABASE_URL%/}" -v para=https://central.rbvcompany.com/api \
-    -f "$AQUI/trocar-host-storage.sql" 2>&1 | sed 's/^psql:[^ ]* NOTICE: *//' | tee "$OUT/storage-host.txt"
-  grep -q '^total trocado:' "$OUT/storage-host.txt"
+  v "mkdir -p $E/trocar && ln -sfn /opt/robos/social-dashboard/coletor/node_modules $E/trocar/node_modules" &&
+  scp -q "$RAIZ/coletor/trocar-host-das-urls-de-storage.mjs" "$VPS:$E/trocar/" &&
+  v "cd $E/trocar && IP=\$(docker inspect -f '{{(index .NetworkSettings.Networks \"api_net\").IPAddress}}' api-db) &&
+     S=\$(sed -n 's/^POSTGRES_PASSWORD=//p' /root/secrets/api-db.env) &&
+     DATABASE_URL=\"postgres://api:\$S@\$IP:5432/api\" node trocar-host-das-urls-de-storage.mjs --host-novo https://central.rbvcompany.com --aplicar" \
+    | tee "$OUT/storage-host.txt"
 }
 # o corte guarda um clone do banco recém-restaurado (segundos, na janela): é a base do delta se for preciso voltar
 clone() { for i in 1 2 3 4 5; do psql "$ALVO" -X -q -c "create database api_base template api" && return 0; sleep 3; done; return 1; }

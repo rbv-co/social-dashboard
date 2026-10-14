@@ -760,6 +760,18 @@ func TestConferirNaFatiaD0NaoAcusaOPlano510(t *testing.T) {
 	}
 }
 
+// Virada (plano 08, ensaio de 14/10 no banco restaurado): em produção o gatilho vessel_rd_na_fila está DESLIGADO desde
+// 12/10 (RD desativada pelo dono; o Plano 6 tirou a RD do worker). Nada no Go depende dele: desligado não é pendência.
+func TestConferirAceitaOGatilhoDaRDDesligado(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	exec(t, p, `alter table vessel_origens disable trigger vessel_rd_na_fila`)
+	for _, f := range faltamDe(t, p) {
+		if strings.Contains(f, "vessel_rd_na_fila") {
+			t.Errorf("a RD desligada (estado de produção) não devia ser pendência: %q", f)
+		}
+	}
+}
+
 // Plano 5.10: a disparar_robo de produção (pg_net) e os 2 gatilhos do Actions de volta são acusados; a da 00007, não.
 func TestConferirDisparos(t *testing.T) {
 	p := testebanco.Novo(t) // as migrações já trazem a 00007
