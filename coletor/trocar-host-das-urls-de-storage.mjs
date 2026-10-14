@@ -47,7 +47,8 @@ export async function achar(cli) {
 export async function aplicar(cli, achadas, hostNovo, carimbo) {
   await cli.query('begin');
   try {
-    const porTabela = Map.groupBy(achadas, (a) => a.tabela);
+    const porTabela = new Map(); // agrupamento à mão: a VPS roda Node 20 (sem o groupBy do 21)
+    for (const a of achadas) porTabela.set(a.tabela, [...(porTabela.get(a.tabela) ?? []), a]);
     for (const [tabela, cols] of porTabela) {
       const onde = cols.map((c) => `${c.tipo === 'jsonb' ? `${id(c.coluna)}::text` : id(c.coluna)} ~ '${ANTIGO}'`).join(' or ');
       const bkp = `bkp_urls_${carimbo}_${tabela}`.slice(0, 63);

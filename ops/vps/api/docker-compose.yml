@@ -1,0 +1,49 @@
+# API e worker em Go da Central (saída do Supabase): o MESMO binário em dois serviços.
+# Banco: `api-db` na rede `api_net` (ops/vps/api-db, que cria a rede). Roteiro: MIGRACAO-GO/ROTEIRO-DA-VIRADA.md.
+# Ordem (NOTAS-DA-IMPLANTACAO, Plano 4): `docker compose run --rm api migrar` ANTES do `up -d`; o worker não
+# migra e recusa subir sem as tabelas. Segredos em .env modo 600 fora do git (nomes nas NOTAS); o ensaio
+# troca os arquivos por API_ENV/WORKER_ENV e o projeto por API_PROJETO.
+# A API só escuta em 127.0.0.1 (o nginx é o único cliente; o X-Real-IP só vale vindo de rede privada).
+name: ${API_PROJETO:-api}
+services:
+  api:
+    build: ../../../api
+    image: central-api:${API_VERSAO:-local}
+    restart: unless-stopped
+    stop_grace_period: 20s
+    env_file: ${API_ENV:-/root/secrets/api.env}
+    environment:
+      ADDR: ":8080"
+      ARQUIVOS_DIR: /var/lib/api/arquivos
+    ports: ["127.0.0.1:${API_PORTA:-8080}:8080"]
+    volumes: ["${ARQUIVOS_HOST:-/var/lib/api/arquivos}:/var/lib/api/arquivos"]
+    networks: [api_net]
+    mem_limit: 512m
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/saude"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+  worker:
+    image: central-api:${API_VERSAO:-local}
+    command: ["worker"]
+    restart: unless-stopped
+    # SIGTERM: para de agendar, espera 30 s as tarefas, cancela e espera mais 15 s
+    stop_grace_period: 60s
+    env_file: ${WORKER_ENV:-/root/secrets/worker.env}
+    environment:
+      WORKER_ADDR: "0.0.0.0:8081"
+      ARQUIVOS_DIR: /var/lib/api/arquivos
+    volumes: ["${ARQUIVOS_HOST:-/var/lib/api/arquivos}:/var/lib/api/arquivos"]
+    networks: [api_net]
+    mem_limit: 512m
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    healthcheck:
+      test: ["CMD", "api", "worker", "saude"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+networks:
+  api_net:
+    external: true

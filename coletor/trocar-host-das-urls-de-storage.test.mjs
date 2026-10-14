@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { parseHostNovo, expressao, achar, aplicar } from './trocar-host-das-urls-de-storage.mjs';
 
 test('host novo: só origem https', () => {
@@ -14,6 +15,12 @@ test('a expressão usa o host como parâmetro (nunca no texto) e trata jsonb pel
   assert.match(expressao('url', 'text', 'x'), /regexp_replace\("url", '.*', \$1 \|\| '\\1', 'g'\)/);
   assert.match(expressao('dados', 'jsonb', 'x'), /^\(regexp_replace\("dados"::text,.*\)::jsonb$/);
   assert.ok(!expressao('url', 'text', 'https://api.exemplo.com').includes('api.exemplo.com'));
+});
+
+// roda na VPS, que tem Node 20 (ensaio da virada, 14/10: Map.groupBy derrubou o --aplicar com "is not a function")
+test('não usa API do Node 21+ (a VPS roda Node 20)', () => {
+  const fonte = readFileSync(new URL('./trocar-host-das-urls-de-storage.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(fonte, /\b(Map|Object)\.groupBy\b|Promise\.withResolvers|Array\.fromAsync/);
 });
 
 // com banco de verdade (TEST_DATABASE_URL): acha, faz backup, troca só o host, não toca no que não é do Storage
