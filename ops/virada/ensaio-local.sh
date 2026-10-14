@@ -54,7 +54,7 @@ ESQUEMA="
 create table public.pedidos (id bigserial primary key, cliente text not null, valor numeric, criado timestamptz default now());
 create table public.itens (pedido_id bigint references public.pedidos (id), n int, sku text, primary key (pedido_id, n));
 create table public.auditoria (id bigserial primary key, msg text);
-create table public.contas (id uuid primary key default gen_random_uuid(), nome text, segredo text, dobro numeric generated always as (length(nome) * 2) stored);
+create table public.contas (id uuid primary key default gen_random_uuid(), nome text, segredo text, foto text, dados jsonb, dobro numeric generated always as (length(nome) * 2) stored);
 create table public.log_sem_pk (msg text);
 create table public.eventos (id bigint generated always as identity primary key, tipo text);
 create table public.so_da_api (id int primary key);
@@ -66,16 +66,15 @@ revoke execute on function public.so_servico() from public, anon, authenticated;
 grant execute on function public.so_servico() to service_role;
 grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
 grant usage on all sequences in schema public to anon, authenticated, service_role;
-revoke all on public.contas from anon; grant select (id, nome) on public.contas to anon;
+revoke all on public.contas from anon; grant select (id, nome) on public.contas to anon; grant update (nome) on public.contas to anon;
 insert into public.pedidos (cliente, valor) values ('ana', 10), ('bia', 20), ('caio', 30);
 insert into public.itens values (1, 1, 'A'), (1, 2, 'B'), (2, 1, 'C');
-insert into public.contas (nome, segredo) values ('loja', 's1'), ('site', 's2');
+insert into public.contas (nome, segredo, foto, dados) values ('loja', 's1', 'https://ref.supabase.co/storage/v1/object/public/b/loja.png', '{\"img\": \"https://ref.supabase.co/storage/v1/object/public/b/l2.png\"}'), ('site', 's2', 'https://ref.supabase.co/storage/v1/object/public/b/site.png', null);
 insert into public.log_sem_pk values ('um');
 insert into public.eventos (tipo) values ('a'), ('b');"
 for u in "$DONO" "$APP"; do psql "$u" -X -q -v ON_ERROR_STOP=1 -c "$ESQUEMA" > /dev/null || { echo "esquema falhou" >&2; exit 1; }; done
 s "$DONO" "select cron.schedule('job-a', '* * * * *', 'select 1'), cron.schedule('job-b', '0 3 * * *', 'select 2'), cron.schedule('job-c', '0 4 * * *', 'select 3')" > /dev/null
 s "$DONO" "select cron.alter_job(jobid, active := false) from cron.job where jobname = 'job-c'" > /dev/null
-ACL_INICIO=$(s "$DONO" "select md5(string_agg(c.relname || coalesce(c.relacl::text, ''), ',' order by c.relname)) from pg_class c where c.relnamespace = 'public'::regnamespace")
 
 echo "== congelar e descongelar (supabase.sh)"
 SB="$OUT/sb"
@@ -92,16 +91,17 @@ deve_falhar "$DONO" anon "select public.registrar('x')"
 deve_falhar "$DONO" service_role "select public.so_servico()"
 deve_passar "$DONO" authenticated "select count(*) from public.pedidos"
 deve_passar "$DONO" anon "select id, nome from public.contas"
+deve_falhar "$DONO" anon "update public.contas set nome = nome"
 s "$DONO" "insert into public.log_sem_pk values ('escritor direto')" > /dev/null   # o dono escreve: o REVOKE não pega
 sleep 2
 sh "$AQUI/supabase.sh" escritas "$DONO" "$SB" > /dev/null 2>&1 && falha "escritas não viu o escritor direto" || ok "escritas acusa o escritor direto (log_sem_pk)"
 s "$DONO" "delete from public.log_sem_pk where msg = 'escritor direto'" > /dev/null
 sh "$AQUI/supabase.sh" descongelar "$DONO" "$SB" && ok "descongelar: ACL e pg_cron iguais aos de antes" || falha "descongelar"
 [ "$(s "$DONO" "select string_agg(jobname || '=' || active, ',' order by jobname) from cron.job")" = "job-a=true,job-b=true,job-c=false" ] && ok "pg_cron: a e b ativos, c inativo (como antes)" || falha "pg_cron depois de religar"
-[ "$(s "$DONO" "select md5(string_agg(c.relname || coalesce(c.relacl::text, ''), ',' order by c.relname)) from pg_class c where c.relnamespace = 'public'::regnamespace")" = "$ACL_INICIO" ] && ok "relacl byte a byte igual ao do início" || ok "relacl reordenado (a foto normalizada do descongelar é que vale)"
 deve_passar "$DONO" authenticated "insert into public.pedidos (cliente) values ('depois')"
 deve_passar "$DONO" anon "select public.registrar('depois')"
 deve_falhar "$DONO" anon "select public.so_servico()"
+deve_passar "$DONO" anon "update public.contas set nome = nome"
 deve_passar "$DONO" service_role "select public.so_servico()"
 
 echo "== delta e replay (delta.sh)"
@@ -109,6 +109,9 @@ D="$OUT/delta"; printf 'pedidos\nitens\nauditoria\ncontas\neventos\nlog_sem_pk\n
 sh "$AQUI/delta.sh" base "$APP" "$D" "$OUT/tabelas.txt" && ok "foto do corte" || falha "foto do corte"
 sh "$AQUI/delta.sh" base "$APP" "$D" "$OUT/tabelas.txt" > /dev/null 2>&1 && falha "base repetida sobrescreveu" || ok "base repetida recusa"
 s "$SU" "create database app_base template app owner dono" > /dev/null || falha "clonar app_base (o Supabase congelado)"
+# a troca de host do Storage no banco novo (trocar-host-das-urls-de-storage.mjs), depois do clone: não pode virar delta
+s "$APP" "update public.contas set foto = replace(foto, 'https://ref.supabase.co/', 'https://central.exemplo.com/'), dados = replace(dados::text, 'https://ref.supabase.co/', 'https://central.exemplo.com/')::jsonb" > /dev/null
+export DELTA_HOST_GO=https://central.exemplo.com DELTA_HOST_SUPABASE=https://ref.supabase.co
 # o que a API faria depois da abertura: pedido novo (o gatilho grava auditoria), item novo com FK, conta alterada,
 # item apagado e uma tabela só da API (fica fora do replay)
 s "$APP" "insert into public.pedidos (cliente, valor) values ('davi', 40); insert into public.itens values (4, 1, 'D'); update public.contas set nome = 'loja nova' where nome = 'loja'; delete from public.itens where pedido_id = 2; insert into public.so_da_api values (1); insert into public.eventos (tipo) values ('c')" > /dev/null
@@ -118,6 +121,7 @@ sh "$AQUI/delta.sh" exportar "$APP" "$D" > "$OUT/exportar.txt" && ok "exportar" 
 psql "$BASE" -X -q -v ON_ERROR_STOP=1 -f "$D/replay.sql" > /dev/null && ok "replay no 'Supabase' (dono sem superusuário)" || falha "replay"
 sh "$AQUI/delta.sh" comparar "$BASE" "$D" && ok "depois do replay, o 'Supabase' = Postgres novo, linha a linha (o gatilho não disparou de novo)" || falha "comparar depois do replay"
 psql "$BASE" -X -q -v ON_ERROR_STOP=1 -f "$D/replay.sql" > /dev/null && sh "$AQUI/delta.sh" comparar "$BASE" "$D" > /dev/null && ok "replay repetido: continua igual (idempotente)" || falha "replay repetido"
+[ "$(s "$BASE" "select count(*) from public.contas where foto like '%central.exemplo%' or dados::text like '%central.exemplo%'")" = 0 ] && ok "o replay devolve o host do Supabase (a conta alterada volta com a URL antiga)" || falha "host da central chegou ao 'Supabase'"
 [ "$(s "$BASE" "select nextval('public.pedidos_id_seq') > (select max(id) from public.pedidos)")" = t ] && ok "sequência acertada: o próximo id não colide" || falha "sequência no replay"
 s "$BASE" "insert into public.eventos (tipo) values ('depois do replay')" > /dev/null && ok "identity always: o próximo insert no 'Supabase' não colide" || falha "identity always depois do replay"
 s "$APP" "insert into public.log_sem_pk values ('sem chave')" > /dev/null

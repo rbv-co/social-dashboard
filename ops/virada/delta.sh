@@ -10,10 +10,14 @@
 # Uma transação com session_replication_role=replica (sem gatilho nem checagem de FK, como o pg_restore; o
 # supautils libera esse parâmetro ao postgres): apaga as chaves que sumiram, faz upsert das novas/alteradas e
 # acerta as sequências (identity "generated always" inclusive: overriding system value). Tabela sem chave primária que mudou: só acusa (replay à mão). auth.users não entra.
+# Host do Storage: o banco novo tem as URLs públicas trocadas para a central (trocar-host-das-urls-de-storage.mjs) e o
+# Supabase não. Com DELTA_HOST_GO (ex.: https://central.rbvcompany.com) e DELTA_HOST_SUPABASE (https://<ref>.supabase.co),
+# as fotos comparam o texto da linha com "<GO>/storage/v1/object/" trocado por "<SUPABASE>/storage/v1/object/" e o CSV do
+# replay leva de volta o host do Supabase: a troca de host não vira delta nem volta ao Supabase.
 # Saída: 0 ok (comparar: igual); 1 falhou (comparar: diferente; exportar: tabela sem chave mudou); 2 uso.
 set -eu
 ACAO=${1:-}; URL=${2:-}; DIR=${3:-}
-[ -n "$ACAO" ] && [ -n "$URL" ] && [ -n "$DIR" ] || { sed -n '4,15p' "$0" >&2; exit 2; }
+[ -n "$ACAO" ] && [ -n "$URL" ] && [ -n "$DIR" ] || { sed -n '4,19p' "$0" >&2; exit 2; }
 AQUI=$(cd "$(dirname "$0")" && pwd)
 . "$AQUI/../migracao/oculta.sh"
 umask 077; mkdir -p "$DIR"; DIR=$(cd "$DIR" && pwd)
@@ -27,13 +31,22 @@ pk_de() {
           join pg_attribute a on a.attrelid = i.indrelid and a.attnum = k.att
          where i.indrelid = 'public.$1'::regclass and i.indisprimary"
 }
+# a linha como texto, com o host do Storage do Go normalizado para o do Supabase (se configurado)
+LINHA="_delta_::text"
+if [ -n "${DELTA_HOST_GO:-}${DELTA_HOST_SUPABASE:-}" ]; then
+  for h in "${DELTA_HOST_GO:-}" "${DELTA_HOST_SUPABASE:-}"; do
+    printf '%s' "$h" | grep -Eq '^https://[a-z0-9.-]+$' || { echo "DELTA_HOST_GO e DELTA_HOST_SUPABASE: só a origem https (sem barra final), as duas" >&2; exit 2; }
+  done
+  GO_PREF="$DELTA_HOST_GO/storage/v1/object/"; SB_PREF="$DELTA_HOST_SUPABASE/storage/v1/object/"
+  LINHA="replace(_delta_::text, '$GO_PREF', '$SB_PREF')"
+fi
 # foto de uma tabela: "chave<TAB>md5" ordenado (byte a byte, para o join); sem chave primária, uma linha "*"
 foto() {
   pk=$(pk_de "$1")
   if [ -n "$pk" ]; then
-    q -c "copy (select row($pk)::text, md5(_delta_::text) from public.$1 _delta_) to stdout" | LC_ALL=C sort -t "$TAB" -k1,1 > "$2/$1.tsv"
+    q -c "copy (select row($pk)::text, md5($LINHA) from public.$1 _delta_) to stdout" | LC_ALL=C sort -t "$TAB" -k1,1 > "$2/$1.tsv"
   else
-    q -c "select '*', count(*) || ':' || coalesce(md5(string_agg(md5(_delta_::text), '' order by md5(_delta_::text))), '') from public.$1 _delta_" > "$2/$1.tsv"
+    q -c "select '*', count(*) || ':' || coalesce(md5(string_agg(md5($LINHA), '' order by md5($LINHA))), '') from public.$1 _delta_" > "$2/$1.tsv"
   fi
 }
 fotos() { for f in "$DIR"/base/*.tsv; do foto "$(basename "$f" .tsv)" "$1"; done; }
@@ -81,6 +94,8 @@ create temp table _k (k text);
 \copy _k from '$DIR/delta/$t.chaves'
 \copy (select $cols from public.$t _delta_ where row($pk)::text in (select k from _k)) to '$DIR/delta/$t.csv' csv
 EOF
+    # o replay leva o host do Supabase (a URL não tem aspas nem vírgula: troca no texto do CSV é segura)
+    [ -z "${GO_PREF:-}" ] || DE="$GO_PREF" PARA="$SB_PREF" perl -pi -e 's/\Q$ENV{DE}\E/$ENV{PARA}/g' "$DIR/delta/$t.csv"
     if [ -n "$resto" ]; then acao="do update set ($resto) = row($exc)"; else acao="do nothing"; fi
     {
       printf '%s\n' "-- public.$t: $ni novas, $nu alteradas, $nd apagadas" \
@@ -112,5 +127,5 @@ comparar)
   done
   [ "$dif" = 0 ] || { echo "$dif tabela(s) diferente(s)" >&2; exit 1; }
   echo "IGUAL: $(ls "$DIR"/atual/*.tsv | wc -l | tr -d ' ') tabelas, linha a linha";;
-*) sed -n '4,15p' "$0" >&2; exit 2;;
+*) sed -n '4,19p' "$0" >&2; exit 2;;
 esac

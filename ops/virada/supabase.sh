@@ -33,8 +33,13 @@ TABELAS="from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relown
 ROTINAS="from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
  where p.pronamespace = 'public'::regnamespace"
 ROTINA="format('public.%I(%s)', p.proname, pg_get_function_identity_arguments(p.oid))"
+# o REVOKE "on all tables" também tira INSERT/UPDATE por coluna: a foto e a reversão incluem o attacl
+COLUNAS="from pg_attribute t join pg_class c on c.oid = t.attrelid, aclexplode(t.attacl) a
+ where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm', 'f') and t.attacl is not null"
 foto_acl() {
   q -c "select 'tabela', format('public.%I', c.relname), $GRANTEE, a.privilege_type, a.is_grantable, pg_get_userbyid(a.grantor) $TABELAS
+        union all
+        select 'coluna', format('public.%I.%I', c.relname, t.attname), $GRANTEE, a.privilege_type, a.is_grantable, pg_get_userbyid(a.grantor) $COLUNAS
         union all
         select 'rotina', $ROTINA, $GRANTEE, a.privilege_type, a.is_grantable, pg_get_userbyid(a.grantor) $ROTINAS
         order by 1, 2, 3, 4"
@@ -45,7 +50,8 @@ recusa_se_existe() { [ ! -e "$DIR/$1" ] || { echo "já existe $DIR/$1: recuso so
 case "$ACAO" in
 desligar-cron)
   recusa_se_existe cron-antes.tsv
-  foto_cron > "$DIR/cron-antes.tmp" && mv "$DIR/cron-antes.tmp" "$DIR/cron-antes.tsv"
+  foto_cron > "$DIR/cron-antes.tmp" || { echo "a foto do pg_cron falhou: nada foi desligado" >&2; exit 1; }
+  mv "$DIR/cron-antes.tmp" "$DIR/cron-antes.tsv"
   echo "jobs: $(wc -l < "$DIR/cron-antes.tsv" | tr -d ' '), ativos antes: $(grep -c "${TAB}t\$" "$DIR/cron-antes.tsv" || true)"
   q -c "select count(*) from (select cron.alter_job(jobid, active := false) from cron.job where active) s" > /dev/null
   n=$(q -c "select count(*) from cron.job where active")
@@ -64,6 +70,11 @@ congelar)
                       case when a.is_grantable then ' with grant option' else '' end)
         $TABELAS and $ALVO and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
         union all
+        select format('grant %s (%I) on table public.%I to %s%s;', a.privilege_type, t.attname, c.relname,
+                      case a.grantee when 0 then 'public' else quote_ident(pg_get_userbyid(a.grantee)) end,
+                      case when a.is_grantable then ' with grant option' else '' end)
+        $COLUNAS and $ALVO and a.privilege_type in ('INSERT', 'UPDATE')
+        union all
         select format('grant execute on routine %s to %s%s;', $ROTINA,
                       case a.grantee when 0 then 'public' else quote_ident(pg_get_userbyid(a.grantee)) end,
                       case when a.is_grantable then ' with grant option' else '' end)
@@ -73,6 +84,7 @@ congelar)
   q -1 -c "revoke insert, update, delete, truncate on all tables in schema public from public, anon, authenticated, service_role" \
        -c "revoke execute on all routines in schema public from public, anon, authenticated, service_role"
   n=$(q -c "select count(*) from (select 1 $TABELAS and $ALVO and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
+                                  union all select 1 $COLUNAS and $ALVO and a.privilege_type in ('INSERT', 'UPDATE')
                                   union all select 1 $ROTINAS and $ALVO and a.privilege_type = 'EXECUTE') s")
   [ "$n" = 0 ] || { echo "sobraram $n privilégios de escrita/execução para os papéis da API" >&2; exit 1; }
   echo "CONGELADO: nenhum privilégio de escrita nem de execução para PUBLIC/anon/authenticated/service_role";;

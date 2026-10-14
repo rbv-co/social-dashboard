@@ -3,7 +3,7 @@
 # produção: o Supabase só é lido (pg_dump e contagens em transação somente leitura, 5 leituras REST medidas);
 # nginx, DNS, front, core, crontab e pg_cron ficam como estão (impressão digital da VPS antes x depois).
 # Etapas cronometradas: recriar o api-db do zero -> ops/migracao/ensaio.sh pelo túnel (dump, restore, usuários,
-# contagens, órfãos, triggers, Storage) -> papel sem superusuário -> host do Storage no banco -> foto do corte e clone (o "Supabase
+# contagens, órfãos, triggers, Storage) -> papel sem superusuário -> clone do corte -> host do Storage no banco -> foto do corte e clone (o "Supabase
 # congelado") -> imagem, `api migrar` como api_app -> API e worker no ar SEM credenciais e com TODAS as tarefas
 # desligadas -> `api worker conferir` -> foto do corte -> 5 rotas medidas (Go x Supabase) -> escritas reais da API -> parar a API
 # (1º passo do rollback) -> delta, replay no clone e comparação linha a linha -> limpeza.
@@ -23,6 +23,8 @@ SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-$(le SUPABASE_SERVICE_KEY)}
   || { echo "faltam ORIGEM_DATABASE_URL, SUPABASE_URL e SUPABASE_SERVICE_KEY (ou ENV_COLETOR)" >&2; exit 1; }
 export ORIGEM_DATABASE_URL SUPABASE_URL SUPABASE_SERVICE_KEY
 ORIGEM=$(printf '%s' "$ORIGEM_DATABASE_URL" | sed 's#:6543/#:5432/#')
+# o banco novo tem o host do Storage trocado para a central; o delta compara e devolve com o host do Supabase
+export DELTA_HOST_GO=https://central.rbvcompany.com DELTA_HOST_SUPABASE="${SUPABASE_URL%/}"
 umask 077
 OUT="$RAIZ/ops/migracao/saida/ensaio-vps-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$OUT"
 v() { ssh -o BatchMode=yes "$VPS" "$@"; }
@@ -161,8 +163,8 @@ etapa "4. tabelas do Supabase (só leitura)" tabelas
 etapa "5. ensaio.sh: dump/restore/usuários/conferências" ensaio_sh
 etapa "6. preparar a pasta do ensaio na VPS" preparar_vps
 etapa "7. papel api_app (sem superusuário)" janela papel
-etapa "7b. trocar o host do Storage no banco" janela trocar_host
-etapa "8. clone do corte (api_base)" janela clone
+etapa "8. clone do corte (api_base = o Supabase)" janela clone
+etapa "8b. trocar o host do Storage no banco" janela trocar_host
 etapa "9. api migrar (como api_app)" janela v "$DC run --rm --pull never api migrar"
 etapa "10. API e worker no ar (healthy)" janela subir
 etapa "11. api worker conferir" janela v "$DC exec -T worker api worker conferir"
