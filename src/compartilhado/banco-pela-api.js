@@ -197,6 +197,25 @@ const ROTAS = {
   frota_plano_revisao: { area: 'frota', rota: '/frota/plano-revisao', filtros: {}, ordens: ['ordem'] },
   frota_revisoes: { area: 'frota', rota: '/frota/revisoes', filtros: {}, ordens: [] },
   frota_abastecimentos: { area: 'frota', rota: '/frota/abastecimentos', filtros: {}, ordens: ['abastecido_em'], autoria: ['criado_por'] },
+  // ── 5.4 — Colaboradores e Acessos (`/acessos/*`). Sem rota: recursos (escrita), vínculos (PATCH/DELETE),
+  // termos (escrita) e a foto — o código que os usava saiu da tela ou fica atrás de aviso ──
+  acessos_pessoas: {
+    area: 'acessos', rota: '/acessos/pessoas', filtros: { status: eq('status') }, ordens: [], // ordem fixa por nome
+    embutidos: ['acessos_setores', 'acessos_organizacoes', 'patrimonio_empresas'], // `{nome}|null` fixos
+  },
+  acessos_organizacoes: { area: 'acessos', rota: '/acessos/organizacoes', filtros: {}, ordens: ['nome'] },
+  acessos_setores: { area: 'acessos', rota: '/acessos/setores', filtros: {}, ordens: ['nome'] },
+  acessos_recursos: {
+    area: 'acessos', rota: '/acessos/recursos',
+    // `arquivado_em is null` = `arquivado=false`
+    filtros: { tipo: eq('tipo'), arquivado_em: { is: ['arquivado', nulo('false')] } }, ordens: ['nome', 'caminho'],
+  },
+  acessos_vinculos: {
+    area: 'acessos', rota: '/acessos/vinculos', filtros: { recurso_id: eq('recurso_id'), pessoa_id: eq('pessoa_id') }, ordens: [],
+    embutidosCols: { acessos_recursos: ['nome', 'tipo', 'arquivado_em'] },
+  },
+  acessos_termos: { area: 'acessos', rota: '/acessos/termos', filtros: { pessoa_id: eq('pessoa_id') }, ordens: [] },
+  acessos_log: { area: 'acessos', rota: '/acessos/log', filtros: {}, ordens: [], autoria: ['quem'] }, // só escreve; `quem` é da sessão
   // ── 5.8 — Fábrica de anúncios (leituras; as escritas do painel são as 4 edges e o
   // `escolher`, feitos na tela; as do robô são as rotas `/fabrica/robo/*`) ──
   fabrica_lojas: { area: 'fabrica', rota: '/fabrica/lojas', filtros: { ativo: eq('ativo') }, ordens: [] },
@@ -392,6 +411,13 @@ function colunasDoSelect(select, def = {}) {
   const nomes = cols.filter(Boolean).map((c) => {
     const m = /^([a-z_]+)\(([a-z_,\s]*)\)$/.exec(c)
     if (!m) { if (/[()]/.test(c)) throw new ErroDeTraducao(`select com recurso embutido não tem rota: ${select}`); return c }
+    // embutido com colunas declaradas (`/acessos/vinculos` → `acessos_recursos{nome,tipo,arquivado_em}`)
+    const decl = def.embutidosCols?.[m[1]]
+    if (decl) {
+      const pedidas = m[2].split(',').map((x) => x.trim()).filter(Boolean)
+      if (pedidas.some((x) => !decl.includes(x))) throw new ErroDeTraducao(`${m[1]}: a rota só devolve ${decl.join(', ')} no embutido`)
+      return m[1]
+    }
     if (!def.embutidos?.includes(m[1])) throw new ErroDeTraducao(`select com recurso embutido não tem rota: ${select}`)
     if (m[2].trim() !== 'nome') throw new ErroDeTraducao(`${m[1]}: a rota só devolve {nome} no embutido`)
     return m[1]
@@ -660,6 +686,11 @@ class ConsultaPelaApi {
 export async function escreverComposto(caminho, corpo) {
   const r = await pedir('POST', caminho, { corpo })
   return r.error ? { data: null, error: erroDoSupabase(r.error, r.data) } : { data: r.data, error: null }
+}
+
+/** Liga a ficha do colaborador a um login (`POST /acessos/pessoas/{id}/ligar`; admin; outro login = 409). */
+export function ligarCadastroPelaApi(id, profileId) {
+  return escreverComposto(`/acessos/pessoas/${encodeURIComponent(id)}/ligar`, { profile_id: profileId })
 }
 
 export function consultaPelaApi(tabela) { return new ConsultaPelaApi(tabela) }
