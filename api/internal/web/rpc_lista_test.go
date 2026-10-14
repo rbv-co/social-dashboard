@@ -214,20 +214,27 @@ func TestMontarRPCRecusaListaErrada(t *testing.T) {
 	}
 }
 
-// A montagem de verdade panica: lista errada nunca sobe (aqui pela FuncoesRPC do pacote).
+// A montagem de verdade panica: lista errada nunca sobe (aqui pela FuncoesRPC do pacote). RPCPendentes está vazia
+// desde o 5.11, então o teste devolve uma registrada à lista de pendentes para simular o estado "ainda pendente".
 func TestRotasPanicaComRPCRegistradaErrada(t *testing.T) {
 	p := testebanco.Novo(t)
-	original := FuncoesRPC
-	t.Cleanup(func() { FuncoesRPC = original })
-	// um nome AINDA pendente: o 5.10 registrou o vessel_gerar_lote que estava aqui
-	pendente := RPCPendentes[len(RPCPendentes)-1]
-	for nome, fs := range map[string][]rpc.Funcao{
-		"sem portão":            {{Nome: pendente}},
-		"nome proibido":         {{Nome: "minha_conta_esta_desativada", Portao: autz.SuperFicha}},
-		"fora da triagem":       {{Nome: "funcao_que_ninguem_chama", Portao: autz.SuperFicha}},
-		"pendente e registrada": {{Nome: pendente, Portao: autz.SuperFicha}},
+	original, pendentes := FuncoesRPC, RPCPendentes
+	t.Cleanup(func() { FuncoesRPC, RPCPendentes = original, pendentes })
+	const pendente = "vessel_pracas_listar"
+	semEla := slices.DeleteFunc(slices.Clone(original), func(f rpc.Funcao) bool { return f.Nome == pendente })
+	if len(semEla) != len(original)-1 {
+		t.Fatalf("%s não está em FuncoesRPC", pendente)
+	}
+	for nome, c := range map[string]struct {
+		registradas []rpc.Funcao
+		pendentes   []string
+	}{
+		"sem portão":            {append(slices.Clone(semEla), rpc.Funcao{Nome: pendente}), nil},
+		"nome proibido":         {append(slices.Clone(semEla), rpc.Funcao{Nome: "minha_conta_esta_desativada", Portao: autz.SuperFicha}), []string{pendente}},
+		"fora da triagem":       {append(slices.Clone(semEla), rpc.Funcao{Nome: "funcao_que_ninguem_chama", Portao: autz.SuperFicha}), []string{pendente}},
+		"pendente e registrada": {original, []string{pendente}},
 	} {
-		FuncoesRPC = append(slices.Clone(original), fs...) // as dos sub-planos ficam: a soma de TotalRPCDoPainel só estoura pela errada
+		FuncoesRPC, RPCPendentes = c.registradas, c.pendentes
 		func() {
 			defer func() {
 				if recover() == nil {
@@ -237,10 +244,7 @@ func TestRotasPanicaComRPCRegistradaErrada(t *testing.T) {
 			Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
 		}()
 	}
-	// e uma registrada certa (movida de pendente) monta
-	FuncoesRPC = append(slices.Clone(original), rpc.Funcao{Nome: pendente, Portao: autz.SuperFicha})
-	saved := RPCPendentes
-	t.Cleanup(func() { RPCPendentes = saved })
-	RPCPendentes = slices.DeleteFunc(slices.Clone(saved), func(x string) bool { return x == pendente })
+	// a registrada certa (movida de pendente para FuncoesRPC) monta
+	FuncoesRPC, RPCPendentes = original, nil
 	Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
 }

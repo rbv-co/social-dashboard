@@ -100,6 +100,8 @@ func esquemaCompleto(t *testing.T, p *pgxpool.Pool, tudoTexto bool) {
 	}
 	ddl = append(ddl, `create function trg_vazio() returns trigger language plpgsql as $f$ begin return new; end $f$`)
 	for _, g := range gatilhosDoWorker {
+		// a tabela do gatilho (5.11: as de atendimentos não estão em nenhuma outra lista do fixture)
+		ddl = append(ddl, fmt.Sprintf("create table if not exists %s (id integer)", g[1]))
 		ddl = append(ddl, fmt.Sprintf("create trigger %s before update on %s for each row execute function trg_vazio()", g[0], g[1]))
 	}
 	for _, s := range ddl {

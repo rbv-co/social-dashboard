@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/acesso"
 	"github.com/rbv-co/social-dashboard/api/internal/acessos"
+	"github.com/rbv-co/social-dashboard/api/internal/atendimentos"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/canais"
@@ -71,11 +72,12 @@ const (
 // funções do seu domínio, com parâmetros, retorno e o portão que espelha a checagem interna da
 // função, e TIRA os nomes dela de RPCPendentes (montarRPC recusa os dois lugares ao mesmo tempo).
 var FuncoesRPC = slices.Concat(
-	trafego.FuncoesRPC,    // Plano 5.7
-	patrimonio.FuncoesRPC, // Plano 5.2
-	conteudo.FuncoesRPC,   // Plano 5.9
-	vessel.FuncoesRPC,     // Plano 5.10
-	frota.FuncoesRPC,      // Plano 5.3
+	trafego.FuncoesRPC,      // Plano 5.7
+	patrimonio.FuncoesRPC,   // Plano 5.2
+	conteudo.FuncoesRPC,     // Plano 5.9
+	vessel.FuncoesRPC,       // Plano 5.10
+	frota.FuncoesRPC,        // Plano 5.3
+	atendimentos.FuncoesRPC, // Plano 5.11
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.

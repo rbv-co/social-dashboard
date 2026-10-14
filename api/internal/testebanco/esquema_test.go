@@ -48,13 +48,18 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 		t.Fatal(err)
 	}
 	if quer := []string{
-		"conteudo_pecas_guarda", "equipes_atualizado", "gt_rascunho_updated_at", "trg_bem_de_veiculo_segue_a_frota", "trg_espelhar_grupo_do_canal",
-		"trg_espelhar_rename_do_grupo", "trg_frota_aceite_imutavel", "trg_frota_checar_arquivamento", "trg_frota_checar_decisao",
-		"trg_frota_checklist_enfileirar_pdf", "trg_frota_checklist_imutavel", "trg_frota_espelha_responsavel", "trg_frota_espelha_situacao",
-		"trg_frota_espelha_situacao_no_bem", "trg_frota_fechar_posse_orfa", "trg_frota_gravar_historico", "trg_frota_resposta_imutavel",
-		"trg_frota_uso_enfileirar_pdf", "trg_guard_profiles", "trg_impedir_autopromocao", "trg_patrimonio_espelha_responsavel",
-		"trg_patrimonio_espelha_situacao", "trg_vessel_lote_material_recalcula_garantia", "trg_vessel_lote_novo_herda_material",
-		"trg_vessel_lotes_marcar_teste", "vessel_clientes_atualizado", "vessel_registros_mata_o_lembrete", "vessel_registros_preencher_cliente_id"}; !reflect.DeepEqual(gat, quer) {
+		"conteudo_pecas_guarda", "equipes_atualizado", "gt_rascunho_updated_at", "trg_bem_de_veiculo_segue_a_frota",
+		"trg_espelhar_grupo_do_canal", "trg_espelhar_rename_do_grupo", "trg_frota_aceite_imutavel", "trg_frota_checar_arquivamento",
+		"trg_frota_checar_decisao", "trg_frota_checklist_enfileirar_pdf", "trg_frota_checklist_imutavel", "trg_frota_espelha_responsavel",
+		"trg_frota_espelha_situacao", "trg_frota_espelha_situacao_no_bem", "trg_frota_fechar_posse_orfa", "trg_frota_gravar_historico",
+		"trg_frota_resposta_imutavel", "trg_frota_uso_enfileirar_pdf", "trg_guard_profiles", "trg_impedir_autopromocao",
+		"trg_patrimonio_espelha_responsavel", "trg_patrimonio_espelha_situacao", "trg_vessel_lote_material_recalcula_garantia",
+		"trg_vessel_lote_novo_herda_material", "trg_vessel_lotes_marcar_teste", "vessel_atendimentos_atualizado",
+		"vessel_clientes_atualizado", "vessel_lista_espera_espelhar", "vessel_pessoas_atualizado", "vessel_private_edits_funil",
+		"vessel_rd_na_fila", "vessel_registros_mata_o_lembrete", "vessel_registros_preencher_cliente_id",
+		"vessel_stylist_etapas_historico_so_acrescenta", "vessel_stylist_etapas_trilha_so_acrescenta", "vessel_stylist_motivos_de_saida_nao_se_apaga",
+		"vessel_stylist_qualificacoes_so_acrescenta", "vessel_stylists_etapa_antes", "vessel_stylists_etapa_depois",
+		"vessel_stylists_sem_contato_some"}; !reflect.DeepEqual(gat, quer) {
 		t.Fatalf("gatilhos = %v, esperava %v", gat, quer)
 	}
 
