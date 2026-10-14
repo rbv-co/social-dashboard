@@ -2,6 +2,7 @@ package arquivos
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -110,5 +111,82 @@ func TestLimiteDoCurriculo(t *testing.T) {
 		if st, r := m.curriculo(t, fmt.Sprintf("consultor-brasilia/c%d.pdf", i), "application/pdf", pdf, "X-Core: 1"); st != 200 {
 			t.Fatalf("Core %d = %d %s", i+1, st, r)
 		}
+	}
+}
+
+// O currículo sobe do NAVEGADOR do site (hoje) e do Core: o preflight e a resposta levam o CORS só para as origens
+// configuradas; com VESSEL_SO_CORE o anônimo não grava (só o Core).
+func TestCurriculoCORSESoCore(t *testing.T) {
+	m := novoMundo(t, func(s *Servico) { s.Quem = quemDeTeste; s.Origens = []string{"https://vesselbrasil.com.br"} })
+	pre := func(origem string) (int, http.Header) {
+		r := httptest.NewRequest("OPTIONS", "/storage/v1/object/vessel-curriculos/consultor-tivoli/a.pdf", nil)
+		if origem != "" {
+			r.Header.Set("Origin", origem)
+		}
+		r.Header.Set("Access-Control-Request-Method", "POST")
+		w := httptest.NewRecorder()
+		m.Pub.ServeHTTP(w, r)
+		return w.Code, w.Header()
+	}
+	if st, h := pre("https://vesselbrasil.com.br"); st != 204 || h.Get("Access-Control-Allow-Origin") != "https://vesselbrasil.com.br" ||
+		!strings.Contains(h.Get("Access-Control-Allow-Headers"), "authorization") || !strings.Contains(h.Get("Access-Control-Allow-Headers"), "apikey") {
+		t.Errorf("preflight da origem do site = %d %v", st, h)
+	}
+	if st, h := pre("https://outro-site.com"); st != 204 || h.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("preflight de origem alheia = %d ACAO %q", st, h.Get("Access-Control-Allow-Origin"))
+	}
+	r := httptest.NewRequest("POST", "/storage/v1/object/vessel-curriculos/consultor-tivoli/a.pdf", bytes.NewReader(pdf))
+	r.RemoteAddr = "127.0.0.1:4444"
+	r.Header.Set("Content-Type", "application/pdf")
+	r.Header.Set("Origin", "https://vesselbrasil.com.br")
+	w := httptest.NewRecorder()
+	m.Pub.ServeHTTP(w, r)
+	if w.Code != 200 || w.Header().Get("Access-Control-Allow-Origin") != "https://vesselbrasil.com.br" {
+		t.Errorf("envio do site = %d ACAO %q", w.Code, w.Header().Get("Access-Control-Allow-Origin"))
+	}
+	m.S.SoCore = true
+	if st, _ := m.curriculo(t, "consultor-tivoli/b.pdf", "application/pdf", pdf, "X-Real-IP: 198.51.100.4"); st != 403 || m.existe("vessel-curriculos", "consultor-tivoli/b.pdf") {
+		t.Errorf("anônimo com VESSEL_SO_CORE = %d (existe=%t), esperava 403", st, m.existe("vessel-curriculos", "consultor-tivoli/b.pdf"))
+	}
+	if st, _ := m.curriculo(t, "consultor-tivoli/c.pdf", "application/pdf", pdf, "X-Core: 1"); st != 200 {
+		t.Errorf("Core com VESSEL_SO_CORE = %d, esperava 200", st)
+	}
+}
+
+// Nome com "%" (copiado do Supabase): sobe, baixa, lista e assina; a URL codificada de verdade (%25) e a que chega com
+// "%2F" (RawPath) são lidas uma vez só, nunca decodificadas duas.
+func TestNomeComPorcentoENomesCodificados(t *testing.T) {
+	m := novoMundo(t)
+	for _, c := range []struct{ url, esperado string }{
+		{"relatorio%20100%25.pdf", "relatorio 100%.pdf"},
+		{"a%2541.pdf", "a%41.pdf"},
+		{"pasta%2Ffilho.pdf", "pasta/filho.pdf"},
+		{"acentu%C3%A7%C3%A3o.pdf", "acentu\u00e7\u00e3o.pdf"},
+	} {
+		if st, r := m.envia(t, "super", "publico", c.url, "application/pdf", pdf); st != 200 {
+			t.Errorf("PUT %s = %d %s", c.url, st, r)
+			continue
+		}
+		if !m.existe("publico", c.esperado) {
+			t.Errorf("PUT %s não gravou %q", c.url, c.esperado)
+		}
+		if st, _, _ := m.pede(t, "super", "GET", "/arquivos/publico/"+c.url, ""); st != 200 {
+			t.Errorf("GET %s = %d", c.url, st)
+		}
+		if st, _, _ := m.publico(t, "/storage/v1/object/public/publico/"+c.url); st != 200 {
+			t.Errorf("GET público %s = %d", c.url, st)
+		}
+	}
+	// assinar com o nome decodificado e abrir pela URL que a rota devolveu
+	st, r, _ := m.pede(t, "super", "POST", "/arquivos/publico/assinar", `{"caminhos":["relatorio 100%.pdf"]}`)
+	if st != 200 || !strings.Contains(r, "relatorio%20100%25.pdf") {
+		t.Fatalf("assinar = %d %s", st, r)
+	}
+	var l []struct{ URL string }
+	if err := json.Unmarshal([]byte(r), &l); err != nil || len(l) != 1 {
+		t.Fatal(err)
+	}
+	if st, _, _ := m.publico(t, l[0].URL); st != 200 {
+		t.Errorf("a URL assinada do nome com %% = %d", st)
 	}
 }

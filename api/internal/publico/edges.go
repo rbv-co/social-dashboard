@@ -3,6 +3,7 @@ package publico
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -90,6 +92,17 @@ func (s *Servico) chamadas(r *http.Request, ip string) *chamadasDoBanco {
 	return &chamadasDoBanco{s: s, ctx: r.Context(), ip: ip, agente: r.UserAgent(), fns: porNome(deEdge)}
 }
 
+// aPartirDeAgora: as mesmas chamadas, mas num contexto que NÃO cancela quando a pessoa fecha a aba (30 s no máximo). Os
+// passos que vêm DEPOIS de algo já gravado (mandar a senha por e-mail, efetivá-la, apagar a conta cujo e-mail não saiu)
+// têm de terminar: a edge de origem seguia até o fim com a conexão caída, e cortar no meio deixaria a cliente com uma
+// senha que nunca vale ou uma conta sem senha entregue.
+func (c *chamadasDoBanco) aPartirDeAgora() (*chamadasDoBanco, context.Context, context.CancelFunc) {
+	ctx, cancela := context.WithTimeout(context.WithoutCancel(c.ctx), 30*time.Second)
+	novo := *c
+	novo.ctx = ctx
+	return &novo, ctx, cancela
+}
+
 // chamar devolve o JSON da função ("null" vira nil). Parâmetro com valor nil não é enviado.
 func (c *chamadasDoBanco) chamar(nome string, args map[string]json.RawMessage) (json.RawMessage, error) {
 	f, ok := c.fns[nome]
@@ -152,7 +165,7 @@ func (s *Servico) hashDoIP(ip string) string {
 	if ip == "" {
 		ip = "desconhecido"
 	}
-	h := sha256.Sum256([]byte("vessel-conta:" + s.Segredo + ":" + ip))
+	h := sha256.Sum256([]byte("vessel-conta:" + s.salDoIP() + ":" + ip))
 	return hex.EncodeToString(h[:])[:32]
 }
 
@@ -164,4 +177,18 @@ func (c *chamadasDoBanco) dentroDoTeto(chave string, max, janela int) bool {
 		return true
 	}
 	return bytes.Equal(bytes.TrimSpace(saida), []byte("true"))
+}
+
+// salDoIP: a chave do Core; sem ela (a config deixa vazio), um sal sorteado na subida: o hash gravado na sessão nunca é
+// um SHA-256 puro do IP (reversível por força bruta em IPv4). Muda a cada subida: serve a auditoria, não a identidade.
+func (s *Servico) salDoIP() string {
+	if s.Segredo != "" {
+		return s.Segredo
+	}
+	s.salAleatorio.Do(func() {
+		var b [16]byte
+		rand.Read(b[:])
+		s.sal = hex.EncodeToString(b[:])
+	})
+	return s.sal
 }

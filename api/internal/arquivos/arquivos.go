@@ -37,6 +37,10 @@ type Servico struct {
 	Agora   func() time.Time
 	// Quem diz de onde vem o pedido: o IP do cliente e se quem chama é o Core (chave dele). nil = (auth.IPDe, false).
 	Quem func(r *http.Request) (ip string, core bool)
+	// Origens: CORS do envio de currículo (o navegador do site o faz direto hoje). SoCore: com VESSEL_SO_CORE ligado só o
+	// Core envia currículo (o site passa pelo Core).
+	Origens []string
+	SoCore  bool
 
 	buckets map[string]*bucket
 	once    sync.Once
@@ -114,7 +118,22 @@ func (s *Servico) MontarPublicas(r chi.Router) {
 	s.iniciar()
 	r.Get("/storage/v1/object/public/{bucket}/*", s.baixarPublico)
 	r.Get("/storage/v1/object/sign/{bucket}/*", s.baixarAssinado)
-	r.With(s.limitesDoCurriculo()).Post("/storage/v1/object/"+nomeCurriculos+"/{pasta}/{arquivo}", s.enviarCurriculo)
+	// o envio de currículo vem do navegador do site (preflight + CORS) e do Core
+	r.Route("/storage/v1/object/"+nomeCurriculos, func(r chi.Router) {
+		r.Use(dados.CORS(s.Origens, "POST, OPTIONS"))
+		r.Options("/{pasta}/{arquivo}", func(http.ResponseWriter, *http.Request) {}) // o CORS responde 204
+		r.With(s.limitesDoCurriculo()).Post("/{pasta}/{arquivo}", s.enviarCurriculo)
+	})
+}
+
+// caminhoDoPedido: o curinga da rota como caminho do objeto. O chi roteia pelo RawPath quando ele existe (o valor vem
+// codificado) e pelo Path quando não (já decodificado): decodificar de novo estragaria "100%.pdf" e "a%2541.pdf".
+func caminhoDoPedido(r *http.Request) (string, error) {
+	v := chi.URLParam(r, "*")
+	if r.URL.RawPath == "" {
+		return v, nil
+	}
+	return url.PathUnescape(v)
 }
 
 func (s *Servico) quem(r *http.Request) (string, bool) {
@@ -143,7 +162,7 @@ func (s *Servico) cenario(w http.ResponseWriter, r *http.Request, comCaminho boo
 	caminho := ""
 	if comCaminho {
 		var err error
-		if caminho, err = url.PathUnescape(chi.URLParam(r, "*")); err != nil || !caminhoValido(caminho) {
+		if caminho, err = caminhoDoPedido(r); err != nil || !caminhoValido(caminho) {
 			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "Caminho de arquivo inválido.")
 			return nil, "", nil, nil, false
 		}
@@ -180,7 +199,7 @@ func (s *Servico) baixarPublico(w http.ResponseWriter, r *http.Request) {
 		dados.Erro(w, http.StatusNotFound, "nao_encontrado", "")
 		return
 	}
-	c, err := url.PathUnescape(chi.URLParam(r, "*"))
+	c, err := caminhoDoPedido(r)
 	if err != nil || !caminhoValido(c) {
 		dados.Erro(w, http.StatusNotFound, "nao_encontrado", "")
 		return
@@ -200,7 +219,7 @@ func (s *Servico) baixarAssinado(w http.ResponseWriter, r *http.Request) {
 		dados.Erro(w, http.StatusServiceUnavailable, "indisponivel", "")
 		return
 	}
-	c, err := url.PathUnescape(chi.URLParam(r, "*"))
+	c, err := caminhoDoPedido(r)
 	exp, errExp := strconv.ParseInt(r.URL.Query().Get("exp"), 10, 64)
 	sig := r.URL.Query().Get("sig")
 	baixar := r.URL.Query().Get("baixar")

@@ -880,9 +880,9 @@ Plano: `docs/superpowers/plans/2026-10-14-api-go-plano-6-storage-publico.md` (a 
 
 | Variável | Para quê | Se faltar |
 |---|---|---|
-| `VESSEL_INTERNO_SEGREDO` | a chave que o Core manda (`Authorization: Bearer`) no lugar da anon; também salga o hash de IP da `vessel-conta` | ninguém é "o Core": só o anônimo (sem `p_teste`, IP do nginx) |
-| `VESSEL_SO_CORE` | `true` = as 14 funções de escrita só com a chave do Core | `false` (transição): o anônimo ainda as chama como hoje, com os tetos |
-| `ARQUIVOS_SEGREDO` | HMAC das URLs assinadas (`openssl rand -hex 32`) | assinar e abrir URL assinada respondem `503` |
+| `VESSEL_INTERNO_SEGREDO` (≥ 24 caracteres; menos que isso a API não sobe) | a chave que o Core manda (`Authorization: Bearer`) no lugar da anon; também salga o hash de IP da `vessel-conta` | ninguém é "o Core": só o anônimo (sem `p_teste`, IP do nginx) |
+| `VESSEL_SO_CORE` | `true` = as 14 funções de escrita e o envio de currículo só com a chave do Core | `false` (transição): o anônimo ainda os faz como hoje (o site no ar sobe o currículo do navegador, com CORS), com os tetos |
+| `ARQUIVOS_SEGREDO` (≥ 24 caracteres) | HMAC das URLs assinadas (`openssl rand -hex 32`) | assinar e abrir URL assinada respondem `503` |
 | `ARQUIVOS_DIR` | raiz dos buckets (padrão `/var/lib/api/arquivos`; do usuário do serviço, `0750`) | o padrão |
 | `ORIGENS_PERMITIDAS` | CORS das rotas públicas: origens exatas, sem barra final (`https://vesselbrasil.com.br,https://www.vesselbrasil.com.br`) | nenhuma origem recebe cabeçalho CORS |
 | `GITHUB_PAT` (já existia) | passa a acordar também o `espelho-da-vessel.yml` ("Actions: Read and write") | a tarefa do espelho falha à vista e o pedido espera |
@@ -900,7 +900,7 @@ Plano: `docs/superpowers/plans/2026-10-14-api-go-plano-6-storage-publico.md` (a 
    `select table_name, column_name from information_schema.columns where table_schema = 'public' and data_type in ('text', 'character varying', 'jsonb') and table_name not like 'pg_%';` e, por coluna, `select count(*) from <t> where <c>::text like '%supabase.co/storage%'`; troca: `update <t> set <c> = replace(<c>, 'https://<projeto>.supabase.co', 'https://<host da API>') where <c> like '%supabase.co/storage/v1/object/public/%'`. A rota `/storage/v1/object/public/{bucket}/*` serve o mesmo caminho. Código com a URL fixa: `acessos-proxy/index.ts:531`, `tela-de-acessos.vue:2004`, `tela-de-gestao-trafego.vue:5486`, `coletor/lib/storage-upload.mjs:29`.
 4. Core: `CADASTRO_SUPABASE_URL` → base da API e `CADASTRO_SUPABASE_CHAVE` → `VESSEL_INTERNO_SEGREDO`; **e tirar `p_teste` do corpo do visitante em `cadastro.go`** (hoje o repassa inteiro). Site (`vessel-brasil`): trocar a base nas páginas; quando as páginas passarem pelo Core, ligar `VESSEL_SO_CORE=true`.
 5. `HOSTS_DE_MIDIA` com o host público da API (o `meta-proxy` só aceita imagem desses hosts).
-6. Robôs de planilha: `espelho-da-vessel.yml` e `coletor/espelhar-vessel-no-zoho.mjs` passam a ler a API pelo `CENTRAL_API_*` (plano 01, coletor); sem isso o despacho da tarefa `vessel-espelhar-lista` acorda um robô que não acha o banco.
+6. Robôs de planilha: `espelho-da-vessel.yml` e `coletor/espelhar-vessel-no-zoho.mjs` hoje leem o Supabase (`SUPABASE_URL`/`SUPABASE_SERVICE_KEY`) e passam a ler a API pelo `CENTRAL_API_*` (plano 01, coletor). **Até lá, a tarefa `vessel-espelhar-lista` entra em `WORKER_TAREFAS_DESLIGADAS` na virada** (sem isso cada despacho regravaria a planilha com o Supabase congelado e ficaria marcado como feito); o pedido fica pendente e o primeiro despacho depois de ligá-la leva tudo.
 7. Desagendar no pg_cron (como no roteiro da virada): `vessel-rd-station` já estava na lista dos 19; **os 5 do Plano 6 seguem sem substituto na API** (ver abaixo).
 
 **Decisões (Ruling 6-N) e o que ficou de fora:**
@@ -911,5 +911,6 @@ Plano: `docs/superpowers/plans/2026-10-14-api-go-plano-6-storage-publico.md` (a 
 - **6-5 Segredo do Zoho continua só em `internal/zoho`** (`TestConexoesNuncaSaem`; e `grep -rln acessos_conexoes api --include=*.go | grep -v _test` dá só `cmd/api/conferir.go`, que confere as colunas, e `internal/zoho/zoho.go`); o cliente é só-leitura: nenhum consumidor Go escreve nele.
 - **6-6 Storage:** regras por bucket nas policies conhecidas (`db/migrations`) e, onde o repositório não tem policy (`arquivos`, `avatars`, `profile-pics`, `publico`), nas telas que usam (Banco: `permissions.banco` ver/criar/excluir). `ig-cache` e `fotos-modelo` ficam fora. O banco de arquivos (`arquivos`) aceita html, svg, js e executável de propósito (os 41 tipos de hoje): por isso o download nunca renderiza na origem da API.
 - **6-7 Conta apagada se o e-mail não sai** (paridade com a edge): um timeout do ZeptoMail depois de o e-mail ter saído apaga uma conta cuja senha a cliente já recebeu.
+- **6-8 Revisão do PR (1 rodada):** o envio de currículo do navegador pede preflight (CORS) e respeita `VESSEL_SO_CORE`; nome de arquivo com `%` é lido uma vez só (o chi entrega o curinga decodificado ou codificado conforme o `RawPath`); o e-mail e a efetivação da senha terminam mesmo que a pessoa feche a aba (contexto sem cancelamento, 30 s); sem `VESSEL_INTERNO_SEGREDO` o hash de IP leva um sal sorteado. O PR #378 foi substituído por um branch sem o binário `api/api` (22 MB) que um `go build ./cmd/...` deixou num commit: `/api/api` entrou no `.gitignore`.
 - **Dependências com nome:** Core (`p_teste`, base e chave), site `vessel-brasil` (base), plano 01 coletor (`CENTRAL_API_*` no espelho), nginx da API, plano 08 (os 5 robôs e os 2 proxies).
 

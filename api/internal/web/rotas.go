@@ -144,7 +144,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 	vs.Montar(r)
 	// Plano 6: Storage em disco. URL pública, URL assinada e envio de currículo (Core/anônimo) são anônimos; o resto vai no
 	// grupo de sessão, SEM o prazo de domínio (cada transferência estende o da própria conexão).
-	arq := &arquivos.Servico{Raiz: cfg.ArquivosDir, Segredo: cfg.ArquivosSegredo, Quem: vs.Quem}
+	arq := &arquivos.Servico{Raiz: cfg.ArquivosDir, Segredo: cfg.ArquivosSegredo, Quem: vs.Quem, Origens: cfg.Origens, SoCore: cfg.VesselSoCore}
 	arq.MontarPublicas(r)
 	av := &meta.AoVivo{Pool: p, Core: cli}
 	r.Group(func(r chi.Router) {

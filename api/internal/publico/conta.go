@@ -61,12 +61,12 @@ func (s *Servico) Conta(m Mailer) Edge {
 			}
 			email, _ := data["email"].(string)
 			txt := textoDoPrimeiroAcesso(corpo.texto("nome"), senha)
-			if m.Mandar(r.Context(), email, txt.Assunto, txt.HTML, txt.Texto) != nil {
+			// a conta JÁ está gravada: e-mail e (se ele falhar) a limpeza terminam mesmo que a pessoa feche a aba
+			cc, ctx, cancela := c.aPartirDeAgora()
+			defer cancela()
+			if m.Mandar(ctx, email, txt.Assunto, txt.HTML, txt.Texto) != nil {
 				// E-MAIL QUE NÃO SAI deixaria a cliente com perfil e sem senha: a conta é apagada e ela tenta de novo
-				if _, err := c.chamar("vessel_conta_apagar_recem_criada", map[string]json.RawMessage{"p_cliente_id": lit(data["cliente_id"])}); err != nil {
-					// o erro já foi logado por chamar
-					_ = err
-				}
+				cc.chamar("vessel_conta_apagar_recem_criada", map[string]json.RawMessage{"p_cliente_id": lit(data["cliente_id"])}) // o erro já foi logado por chamar
 				responder(w, http.StatusOK, map[string]any{"ok": false, "motivo": "email_nao_saiu"})
 				return
 			}
@@ -106,9 +106,13 @@ func (s *Servico) Conta(m Mailer) Edge {
 				senha := gerarSenha()
 				email, _ := data["email"].(string)
 				txt := textoDaSenhaNova(senha)
-				// SÓ EFETIVA SE O E-MAIL SAIU: a senha antiga continua valendo e ela pode tentar de novo
-				if m.Mandar(r.Context(), email, txt.Assunto, txt.HTML, txt.Texto) == nil {
-					c.chamar("vessel_conta_efetivar_nova_senha", map[string]json.RawMessage{"p_cliente_id": lit(data["cliente_id"]), "p_senha": lit(senha)})
+				// SÓ EFETIVA SE O E-MAIL SAIU: a senha antiga continua valendo e ela pode tentar de novo. E-mail e efetivação
+				// terminam juntos mesmo que a pessoa feche a aba logo depois do envio (senão ela receberia uma senha que
+				// nunca passa a valer)
+				cc, ctx, cancela := c.aPartirDeAgora()
+				defer cancela()
+				if m.Mandar(ctx, email, txt.Assunto, txt.HTML, txt.Texto) == nil {
+					cc.chamar("vessel_conta_efetivar_nova_senha", map[string]json.RawMessage{"p_cliente_id": lit(data["cliente_id"]), "p_senha": lit(senha)})
 				}
 			}
 			responder(w, http.StatusOK, map[string]any{"ok": true})

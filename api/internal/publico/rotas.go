@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -56,6 +57,9 @@ type Servico struct {
 
 	// Tetos por minuto (0 = o padrão): por IP e global do anônimo, e o disjuntor do Core.
 	PorIP, Global, DoCore int
+
+	salAleatorio sync.Once
+	sal          string
 
 	limIP, limGlobal, limCore *auth.Limitador
 	Edges                     map[string]Edge // functions/v1/<nome>
@@ -119,7 +123,7 @@ func (s *Servico) Montar(r chi.Router) {
 	s.limIP, s.limGlobal, s.limCore = novo(teto(s.PorIP, LimitePorIP), JanelaPublica), novo(teto(s.Global, TetoGlobal), JanelaPublica), novo(teto(s.DoCore, TetoGlobalCore), JanelaPublica)
 	pub, internas := porNome(publico), porNome(interno)
 	r.Route("/rest/v1/rpc", func(r chi.Router) {
-		r.Use(s.cors)
+		r.Use(dados.CORS(s.Origens, "POST, OPTIONS"))
 		r.Options("/{nome}", func(http.ResponseWriter, *http.Request) {}) // o cors responde 204
 		r.With(soJSON, s.limitar).Post("/{nome}", func(w http.ResponseWriter, r *http.Request) {
 			core := s.ehCore(r)
@@ -135,7 +139,7 @@ func (s *Servico) Montar(r chi.Router) {
 		})
 	})
 	r.Route("/functions/v1", func(r chi.Router) {
-		r.Use(s.cors)
+		r.Use(dados.CORS(s.Origens, "POST, OPTIONS"))
 		r.Options("/{edge}", func(http.ResponseWriter, *http.Request) {})
 		r.With(soJSON, s.limitar).Post("/{edge}", func(w http.ResponseWriter, r *http.Request) {
 			e, ok := s.Edges[chi.URLParam(r, "edge")]
@@ -204,28 +208,6 @@ func soJSON(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 			dados.Erro(w, http.StatusUnsupportedMediaType, "tipo_de_conteudo", "Envie o pedido como application/json.")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// cors: só as origens configuradas; preflight responde 204 sem tocar no banco.
-func (s *Servico) cors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Vary", "Origin") // a resposta muda com a origem: cache não pode misturar
-		if og := r.Header.Get("Origin"); og != "" {
-			for _, ok := range s.Origens {
-				if og == ok {
-					w.Header().Set("Access-Control-Allow-Origin", og)
-					w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "apikey, authorization, content-type, x-client-info, prefer")
-					w.Header().Set("Access-Control-Max-Age", "600")
-				}
-			}
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)

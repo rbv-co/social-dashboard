@@ -2,9 +2,11 @@ package publico
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -266,3 +268,77 @@ func TestContaEntradaRuim(t *testing.T) {
 		t.Errorf("edge fora da lista = %d, esperava 404", st)
 	}
 }
+
+// cancelaAoEnviar: no meio do envio a pessoa fecha a aba (o contexto do pedido é cancelado); o e-mail sai ou falha
+// conforme `falha`.
+type cancelaAoEnviar struct {
+	cancela func()
+	falha   bool
+	texto   string
+}
+
+func (c *cancelaAoEnviar) Mandar(_ context.Context, _, _, _, texto string) error {
+	c.texto = texto
+	c.cancela()
+	if c.falha {
+		return errors.New("zeptomail: rede")
+	}
+	return nil
+}
+
+func (m *mundo) edgeCancelada(t *testing.T, corpo string, mail *cancelaAoEnviar) {
+	t.Helper()
+	ctx, cancela := context.WithCancel(t.Context())
+	defer cancela()
+	mail.cancela = cancela
+	m.S.Edges["vessel-conta"] = m.S.Conta(mail)
+	r := httptest.NewRequest("POST", "/functions/v1/vessel-conta", strings.NewReader(corpo)).WithContext(ctx)
+	r.RemoteAddr = "127.0.0.1:5555"
+	r.Header.Set("Content-Type", "application/json")
+	m.H.ServeHTTP(httptest.NewRecorder(), r)
+}
+
+// A pessoa fecha a aba depois de a conta estar gravada: o "esqueci" ainda efetiva a senha que o e-mail entregou, e o
+// "criar" com e-mail que falha ainda apaga a conta (sem a cliente ficar com perfil e sem senha).
+func TestFecharAAbaNoMeioNaoDeixaContaPelaMetade(t *testing.T) {
+	m, mail := mundoDaConta(t)
+	_, _, o := m.edge(t, "vessel-conta", criarConta("Ana Souza", cpfAna, "ana@x.com"))
+	senhaAntiga, _ := o["senha"].(string)
+	_ = mail
+
+	cortaEEnvia := &cancelaAoEnviar{}
+	m.edgeCancelada(t, `{"acao":"esqueci","login":"ana@x.com"}`, cortaEEnvia)
+	novaSenha := strings.TrimSpace(strings.TrimPrefix(cortaEEnvia.texto[strings.Index(cortaEEnvia.texto, "Sua senha: "):], "Sua senha: "))[:12]
+	m.S.Edges["vessel-conta"] = m.S.Conta(mail)
+	if _, r, o := m.edge(t, "vessel-conta", fmt.Sprintf(`{"acao":"entrar","login":"ana@x.com","senha":%q}`, novaSenha)); o["ok"] != true {
+		t.Errorf("a senha que o e-mail entregou não vale (a efetivação foi cortada): %s", r)
+	}
+	if _, _, o := m.edge(t, "vessel-conta", fmt.Sprintf(`{"acao":"entrar","login":"ana@x.com","senha":%q}`, senhaAntiga)); o["ok"] == true {
+		t.Error("a senha antiga continua valendo")
+	}
+
+	// criar + e-mail que falha + aba fechada: a conta some
+	m.edgeCancelada(t, criarConta("Beto Lima", cpfBeto, "beto@x.com"), &cancelaAoEnviar{falha: true})
+	if got := m.um(t, `select count(*)::text from vessel_clientes where email = 'beto@x.com'`); got != "0" {
+		t.Errorf("a conta sem senha entregue ficou (%s): a limpeza foi cortada com a aba", got)
+	}
+}
+
+// Sem VESSEL_INTERNO_SEGREDO o hash de IP da sessão leva um sal sorteado na subida (nunca o SHA-256 puro do IP) e é
+// estável dentro do processo; com o segredo, o sal é ele.
+func TestHashDoIPSemSegredoTemSal(t *testing.T) {
+	s := &Servico{}
+	puro := fmt.Sprintf("%x", sha256sum("vessel-conta::1.2.3.4"))[:32]
+	h := s.hashDoIP("1.2.3.4")
+	if h == puro || len(h) != 32 || h != s.hashDoIP("1.2.3.4") || h == s.hashDoIP("1.2.3.5") {
+		t.Errorf("hash sem segredo = %s (puro %s)", h, puro)
+	}
+	if outro := (&Servico{}).hashDoIP("1.2.3.4"); outro == h {
+		t.Error("dois processos geraram o mesmo sal")
+	}
+	if (&Servico{Segredo: "a"}).hashDoIP("1.2.3.4") == (&Servico{Segredo: "b"}).hashDoIP("1.2.3.4") {
+		t.Error("o segredo não entra no hash")
+	}
+}
+
+func sha256sum(s string) []byte { h := sha256.Sum256([]byte(s)); return h[:] }

@@ -45,8 +45,9 @@ type Disparo struct {
 }
 
 // Disparos: a lista fechada. O 5.10 não acrescenta entrada: os robôs do selo rodam na VPS e o Actions não alcança o
-// banco (Ruling 5.10-2). O Plano 6 acrescenta UMA: o espelho da planilha da Vessel (o workflow lê a API pelo
-// CENTRAL_API_*, não o banco), sem entradas.
+// banco (Ruling 5.10-2). O Plano 6 acrescenta UMA: o espelho da planilha da Vessel, sem entradas. ATENÇÃO: hoje o
+// workflow espelho-da-vessel.yml lê o Supabase; ele passa a ler a API pelo CENTRAL_API_* no plano 01 (coletor). Até lá a
+// tarefa vessel-espelhar-lista fica em WORKER_TAREFAS_DESLIGADAS depois da virada (NOTAS, Plano 6).
 var Disparos = map[string]Disparo{
 	"fabrica":        {Repo: repoDoPainel, Workflow: "fabrica.yml", Ref: "main", Entradas: map[string]*regexp.Regexp{"job_id": reUUID}},
 	"espelho-vessel": {Repo: repoDoPainel, Workflow: "espelho-da-vessel.yml", Ref: "main", Entradas: map[string]*regexp.Regexp{}},

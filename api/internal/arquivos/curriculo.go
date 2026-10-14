@@ -56,6 +56,10 @@ func (s *Servico) limitesDoCurriculo() func(http.Handler) http.Handler {
 }
 
 func (s *Servico) enviarCurriculo(w http.ResponseWriter, r *http.Request) {
+	if _, core := s.quem(r); s.SoCore && !core { // VESSEL_SO_CORE: o site passa pelo Core, o navegador não grava no disco
+		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+		return
+	}
 	pasta, arquivo := chi.URLParam(r, "pasta"), chi.URLParam(r, "arquivo")
 	if !slices.Contains(pastasDeCurriculo, pasta) || !reNomeDeCurriculo.MatchString(arquivo) || arquivo[0] == '.' {
 		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
