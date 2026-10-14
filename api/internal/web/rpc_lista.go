@@ -20,13 +20,6 @@ var RPCPendentes = []string{
 	// 5.3 (frota): 2
 	"etiqueta_quem_e",
 	"frota_corrente_do_veiculo",
-	// 5.9 (conteúdo): 6
-	"conteudo_aprovar_e_agendar",
-	"conteudo_casar_na_mao",
-	"conteudo_decidir",
-	"conteudo_decidir_casamento",
-	"conteudo_ideia_virar_peca",
-	"conteudo_reavisar",
 	// 5.10 (autenticidade): 16
 	"vessel_alertas",
 	"vessel_baixar_garantia",

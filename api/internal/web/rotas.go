@@ -15,6 +15,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/canais"
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/conteudo"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/custo"
 	"github.com/rbv-co/social-dashboard/api/internal/email"
@@ -65,6 +66,7 @@ const (
 var FuncoesRPC = slices.Concat(
 	trafego.FuncoesRPC,    // Plano 5.7
 	patrimonio.FuncoesRPC, // Plano 5.2
+	conteudo.FuncoesRPC,   // Plano 5.9
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
@@ -168,6 +170,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			patrimonio.Montar(r, p)
 			// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
 			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
+			conteudo.Montar(r, p) // Plano 5.9
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {
 				panic(err) // declaração errada: a API não sobe
