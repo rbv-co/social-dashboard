@@ -64,13 +64,21 @@ var colunasDoWorker = map[string]string{
 	"gc_estoque_item":              "deposito_id,sku,produto,categoria,saldo",
 	"gc_vendas_item":               "mes,canal_loja_id,sku,produto,categoria,unidades,faturamento",
 	"gestao_comercial_briefings":   "id,rodada,periodo,resumo,conteudo,dados_json,created_at",
-	"acessos_pessoas":              "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id",       // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
-	"frota_veiculos":               "id,placa,nome,marca,fipe_centavos,situacao,pessoa_id,bem_id,atualizado_em", // + Plano 5.2 (sincronizar_carro_e_bem); o 5.3 amplia
-	"frota_checklist_itens":        "cadencia,ordem,ativo",
-	"frota_checklist_config":       "dia_semanal,semana_mensal,dia_mensal",
-	"frota_checklist":              "veiculo_id,feita_em,cadencias",
-	"frota_uso":                    "id,veiculo_id,pessoa_id,tipo,saida_em,volta_em",
-	"frota_requisicoes":            "id,veiculo_id,situacao,retirada_prevista,destino,motivo_decisao,encerrada_motivo,pessoa_id,pessoa_nome,criada_por",
+	"acessos_pessoas":              "id,nome,profile_id,email_corporativo,cargo,status,setor_id,marca_id", // + Plano 5.2 (cadastro rápido, ficha); o 5.4 amplia
+	"frota_veiculos":               "id,placa,nome,marca,ano,cor,combustivel,renavam,chassi,tipo_oleo,contrato,codigo_patrimonial,aluguel_centavos,fipe_centavos,categoria_comercial,blindado,situacao,pessoa_id,local_texto,observacao,criado_em,atualizado_em,seguro_seguradora,seguro_apolice,seguro_vence_em,seguro_valor_centavos,tag_pedagio,rastreador,bem_id,contato_nome,contato_telefone,contato_papel,oficina_nome,oficina_telefone,empresa_id,local_id,comodo_id",
+	"frota_uso":                    "id,veiculo_id,pessoa_id,pessoa_nome,saida_em,km_saida,volta_em,km_volta,destino,finalidade,tanque_quartos,observacao,criado_em,tipo,aceite_em,aceite_por,aceite_nome,aceite_rabisco,aceite_checklist_id,aceite_checklist_hash",
+	"frota_requisicoes":            "id,veiculo_id,pessoa_id,pessoa_nome,departamento,destino,finalidade,retirada_prevista,devolucao_prevista,situacao,criada_por,criada_em,decidida_por,decidida_em,motivo_decisao,uso_id,observacao,encerrada_por,encerrada_em,encerrada_motivo,arquivada_em,arquivada_por",
+	"frota_requisicoes_historico":  "requisicao_id,campo,de,para,motivo,quem,quando",
+	"frota_checklist":              "id,veiculo_id,pessoa_id,pessoa_nome,feita_em,cadencias,hodometro,hodometro_justificativa,resultado,anomalias,criada_em,criada_por,aberta_em,assinada_em,assinada_por,assinatura_hash,assinatura_hash_anterior,sem_assinatura_motivo,assinatura_rabisco,assinatura_versao",
+	"frota_checklist_respostas":    "id,checklist_id,item_id,item_texto,cadencia,estado,observacao,ordem",
+	"frota_checklist_pdf":          "checklist_id,situacao,tentativas,ultimo_erro,criado_em,enviado_em",
+	"frota_uso_pdf":                "uso_id,situacao",
+	"frota_checklist_itens":        "id,ordem,item,cadencia,ativo,observacao,impede_uso",
+	"frota_checklist_config":       "id,dia_semanal,semana_mensal,dia_mensal",
+	"frota_plano_revisao":          "id,item,a_cada_km,ordem,ativo,observacao",
+	"frota_manutencoes":            "id,veiculo_id,km,feita_em,oficina,total_centavos,observacao,criada_em,criada_por",
+	"frota_revisoes":               "id,veiculo_id,item,km,feita_em,oficina,custo_centavos,observacao,criada_em,criada_por,manutencao_id",
+	"frota_abastecimentos":         "id,veiculo_id,pessoa_id,pessoa_nome,abastecido_em,km,litros,total_centavos,tanque_depois,combustivel,posto,observacao,criado_em,criado_por",
 	"conteudo_pecas":               "id,account_id,titulo,formato,status,legenda,hashtags,observacoes,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel,criado_por,aprovado_por,aprovado_em,motivo_reprovacao,created_at,updated_at", // + Plano 5.9
 	"conteudo_eventos":             "id,peca_id,de,para,acao,detalhe,quem,quando",                                                                                                                                                                           // + Plano 5.9
 	"conteudo_casamentos":          "id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo,decidido_por,decidido_em,created_at",                                                                                    // + Plano 5.9
@@ -141,6 +149,12 @@ var colunasDoWorker = map[string]string{
 // leitura direta no Scan ou texto de data). "a|b" = qualquer um dos dois; "text" aceita varchar. Só entram
 // as colunas em que o tipo errado quebra o SQL ou muda o resultado (o resto o código converte com cast).
 var tiposDoWorker = map[string]string{
+	// Plano 5.3: filtros e conferências com cast, a linha única da configuração e o dinheiro da Frota
+	"frota_veiculos.id": "uuid", "frota_veiculos.pessoa_id": "uuid", "frota_uso.id": "uuid", "frota_uso.veiculo_id": "uuid",
+	"frota_uso.saida_em": "timestamp with time zone", "frota_uso.volta_em": "timestamp with time zone",
+	"frota_checklist.assinada_em": "timestamp with time zone", "frota_checklist_respostas.checklist_id": "uuid",
+	"frota_checklist_config.id": "boolean", "frota_abastecimentos.total_centavos": "integer", "frota_abastecimentos.litros": "numeric",
+	"frota_manutencoes.total_centavos": "bigint", "frota_revisoes.custo_centavos": "bigint",
 	"accounts.id": "uuid", "accounts.conteudo_usa_portal": "boolean", "accounts.persona": "text", "profiles.id": "uuid", "profiles.features": "text[]", "profiles.permissions": "jsonb",
 	"profiles.is_superadmin": "boolean", "profiles.disabled": "boolean", "profiles.escopo_por_equipe": "boolean",
 	"profiles.precisa_trocar_senha": "boolean", "equipes.deposito_id": "bigint|integer", "equipes.canal_loja_id": "bigint|integer",
@@ -239,11 +253,16 @@ var unicosDoWorker = []string{
 	// Plano 5.5: Tabela.Gravar (on conflict) nos dois caches; e o único (chave, ano, mês) das metas, que o salvamento do mês presume
 	"bling_pedido_vendedor(pedido_id)", "bling_vendedores(vendor_id)",
 	"bling_metas(loja_id,year,month)", "bling_vendedor_metas(vendor_id,year,month)",
+	// Plano 5.3: os 409 das rotas da Frota dependem destes únicos completos
+	"frota_veiculos(placa)", "frota_checklist(veiculo_id,feita_em)", "frota_checklist_respostas(checklist_id,ordem)",
+	"frota_checklist_itens(item)", "frota_plano_revisao(item)",
+	"frota_checklist_pdf(checklist_id)", "frota_uso_pdf(uso_id)", // on conflict dos gatilhos das filas de PDF: sem o único a fila não enche e nada acusa
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
 // duplicata. Sem ele o insert passa e o evento entra duas vezes, sem erro nenhum.
-var deduplicadoresDoWorker = []string{"carrinho_eventos(evento_shopify_id)"}
+var deduplicadoresDoWorker = []string{"carrinho_eventos(evento_shopify_id)",
+	"frota_uso(veiculo_id)", "frota_veiculos(bem_id)"} // Plano 5.3: "um carro, uma saída aberta" e "um bem, um carro" (únicos parciais)
 
 // funcoesDoWorker: as funções SQL de produção que o código chama (assinatura de to_regprocedure).
 var funcoesDoWorker = []string{
@@ -259,6 +278,10 @@ var funcoesDoWorker = []string{
 	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
 	// Plano 5.2: os gatilhos do bem que as escritas do Patrimônio presumem (os 5 do carro, que a cadeia alcança, são do 5.3)
 	"bem_de_veiculo_segue_a_frota()", "patrimonio_espelha_responsavel_no_veiculo()", "patrimonio_espelha_situacao_no_veiculo()",
+	// Plano 5.3: os gatilhos que as escritas da Frota presumem (as 2 RPCs o conferirRPC cobre por web.FuncoesRPC)
+	"frota_aceite_imutavel()", "frota_checar_decisao()", "frota_checar_arquivamento()", "frota_gravar_historico()",
+	"frota_checklist_imutavel()", "frota_resposta_imutavel()", "frota_checklist_enfileirar_pdf()", "frota_uso_enfileirar_pdf()",
+	"frota_fechar_posse_orfa()", "frota_espelha_situacao_no_bem()", "frota_espelha_responsavel_no_bem()", "pode_aprovar_frota()",
 }
 
 // gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados
@@ -270,6 +293,13 @@ var gatilhosDoWorker = [][2]string{
 	{"trg_bem_de_veiculo_segue_a_frota", "patrimonio_bens"}, {"trg_patrimonio_espelha_responsavel", "patrimonio_bens"},
 	{"trg_patrimonio_espelha_situacao", "patrimonio_bens"},
 	{"conteudo_pecas_guarda", "conteudo_pecas"}, // Plano 5.9: sem ele, quem não aprova aprova pelo PATCH
+	// Plano 5.3: decisão, arquivamento, histórico, aceite e assinatura imutáveis, filas de PDF e o espelho do carro
+	{"trg_frota_checar_decisao", "frota_requisicoes"}, {"trg_frota_checar_arquivamento", "frota_requisicoes"},
+	{"trg_frota_gravar_historico", "frota_requisicoes"}, {"trg_frota_aceite_imutavel", "frota_uso"},
+	{"trg_frota_uso_enfileirar_pdf", "frota_uso"}, {"trg_frota_checklist_imutavel", "frota_checklist"},
+	{"trg_frota_checklist_enfileirar_pdf", "frota_checklist"}, {"trg_frota_resposta_imutavel", "frota_checklist_respostas"},
+	{"trg_frota_espelha_responsavel", "frota_veiculos"}, {"trg_frota_espelha_situacao", "frota_veiculos"},
+	{"trg_frota_espelha_situacao_no_bem", "frota_veiculos"}, {"trg_frota_fechar_posse_orfa", "frota_veiculos"},
 }
 
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há

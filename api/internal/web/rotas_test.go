@@ -311,6 +311,22 @@ var rotas59 = []string{
 	"GET /conteudo/jobs",
 }
 
+// Plano 5.3: as 27 rotas de frota.Montar (11 leituras e 16 escritas), no grupo de DOMÍNIO. Portão = catálogo
+// (is_frota_admin()), provado pela matriz de cada rota em `internal/frota`; vazamento e impersonado por
+// `TestNadaVazaParaQuemNaoTemFrota` e `TestEscritasRecusamImpersonado` (lá). As 2 RPCs entram por
+// POST /rpc/{nome} (lista branca); POST /avisar-decisao-de-reserva é do Plano 4 e fica onde está.
+var rotas53 = []string{
+	"GET /frota/veiculos", "POST /frota/veiculos", "PATCH /frota/veiculos/{id}",
+	"GET /frota/usos", "POST /frota/usos", "PATCH /frota/usos/{id}", "POST /frota/usos/trocar",
+	"GET /frota/requisicoes", "POST /frota/requisicoes", "PATCH /frota/requisicoes/{id}",
+	"GET /frota/checklists", "POST /frota/checklists", "GET /frota/checklists/respostas", "GET /frota/checklists/copias",
+	"GET /frota/checklist-itens", "POST /frota/checklist-itens", "PATCH /frota/checklist-itens/{id}",
+	"GET /frota/checklist-config", "PATCH /frota/checklist-config",
+	"GET /frota/plano-revisao", "POST /frota/plano-revisao", "PATCH /frota/plano-revisao/{id}",
+	"GET /frota/revisoes", "DELETE /frota/revisoes/{id}",
+	"POST /frota/manutencoes", "GET /frota/abastecimentos", "POST /frota/abastecimentos",
+}
+
 // Plano 5.5: as 18 rotas de vendas.Montar (14 leituras, 4 escritas), no grupo de DOMÍNIO. Portão = catálogo,
 // provado pela matriz de `internal/vendas`; vazamento por `TestNadaVazaEntreLojas`/`TestTodaLeituraTemEscopoDeclarado`,
 // impersonado por `TestEscritasRecusamImpersonado`.
@@ -325,7 +341,7 @@ var rotas55 = []string{
 }
 
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas55) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas53, rotas55) {
 		soSessao[c] = true
 	}
 }
@@ -506,7 +522,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas55, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9 e 5.5: no grupo de domínio, com o prazo dele
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3 e 5.5: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -1179,6 +1195,100 @@ func TestConteudoPelaMontagemReal(t *testing.T) {
 	var fila string
 	if err := p.QueryRow(ctx, `select count(*)::text || '|' || min(status) from conteudo_jobs`).Scan(&fila); err != nil || fila != "1|enfileirado" {
 		t.Errorf("a fila = %q %v, esperava 1|enfileirado", fila, err)
+	}
+}
+
+// Quem soma rotas ao grupo de domínio sem declarar aqui é pego: `rotas53` tem de ser EXATAMENTE as rotas
+// /frota/ montadas (nem mais, nem menos).
+func TestRotasDaFrotaSaoAsDeclaradas(t *testing.T) {
+	p := testebanco.Novo(t)
+	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
+	var montadas []string
+	if err := chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if strings.HasPrefix(rota, "/frota/") {
+			montadas = append(montadas, metodo+" "+rota)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(montadas)
+	quer := slices.Clone(rotas53)
+	slices.Sort(quer)
+	if len(rotas53) != 27 || !slices.Equal(montadas, quer) {
+		t.Errorf("rotas /frota/ montadas = %d: %v\nesperadas (27): %v", len(montadas), montadas, quer)
+	}
+}
+
+// Plano 5.3: a Frota pela montagem real (auth.Exigir → autz.ComEscopo → handler, o mesmo da produção).
+// Quem tem a feature frota grava; admin sem a Frota lê [] e não chega à linha; as 2 RPCs têm o portão de cada função.
+func TestFrotaPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	tok := map[string]string{}
+	for _, u := range []struct{ id, nome, papel, features string }{
+		{"5e200000-0000-4000-a000-0000000030a1", "motorista", "viewer", "{frota}"},
+		{"5e200000-0000-4000-a000-0000000030a2", "admin", "admin", "{}"},
+	} {
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, u.id, u.nome+"-53@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe) values ($1::uuid, $2::text, $3::text, $4::text, $5::text[], false)`,
+			u.id, u.nome+"-53@x.com", u.nome, u.papel, u.features); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if tok[u.nome], err = s.Criar(ctx, u.id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pedir := func(quem, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+tok[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	obs := func() string {
+		var v string
+		if err := p.QueryRow(ctx, `select coalesce(string_agg(nome || ':' || coalesce(observacao, ''), ',' order by nome), '') from frota_veiculos`).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem                                string
+		veiculos                           string // frota_veiculos (nome:observacao) DEPOIS do caso
+	}{
+		{"leitura sem sessão", "", "GET", "/frota/veiculos", "", 401, "nao_autenticado", ""},
+		{"admin sem a Frota lê a lista vazia", "admin", "GET", "/frota/veiculos", "", 200, "[]", ""},
+		{"admin sem a Frota não cria", "admin", "POST", "/frota/veiculos", `{"placa":"ZZZ0Z00","nome":"Intruso"}`, 403, "sem_permissao", ""},
+		{"motorista cria o carro", "motorista", "POST", "/frota/veiculos", `{"placa":"ZZZ1Z11","nome":"Teste"}`, 201, `"placa":"ZZZ1Z11"`, "Teste:"},
+		{"admin sem a Frota não enxerga a linha (404)", "admin", "PATCH", "/frota/veiculos/__ID__", `{"observacao":"x"}`, 404, "", "Teste:"},
+		{"admin não chama a RPC da ficha", "admin", "POST", "/rpc/frota_corrente_do_veiculo", `{"p_veiculo":"__ID__"}`, 403, "sem_permissao", "Teste:"},
+		{"motorista chama a RPC da ficha", "motorista", "POST", "/rpc/frota_corrente_do_veiculo", `{"p_veiculo":"__ID__"}`, 200, "", "Teste:"},
+		{"só a Frota não é admin do Patrimônio (Ruling 5.3-10)", "motorista", "POST", "/rpc/etiqueta_quem_e", `{"p_numero":1}`, 403, "sem_permissao", "Teste:"},
+	} {
+		var id string
+		if strings.Contains(c.caminho+c.corpo, "__ID__") {
+			if err := p.QueryRow(ctx, `select id::text from frota_veiculos where nome = 'Teste'`).Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+		}
+		st, corpo := pedir(c.quem, c.metodo, strings.ReplaceAll(c.caminho, "__ID__", id), strings.ReplaceAll(c.corpo, "__ID__", id))
+		if st != c.status || !strings.Contains(corpo, c.tem) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem)
+		}
+		if v := obs(); v != c.veiculos {
+			t.Errorf("%s: frota_veiculos = %q depois, esperava %q", c.nome, v, c.veiculos)
+		}
 	}
 }
 

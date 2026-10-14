@@ -137,6 +137,19 @@ export function rpc(nome, args) {
   return pedir('POST', '/rpc/' + encodeURIComponent(nome), { corpo: args ?? {} })
 }
 
+/**
+ * `sbClient.rpc(nome, args)` ou a API, pela chave da área. Devolve o formato do
+ * supabase-js (`{ data, error: { message, code } | null }`): a frase de negócio da
+ * função chega em `mensagem` (400 `regra_de_negocio`); o 403 sem frase leva `fraseDo403`.
+ */
+export async function rpcNaArea(area, sbClient, nome, args, fraseDo403 = 'Você não tem permissão para isso.') {
+  if (!areaNaApi(area)) return sbClient.rpc(nome, args)
+  const r = await rpc(nome, args)
+  if (!r.error) return { data: r.data, error: null }
+  const message = r.status === 403 ? (r.data?.mensagem || fraseDo403) : (r.data?.mensagem || r.error.message)
+  return { data: null, error: { message, code: String(r.status), status: r.status } }
+}
+
 /** Edge portada: `POST /<nome>` com o corpo e a resposta da edge. */
 export function edge(nome, corpo) {
   return pedir('POST', '/' + nome, { corpo: corpo ?? {} })

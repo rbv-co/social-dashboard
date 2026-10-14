@@ -3754,7 +3754,7 @@ async function loadAdminUsers() {
   // que esta etapa existe para consertar (o caso da Raíssa). São três consultas
   // pequenas em paralelo; o atraso não se compara ao estrago.
   const [rMarcas, rLocais, rSetores] = await Promise.all([
-    sbClient.from('patrimonio_empresas').select('id,nome').order('nome'),
+    deOnde(sbClient).from('patrimonio_empresas').select('id,nome').order('nome'),
     sbClient.from('acessos_organizacoes').select('id,nome').order('nome'),
     sbClient.from('acessos_setores').select('id,nome').order('nome'),
   ])
