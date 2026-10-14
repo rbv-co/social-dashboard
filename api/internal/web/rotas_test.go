@@ -275,6 +275,19 @@ var rotas57 = []string{
 	"GET /gestao-trafego/regua", "PUT /gestao-trafego/regua", "GET /gestao-trafego/interesses-sugeridos",
 }
 
+// Plano 5.2: as 30 rotas de patrimonio.Montar (22 escritas + 8 leituras), no grupo de DOMÍNIO. Portão =
+// catálogo, provado pela matriz de cada rota em `internal/patrimonio`; escrita de impersonado recusada por
+// `TestEscritasRecusamImpersonado`. As 5 RPCs entram por POST /rpc/{nome} (lista branca), não aqui.
+var rotas52 = func() []string {
+	r := []string{"GET /patrimonio/bens", "POST /patrimonio/bens", "PATCH /patrimonio/bens/{id}", "DELETE /patrimonio/bens/{id}",
+		"POST /patrimonio/bens/em-massa", "POST /patrimonio/bens/apagar-em-massa",
+		"GET /patrimonio/posses", "POST /patrimonio/posses", "PATCH /patrimonio/posses/{id}"}
+	for _, x := range []string{"empresas", "locais", "comodos", "categorias"} {
+		r = append(r, "GET /patrimonio/"+x, "POST /patrimonio/"+x, "PATCH /patrimonio/"+x+"/{id}", "DELETE /patrimonio/"+x+"/{id}")
+	}
+	return append(r, "GET /patrimonio/tipos", "POST /patrimonio/tipos", "GET /patrimonio/config", "PUT /patrimonio/config/{chave}", "POST /patrimonio/log")
+}()
+
 // Plano 5.8: as 10 rotas de catálogo da Fábrica. Portão = catálogo, provado pela matriz de cada rota em
 // `internal/fabrica`; vazamento e impersonado pelas varreduras de lá. As 4 edges (soFabricante) e as 7 de robô
 // (auth.SoServico) NÃO entram: o TestNenhumaRotaNovaFicaAberta prova que sessão sem módulo = 403 nelas.
@@ -299,8 +312,30 @@ var rotas59 = []string{
 }
 
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas58, rotas59) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59) {
 		soSessao[c] = true
+	}
+}
+
+// Quem soma rotas ao grupo de domínio sem declarar aqui é pego: `rotas52` tem de ser EXATAMENTE as rotas
+// /patrimonio/ montadas (nem mais, nem menos).
+func TestRotasDoPatrimonioSaoAsDeclaradas(t *testing.T) {
+	p := testebanco.Novo(t)
+	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
+	var montadas []string
+	if err := chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if strings.HasPrefix(rota, "/patrimonio/") {
+			montadas = append(montadas, metodo+" "+rota)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(montadas)
+	quer := slices.Clone(rotas52)
+	slices.Sort(quer)
+	if len(rotas52) != 30 || !slices.Equal(montadas, quer) {
+		t.Errorf("rotas /patrimonio/ montadas = %d: %v\nesperadas (30): %v", len(montadas), montadas, quer)
 	}
 }
 
@@ -458,7 +493,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second,
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa}
-	for _, c := range slices.Concat(rotas51, rotas57, rotas59, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7 e 5.9: no grupo de domínio, com o prazo dele
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2 e 5.9: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
@@ -922,6 +957,70 @@ func TestTrafegoPelaMontagemReal(t *testing.T) {
 		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
 		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
 			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
+		}
+	}
+}
+
+// Plano 5.2 pela montagem real: a cadeia do grupo de domínio (sessão, escopo, prazo) nas rotas do Patrimônio e
+// o registro das RPCs em web.FuncoesRPC. A matriz de cada rota está em internal/patrimonio; aqui vale a
+// MONTAGEM (grupo, cadeia, posição). `pat` tem o módulo; `viewer` não tem nada.
+func TestPatrimonioPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	tok := map[string]string{}
+	for _, u := range []struct{ id, nome, features string }{
+		{"5e200000-0000-4000-a000-0000000010a1", "pat", "{patrimonio}"}, {"5e200000-0000-4000-a000-0000000010a2", "viewer", "{}"},
+	} {
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, u.id, u.nome+"-52@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe) values ($1::uuid, $2::text, $3::text, 'viewer', $4::text[], false)`,
+			u.id, u.nome+"-52@x.com", u.nome, u.features); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if tok[u.nome], err = s.Criar(ctx, u.id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pedir := func(quem, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+tok[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	empresas := func() string {
+		var n int
+		if err := p.QueryRow(ctx, `select count(*) from patrimonio_empresas`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprint(n)
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem                                string
+		empresas                           string // linhas em patrimonio_empresas DEPOIS do caso
+	}{
+		{"leitura sem sessão", "", "GET", "/patrimonio/bens", "", 401, "nao_autenticado", "0"},
+		{"viewer lê a lista vazia (a regra devolve 200 [])", "viewer", "GET", "/patrimonio/bens", "", 200, "[]", "0"},
+		{"viewer não cria empresa", "viewer", "POST", "/patrimonio/empresas", `{"nome":"Vessel"}`, 403, "sem_permissao", "0"},
+		{"viewer não chama a RPC (portão antes da função)", "viewer", "POST", "/rpc/pessoas_para_escolher", ``, 403, "sem_permissao", "0"},
+		{"pat cria empresa", "pat", "POST", "/patrimonio/empresas", `{"nome":"Vessel"}`, 201, `"nome":"Vessel"`, "1"},
+		{"pat chama a RPC registrada em web.FuncoesRPC", "pat", "POST", "/rpc/pessoas_para_escolher", ``, 200, "[]", "1"},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem)
+		}
+		if n := empresas(); n != c.empresas {
+			t.Errorf("%s: patrimonio_empresas = %s linhas depois, esperava %s", c.nome, n, c.empresas)
 		}
 	}
 }
