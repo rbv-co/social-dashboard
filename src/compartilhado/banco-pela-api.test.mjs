@@ -301,3 +301,53 @@ test('head: true só conta: pede uma linha e devolve o X-Total-Count', async () 
   assert.equal(pedidos.length, 1)
   assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { limite: '1', contar: '1' })
 })
+
+test('5.2: bens com os 3 embutidos fixos passam; outro embutido ou coluna do embutido, recusa', async () => {
+  const bem = { id: 'b1', nome: 'Notebook', marca: 'X', patrimonio_categorias: { nome: 'TI' }, patrimonio_locais: null, patrimonio_comodos: null }
+  const pedidos = api({ 'GET /patrimonio/bens': [200, [bem], { 'X-Total-Count': '1' }] })
+  const r = await b.consultaPelaApi('patrimonio_bens')
+    .select('id,nome,marca,patrimonio_categorias(nome),patrimonio_locais(nome),patrimonio_comodos(nome)').eq('pessoa_id', 'p1').order('nome')
+  assert.equal(r.error, null)
+  assert.deepEqual(r.data, [bem])
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { pessoa_id: 'p1', ordem: 'nome.asc', contar: '1' })
+  const outro = await b.consultaPelaApi('patrimonio_bens').select('id,acessos_pessoas(nome)')
+  assert.match(outro.error.message, /recurso embutido/)
+  const col = await b.consultaPelaApi('patrimonio_bens').select('id,patrimonio_locais(nome,empresa_id)')
+  assert.match(col.error.message, /só devolve \{nome\}/)
+})
+
+test('5.2: categoria por ILIKE manda o PADRÃO como valor (nome_como), curinga e tudo', async () => {
+  const pedidos = api({ 'GET /patrimonio/categorias': [200, [{ id: 'c1', nome: 'Veículos' }]] })
+  const r = await b.consultaPelaApi('patrimonio_categorias').select('id,nome').ilike('nome', '%ve%cul%').limit(1)
+  assert.deepEqual(r.data, [{ id: 'c1', nome: 'Veículos' }])
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { nome_como: '%ve%cul%', limite: '1' })
+})
+
+test('5.2: posses abertas (is null) e por faixa de data', async () => {
+  const pedidos = api({ 'GET /patrimonio/posses': [200, [], { 'X-Total-Count': '0' }] })
+  await b.consultaPelaApi('patrimonio_posse').select('*').is('ate', null).order('de', { ascending: false })
+  await b.consultaPelaApi('patrimonio_posse').select('*').gte('de', '2026-10-01').lte('de', '2026-10-31').order('de', { ascending: false })
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { aberta: 'true', ordem: 'de.desc', contar: '1' })
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[1].busca)), { de_desde: '2026-10-01', de_ate: '2026-10-31', ordem: 'de.desc', contar: '1' })
+})
+
+test('5.2: ordem em duas colunas (ordem, nome) a tela faz; numeração é um PUT por chave sem atualizado_em', async () => {
+  const pedidos = api({
+    'GET /patrimonio/empresas': [200, [{ id: 'e2', nome: 'B', ordem: 1 }, { id: 'e1', nome: 'A', ordem: 1 }, { id: 'e0', nome: 'Z', ordem: 0 }], { 'X-Total-Count': '3' }],
+    'PUT /patrimonio/config/numero_maximo': [200, { chave: 'numero_maximo', valor: '500' }],
+  })
+  const r = await b.consultaPelaApi('patrimonio_empresas').select('id,nome').order('ordem').order('nome')
+  assert.deepEqual(r.data.map((x) => x.id), ['e0', 'e1', 'e2'])
+  const u = await b.consultaPelaApi('patrimonio_config').upsert({ chave: 'numero_maximo', valor: '500', atualizado_em: '2026-10-14T00:00:00Z' })
+  assert.equal(u.error, null)
+  assert.deepEqual(pedidos.at(-1).corpo, { valor: '500' })
+})
+
+test('5.2: criar bem devolve o objeto (.select("id").single()); nome repetido volta como 409 com a frase', async () => {
+  api({ 'POST /patrimonio/bens': [201, { id: 'b9', nome: 'Mesa' }], 'POST /patrimonio/empresas': [409, { error: 'conflito', mensagem: 'Já existe.' }] })
+  const ok = await b.consultaPelaApi('patrimonio_bens').insert({ nome: 'Mesa', criado_em: 'x' }).select('id').single()
+  assert.equal(ok.data.id, 'b9')
+  const dup = await b.consultaPelaApi('patrimonio_empresas').insert({ nome: 'A', ordem: 1 }).select('id, nome').single()
+  assert.equal(dup.error.status, 409)
+  assert.equal(dup.error.message, 'Já existe.')
+})

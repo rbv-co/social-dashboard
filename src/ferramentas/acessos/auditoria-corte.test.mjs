@@ -45,3 +45,9 @@ test('rótulo falso/vazio é ignorado, não vira "undefined" no texto', () => {
   assert.match(msg, /^A lista de bens\b/)
   assert.doesNotMatch(msg, /undefined/)
 })
+
+test('limite próprio (teto da API): foiCortado e a frase dizem o número certo', () => {
+  assert.equal(foiCortado(new Array(1000).fill(0), 1000), true)
+  assert.equal(foiCortado(new Array(1000).fill(0)), false)
+  assert.match(avisoDeCorte([{ rotulo: 'bens', limite: 1000 }, 'veículos']), /bens e veículos bateu no limite de 1000 \/ 5000 linhas/)
+})
