@@ -29,8 +29,10 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/patrimonio"
 	"github.com/rbv-co/social-dashboard/api/internal/redes"
 	"github.com/rbv-co/social-dashboard/api/internal/trafego"
+	"github.com/rbv-co/social-dashboard/api/internal/vessel"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
+	"github.com/rbv-co/social-dashboard/api/internal/zoho"
 )
 
 // Prazos por requisição das rotas lentas da Meta (o contexto da requisição não tem prazo
@@ -53,6 +55,9 @@ const (
 	// EscritaDoServidor) e de mapa (fila de uma ligação por segundo ao Nominatim).
 	PrazoIA   = 120 * time.Second
 	PrazoMapa = 20 * time.Second
+	// Plano 5.10: o cartão EAN do Zoho (POST /vessel-baixar-cartao): o resgate pela busca na árvore do robô levava
+	// ~7 s e o PDF a 600 dpi vem em fluxo; o de domínio (30 s) cortaria o download.
+	PrazoCartao = 60 * time.Second
 
 	// EscritaDoServidor é o WriteTimeout do http.Server (main.go): a folga de 30 s acima do maior
 	// prazo por requisição (PrazoCollabs) deixa o handler terminar e responder antes de a conexão cair.
@@ -67,6 +72,7 @@ var FuncoesRPC = slices.Concat(
 	trafego.FuncoesRPC,    // Plano 5.7
 	patrimonio.FuncoesRPC, // Plano 5.2
 	conteudo.FuncoesRPC,   // Plano 5.9
+	vessel.FuncoesRPC,     // Plano 5.10
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
@@ -143,6 +149,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.With(auth.ExigirModulo("meta.gestor"), comPrazo(PrazoIA)).Post("/ler-documento", iaTrafego.LerDocumento)
 		r.With(auth.ExigirModulo("meta"), comPrazo(PrazoMapa)).Post("/buscar-lugar", lugar.ServeHTTP)
 
+		// Plano 5.10: o cartão EAN do Zoho. Portão do selo (is_vessel_admin) DENTRO do handler, antes de ler o corpo;
+		// no grupo de SESSÃO com o escopo e o prazo próprio (o de domínio cortaria o download).
+		r.With(autz.ComEscopo(p), comPrazo(PrazoCartao)).Post("/vessel-baixar-cartao", (&vessel.Cartao{Pool: p, Zoho: zoho.Novo(p)}).ServeHTTP)
+
 		// Plano 5.0: conta. Os portões de invite-user e entrar-como são os das edges (papel admin;
 		// super-admin pela ficha), dentro do handler, com a resposta 400 {"error": frase} das edges.
 		r.Post("/auth/trocar-senha", conta.TrocarSenha)
@@ -171,6 +181,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
 			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
 			conteudo.Montar(r, p) // Plano 5.9
+			vessel.Montar(r, p)   // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {
 				panic(err) // declaração errada: a API não sobe

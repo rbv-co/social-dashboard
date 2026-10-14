@@ -20,23 +20,6 @@ var RPCPendentes = []string{
 	// 5.3 (frota): 2
 	"etiqueta_quem_e",
 	"frota_corrente_do_veiculo",
-	// 5.10 (autenticidade): 16
-	"vessel_alertas",
-	"vessel_baixar_garantia",
-	"vessel_baixar_peca",
-	"vessel_decidir_pedido_de_registro",
-	"vessel_definir_material_do_lote",
-	"vessel_desfazer_baixa",
-	"vessel_desmarcar_gravada",
-	"vessel_editar_lote",
-	"vessel_excluir_lote",
-	"vessel_excluir_peca",
-	"vessel_fila_de_registros",
-	"vessel_gerar_lote",
-	"vessel_marcar_gravada",
-	"vessel_pedir_cartoes",
-	"vessel_sobrescrever_etiqueta",
-	"vessel_trocar_dono",
 	// 5.11 (comercial Vessel e leads): 62
 	"vessel_agenda_das_lojas",
 	"vessel_beauty_session_apagar",

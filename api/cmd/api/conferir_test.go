@@ -733,3 +733,46 @@ func TestConferirNaFatiaD0NaoAcusaOPlano59(t *testing.T) {
 		t.Error("conteudo_reivindicar_hora_h não está na fatia: o conferir devia acusá-la (o filtro acima não provaria nada)")
 	}
 }
+
+// Plano 5.10: contra a fatia D0 (as 12 tabelas do selo, os 6 gatilhos e as 16 RPCs) e a migração 00007, o conferir
+// não acusa nada do selo nem da disparar_robo — pega erro de digitação nas listas. As 2 colunas presumidas de
+// vessel_registros estão na fatia; no banco restaurado quem as confere é o `api worker conferir`.
+func TestConferirNaFatiaD0NaoAcusaOPlano510(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	tabelas510 := []string{"vessel_lotes", "vessel_pecas", "vessel_registros", "vessel_baixas", "vessel_cartao_pedidos",
+		"vessel_cartao_arquivos", "vessel_lembretes", "vessel_clientes"}
+	for _, f := range faltamDe(t, p) {
+		if strings.Contains(f, "disparar_robo") || strings.Contains(f, "disparos_pendentes") || strings.Contains(f, "vessel_") && strings.Contains(f, "gatilho") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.10, mas o conferir acusa %q", f)
+		}
+		for _, tb := range tabelas510 {
+			if strings.Contains(f, " "+tb+".") || strings.Contains(f, " "+tb+"(") || strings.Contains(f, "/rpc/vessel_") {
+				t.Errorf("a fatia D0 devia satisfazer o 5.10, mas o conferir acusa %q", f)
+			}
+		}
+	}
+}
+
+// Plano 5.10: a disparar_robo de produção (pg_net) e os 2 gatilhos do Actions de volta são acusados; a da 00007, não.
+func TestConferirDisparos(t *testing.T) {
+	p := testebanco.Novo(t) // as migrações já trazem a 00007
+	tem := func(trecho string) bool {
+		for _, f := range faltamDe(t, p) {
+			if strings.Contains(f, trecho) {
+				return true
+			}
+		}
+		return false
+	}
+	if tem("disparar_robo") || tem("vessel_lote_novo_pede_foto") {
+		t.Fatal("a 00007 sozinha não pode ser acusada")
+	}
+	exec(t, p, `create or replace function disparar_robo(p_robo text, p_funcao text, p_segredo text, p_body jsonb default '{}'::jsonb,
+		p_timeout integer default 120000) returns bigint language plpgsql as $f$
+		declare v bigint; begin select net.http_post(url := 'https://x') into v; return v; end $f$`)
+	exec(t, p, `create table if not exists vessel_lotes (id uuid); create function pede_foto() returns trigger language plpgsql as $f$ begin return new; end $f$;
+		create trigger vessel_lote_novo_pede_foto after insert on vessel_lotes for each row execute function pede_foto()`)
+	if !tem("função disparar_robo: ausente ou a de produção") || !tem("gatilho vessel_lote_novo_pede_foto: removido de produção") {
+		t.Errorf("o conferir não acusou a função antiga e o gatilho de volta: %v", faltamDe(t, p))
+	}
+}
