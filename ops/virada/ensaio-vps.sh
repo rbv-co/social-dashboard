@@ -121,8 +121,8 @@ listar() {
 }
 # robô novo (profiles), um webhook de checkout assinado como o do Core (carrinho_eventos: identity "generated always")
 # e duas tarefas seguras do worker (robos_execucoes): o delta tem de levar tudo isso de volta
+robo() { v "umask 077; $DC exec -T api api servico criar ensaio-medida ensaio-medida@robos.invalid --modulos meta > $E/token 2> /dev/null && test -s $E/token"; }
 escritas_reais() {
-  v "umask 077; $DC exec -T api api servico criar ensaio-medida ensaio-medida@robos.invalid --modulos meta > $E/token 2> /dev/null && test -s $E/token" &&
   v "cd $E && c='{\"cart_token\":\"ensaio-virada-'\$(date +%s)'\"}'; h=\$(printf '%s' \"\$c\" | openssl dgst -sha256 -hmac \"\$(cat shopify.segredo)\" -binary | base64)
      r=\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H \"X-Shopify-Hmac-Sha256: \$h\" \
           -H 'X-Shopify-Topic: checkouts/create' -H \"X-Shopify-Event-Id: ensaio-\$(date +%s%N)\" --data \"\$c\" http://127.0.0.1:18080/receber-webhook-checkout)
@@ -141,7 +141,8 @@ medir() {
      m 'go  GET /redes/engajamento' \"\$GO/redes/engajamento\" go.curl;           m 'sb  engagement_snapshots' \"\$SB/engagement_snapshots?select=*&limit=1000\" sb.curl
      m 'go  GET /redes/campanhas' \"\$GO/redes/campanhas\" go.curl;               m 'sb  campaigns' \"\$SB/campaigns?select=*&limit=1000\" sb.curl
      m 'go  GET /redes/insights-de-campanha' \"\$GO/redes/insights-de-campanha\" go.curl; m 'sb  campaign_insights' \"\$SB/campaign_insights?select=*&limit=1000\" sb.curl
-     rm -f sb.curl go.curl resp t.txt" > "$OUT/medidas.txt"
+     rm -f sb.curl go.curl resp t.txt" > "$OUT/medidas.txt" || return 1
+  cat "$OUT/medidas.txt"; ! grep -E '^go .* erros [1-9]' "$OUT/medidas.txt"   # erro no Go reprova (no Supabase só registra)
 }
 parar() { v "$DC stop"; }
 delta_replay() {
@@ -167,6 +168,7 @@ etapa "10. API e worker no ar (healthy)" janela subir
 etapa "11. api worker conferir" janela v "$DC exec -T worker api worker conferir"
 etapa "11b. foto do corte (do clone, fora da janela)" foto
 etapa "12. todas as tarefas DESLIGADAS" listar
+etapa "12b. robô de serviço (token da medida)" robo
 etapa "13. 5 rotas: Go x Supabase (20 cada)" medir
 etapa "14. escritas reais (robô, webhook, worker)" escritas_reais
 etapa "15. rollback: parar API e worker" parar
