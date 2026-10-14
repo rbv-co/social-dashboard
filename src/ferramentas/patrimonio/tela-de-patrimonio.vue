@@ -1896,10 +1896,18 @@ function abrirEmMassa() {
   massaAberta.value = true
 }
 
+// Pela API o lote vai em UMA transação e aceita de 1 a 1000 bens: acima disso o servidor recusaria tudo.
+function passaDoLoteDaApi(ids) {
+  if (!areaNaApi('patrimonio') || ids.length <= 1000) return false
+  adminToast('Selecione no máximo 1000 itens por vez (' + ids.length + ' selecionados).', false)
+  return true
+}
+
 async function salvarEmMassa() {
   const ids = [...selecionados.value]
   const { alteracao } = montarAlteracaoEmMassa(massa, { quantidade: ids.length })
   if (!Object.keys(alteracao).length || !ids.length) return
+  if (passaDoLoteDaApi(ids)) return
   salvandoMassa.value = true
   const corpoMassa = { ...alteracao, atualizado_em: new Date().toISOString() }
   // Pela API o lote é UMA transação e a posse acompanha a troca de dono NO SERVIDOR (Ruling 5.2-5): um bem negado derruba o lote.
@@ -1931,7 +1939,7 @@ async function salvarEmMassa() {
 
 async function apagarEmMassa() {
   const ids = [...selecionados.value]
-  if (!ids.length) return
+  if (!ids.length || passaDoLoteDaApi(ids)) return
   const total = formatarValor(resumoSelecao.value.totalCentavos)
   if (!(await _confirmar(`Apagar ${ids.length} itens (${total}) do patrimônio. O histórico de posse deles some junto.`))) return
   const { error } = areaNaApi('patrimonio')
