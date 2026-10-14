@@ -5,7 +5,7 @@
 # Etapas cronometradas: recriar o api-db do zero -> ops/migracao/ensaio.sh pelo túnel (dump, restore, usuários,
 # contagens, órfãos, triggers, Storage) -> papel sem superusuário -> foto do corte e clone (o "Supabase
 # congelado") -> imagem, `api migrar` como api_app -> API e worker no ar SEM credenciais e com TODAS as tarefas
-# desligadas -> `api worker conferir` -> 5 rotas medidas (Go x Supabase) -> escritas reais da API -> parar a API
+# desligadas -> `api worker conferir` -> foto do corte -> 5 rotas medidas (Go x Supabase) -> escritas reais da API -> parar a API
 # (1º passo do rollback) -> delta, replay no clone e comparação linha a linha -> limpeza.
 # Recusa se /root/api-db/PRODUCAO existir (o corte cria esse arquivo; dali em diante o api-db é produção).
 # Uso: sh ops/virada/ensaio-vps.sh   (ORIGEM_DATABASE_URL, SUPABASE_URL e SUPABASE_SERVICE_KEY do ambiente ou de
@@ -92,12 +92,12 @@ papel() {
   v "umask 077; openssl rand -hex 24 > $E/app.senha
      { printf '\\\\set senha %s\n' \"\$(cat $E/app.senha)\"; cat $E/papel-da-api.sql; } | docker exec -i api-db sh -c 'psql -X -q -At -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -f -'
      s=\$(cat $E/app.senha); printf 'DATABASE_URL=postgres://api_app:%s@api-db:5432/api?sslmode=disable&connect_timeout=5\n' \"\$s\" > $E/api.env
-     cp $E/api.env $E/worker.env; echo 'WORKER_TAREFAS_DESLIGADAS=*' >> $E/worker.env"
+     cp $E/api.env $E/worker.env; echo 'WORKER_TAREFAS_DESLIGADAS=*' >> $E/worker.env" > "$OUT/papel.txt" || return 1
+  cat "$OUT/papel.txt"; grep -q '^sobrou_de_outro_dono|0$' "$OUT/papel.txt" && grep -q '^api_app|f|f|f|f|f$' "$OUT/papel.txt"
 }
-foto_e_clone() {
-  sh "$AQUI/delta.sh" base "$ALVO" "$OUT/delta" "$OUT/tabelas-supabase.txt" || return 1
-  for i in 1 2 3 4 5; do psql "$ALVO" -X -q -c "create database api_base template api" && return 0; sleep 3; done; return 1
-}
+# o corte guarda um clone do banco recém-restaurado (segundos, na janela): é a base do delta se for preciso voltar
+clone() { for i in 1 2 3 4 5; do psql "$ALVO" -X -q -c "create database api_base template api" && return 0; sleep 3; done; return 1; }
+foto() { sh "$AQUI/delta.sh" base "$BASE" "$OUT/delta" "$OUT/tabelas-supabase.txt"; }
 subir() {
   v "$DC up -d --no-build && for i in \$(seq 50); do a=\$(docker inspect -f '{{.State.Health.Status}}' api-ensaio-api-1); w=\$(docker inspect -f '{{.State.Health.Status}}' api-ensaio-worker-1)
        [ \"\$a\" = healthy ] && [ \"\$w\" = healthy ] && exit 0; sleep 3; done; docker logs --tail 20 api-ensaio-worker-1; exit 1"
@@ -139,13 +139,14 @@ etapa "1. imagem amd64 (Mac) e carga na VPS" imagem
 etapa "2. recriar o api-db do zero" recriar_db
 etapa "3. túnel até o api-db" tunel
 etapa "4. tabelas do Supabase (só leitura)" tabelas
-etapa "5. ensaio.sh: dump/restore/usuários/conferências" janela ensaio_sh
+etapa "5. ensaio.sh: dump/restore/usuários/conferências" ensaio_sh
 etapa "6. preparar a pasta do ensaio na VPS" preparar_vps
 etapa "7. papel api_app (sem superusuário)" janela papel
-etapa "8. foto do corte e clone api_base" janela foto_e_clone
+etapa "8. clone do corte (api_base)" janela clone
 etapa "9. api migrar (como api_app)" janela v "$DC run --rm --no-build api migrar"
 etapa "10. API e worker no ar (healthy)" janela subir
 etapa "11. api worker conferir" janela v "$DC exec -T worker api worker conferir"
+etapa "11b. foto do corte (do clone, fora da janela)" foto
 etapa "12. todas as tarefas DESLIGADAS" listar
 etapa "13. 5 rotas: Go x Supabase (20 cada)" medir
 etapa "14. escritas reais da API (robô, robôs)" escritas_reais
@@ -154,7 +155,7 @@ etapa "16. delta, replay no clone, comparação" delta_replay
 impressao > "$OUT/vps-depois.txt"
 rel "----"
 grep -E 'JANELA|volume|DIFERE|órfãos|triggers' "$OUT/ensaio-relatorio.txt" 2> /dev/null | sed 's/^/ensaio.sh: /' | tee -a "$OUT/relatorio.txt"
-rel "janela medida (etapas 5 e 7 a 11, sem Storage incremental): ${JANELA}s"
+rel "janela = JANELA SEM Storage do ensaio.sh (acima) + etapas 7 a 11 (${JANELA}s); o Storage incremental corre em paralelo"
 rel "$(grep -c . "$OUT/tabelas-supabase.txt") tabelas no Supabase; $(cat "$OUT/delta/resumo.tsv" 2> /dev/null | wc -l | tr -d ' ') com mudança depois da foto (tabela, novas, alteradas, apagadas):"
 sed 's/^/  /' "$OUT/delta/resumo.tsv" | tee -a "$OUT/relatorio.txt"
 rel "medidas (servidor a servidor, da VPS):"; sed 's/^/  /' "$OUT/medidas.txt" | tee -a "$OUT/relatorio.txt"
