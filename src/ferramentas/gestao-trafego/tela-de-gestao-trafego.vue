@@ -181,6 +181,7 @@ import { onMounted, onUnmounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+import { storageNaArea } from '../../compartilhado/armazenamento-pela-api.js'
 // Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
 import { areaNaApi, fetchDaApi, trocarCodigoPorFrase, rpc, pedir, invocarNaArea } from '../../compartilhado/api.js'
 import { fraseDoProxy } from './frases-dos-proxies.js'
@@ -5481,9 +5482,9 @@ function _gtNovoEnviarImagem(){
     try{
       const {data:{session}}=await sbClient.auth.getSession();
       const caminho='gestor-envios/'+Date.now()+'-'+String(arq.name||'imagem').replace(/[^a-zA-Z0-9._-]/g,'_');
-      const up=await sbClient.storage.from('fabrica-criativos').upload(caminho,arq,{upsert:true,contentType:arq.type});
+      const up=await storageNaArea('trafego', sbClient).from('fabrica-criativos').upload(caminho,arq,{upsert:true,contentType:arq.type});
       if(up.error)throw new Error(up.error.message);
-      const {data:pub}=sbClient.storage.from('fabrica-criativos').getPublicUrl(caminho);
+      const {data:pub}=storageNaArea('trafego', sbClient).from('fabrica-criativos').getPublicUrl(caminho);
       const corpo=JSON.stringify({accountId:_gtCurAcc.id,path:'/'+_gtCleanAct(_gtCurAcc.ad_account_id)+'/adimages',method:'POST',params:{},imageFromUrl:pub.publicUrl,imageField:'envio'});
       const r=areaNaApi('edges-core')?await fetchDaApi('/meta-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:corpo}):await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
         method:'POST',
@@ -5514,9 +5515,9 @@ async function _gtNovoEnviarVideo(arq){
   try{
     const {data:{session}}=await sbClient.auth.getSession();
     const caminho='gestor-envios/'+Date.now()+'-'+String(arq.name||'video').replace(/[^a-zA-Z0-9._-]/g,'_');
-    const up=await sbClient.storage.from('fabrica-criativos').upload(caminho,arq,{upsert:true,contentType:arq.type});
+    const up=await storageNaArea('trafego', sbClient).from('fabrica-criativos').upload(caminho,arq,{upsert:true,contentType:arq.type});
     if(up.error)throw new Error(up.error.message);
-    const {data:pub}=sbClient.storage.from('fabrica-criativos').getPublicUrl(caminho);
+    const {data:pub}=storageNaArea('trafego', sbClient).from('fabrica-criativos').getPublicUrl(caminho);
 
     const corpo=JSON.stringify({
       accountId:_gtCurAcc.id,

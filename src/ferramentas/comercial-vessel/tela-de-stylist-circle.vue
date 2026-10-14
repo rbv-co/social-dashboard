@@ -576,6 +576,8 @@ import {
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `vessel` (Plano 7): as funções da Vessel pela API em Go (5.11).
+import { fetchRpcNaArea } from '../../compartilhado/api.js'
 import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import { enderecoDaStylist, ENDERECO_DO_CIRCLE, dataLegivel } from './enderecos-publicos.js'
 import {
@@ -762,7 +764,7 @@ function cabecalho() {
 async function chamar(funcao, corpo) {
   let r
   try {
-    r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
+    r = await fetchRpcNaArea('vessel', `${SUPABASE_URL}/rest/v1/rpc/${funcao}`, funcao, {
       method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
     })
   } catch {

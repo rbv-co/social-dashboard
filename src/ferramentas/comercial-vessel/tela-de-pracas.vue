@@ -138,6 +138,8 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `vessel` (Plano 7): praças e edições pela API em Go (5.11).
+import { rpcNaArea } from '../../compartilhado/api.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
@@ -159,7 +161,7 @@ async function carregar() {
   carregando.value = true
   erro.value = null
   try {
-    const { data, error } = await sbClient.rpc('vessel_pracas_listar')
+    const { data, error } = await rpcNaArea('vessel', sbClient, 'vessel_pracas_listar')
     if (error) throw error
     pracas.value = data || []
   } catch (e) {
@@ -192,7 +194,7 @@ const avisosPorPraca = reactive({})
 const avisoDaPraca = (id) => avisosPorPraca[id] || ''
 
 async function chamar(funcao, corpo) {
-  const { data, error } = await sbClient.rpc(funcao, corpo || {})
+  const { data, error } = await rpcNaArea('vessel', sbClient, funcao, corpo || {})
   if (error) throw error
   return data
 }

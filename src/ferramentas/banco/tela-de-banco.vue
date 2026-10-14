@@ -37,6 +37,8 @@ import { computed, onMounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `admin` (Plano 7): o bucket `arquivos` pela API em Go (`/arquivos`).
+import { storageNaArea } from '../../compartilhado/armazenamento-pela-api.js'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 
@@ -71,7 +73,7 @@ const _SVG_FOLDER='<svg width="52" height="52" viewBox="0 0 24 24" fill="none" s
 async function loadArquivos(){
   const listEl=document.getElementById('banco-file-list');
   _bancoBuildEmpty(listEl,'Carregando…','');
-  const{data,error}=await sbClient.storage.from('arquivos').list('',{limit:500,sortBy:{column:'name',order:'asc'}});
+  const{data,error}=await storageNaArea('admin', sbClient).from('arquivos').list('',{limit:500,sortBy:{column:'name',order:'asc'}});
   if(error){_bancoBuildEmpty(listEl,'Erro ao carregar arquivos',error.message);return;}
   _bancoFiles=(data||[]).filter(f=>f.name&&f.name!=='.emptyFolderPlaceholder');
   renderArquivos();
@@ -160,7 +162,7 @@ function _fmtBytes(b){if(!b)return'0 B';const k=1024,u=['B','KB','MB','GB'],i=Ma
 async function deletarArquivo(name){
   if(!podeExcluir.value){ adminToast('Você não tem permissão para excluir arquivos.',false); return }
   if(!confirm('Excluir "'+name+'"?'))return;
-  const{error}=await sbClient.storage.from('arquivos').remove([name]);
+  const{error}=await storageNaArea('admin', sbClient).from('arquivos').remove([name]);
   if(error){alert('Erro ao excluir: '+error.message);return;}
   loadArquivos();
 }
@@ -182,7 +184,7 @@ function _sanitizeStorageKey(name){
 // Pede um link temporário e baixa. Falha em conferir é falha em BAIXAR: sem o
 // link, não se abre nada — nunca cair num endereço público como plano B.
 async function _bancoBaixar(nome){
-  const{data,error}=await sbClient.storage.from('arquivos').createSignedUrl(nome,60,{download:nome});
+  const{data,error}=await storageNaArea('admin', sbClient).from('arquivos').createSignedUrl(nome,60,{download:nome});
   if(error||!data?.signedUrl){
     adminToast('Não consegui liberar o download de "'+nome+'". Recarregue a página e tente de novo.',false);
     return;
@@ -215,7 +217,7 @@ async function _bancoUpload(file){
   const lbl=document.getElementById('banco-progress-lbl');
   const storageKey=_sanitizeStorageKey(file.name);
   wrap.style.display='block';lbl.textContent='Enviando '+file.name+'…';fill.style.width='20%';
-  const{error}=await sbClient.storage.from('arquivos').upload(storageKey,file,{cacheControl:'3600',upsert:true});
+  const{error}=await storageNaArea('admin', sbClient).from('arquivos').upload(storageKey,file,{cacheControl:'3600',upsert:true});
   fill.style.width='100%';
   if(error){
     const frase=_fraseDaFalha(error,file);

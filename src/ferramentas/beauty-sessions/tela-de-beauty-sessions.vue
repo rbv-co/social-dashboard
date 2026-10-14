@@ -481,6 +481,8 @@ import BarraDeLista from '../comercial-vessel/barra-de-lista.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `vessel` (Plano 7): as funções da Vessel pela API em Go (5.11).
+import { fetchRpcNaArea, fetchRpcDeEscritaNaArea } from '../../compartilhado/api.js'
 import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import {
   LOJAS, codigoSugerido, problemasDaSessao, resumoDaSessao, dataLegivel,
@@ -583,7 +585,7 @@ function cabecalho() {
 async function chamar(funcao, corpo) {
   let r
   try {
-    r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
+    r = await fetchRpcNaArea('vessel', `${SUPABASE_URL}/rest/v1/rpc/${funcao}`, funcao, {
       method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
     })
   } catch {
@@ -638,7 +640,7 @@ async function criar() {
   criando.value = true
   erroAoCriar.value = ''
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/vessel_beauty_session_criar`, {
+    const r = await fetchRpcDeEscritaNaArea('vessel', `${SUPABASE_URL}/rest/v1/rpc/vessel_beauty_session_criar`, 'vessel_beauty_session_criar', {
       method: 'POST', headers: cabecalho(),
       body: JSON.stringify({
         p_codigo: nova.codigo, p_quando: nova.quando, p_praca: nova.codigo.slice(12, 15),
@@ -667,7 +669,7 @@ async function encerrar(sessao, ativa) {
   mexendo.value = sessao.codigo
   erroAoMexer.value = null
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/vessel_beauty_session_encerrar`, {
+    const r = await fetchRpcDeEscritaNaArea('vessel', `${SUPABASE_URL}/rest/v1/rpc/vessel_beauty_session_encerrar`, 'vessel_beauty_session_encerrar', {
       method: 'POST', headers: cabecalho(),
       body: JSON.stringify({ p_codigo: sessao.codigo, p_ativa: ativa }),
     })
@@ -831,7 +833,7 @@ async function cadastrar(s) {
   if (problemasDaLead(f).length) return
   cadastrando.value = s.codigo
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/vessel_beauty_session_cadastrar_lead`, {
+    const r = await fetchRpcDeEscritaNaArea('vessel', `${SUPABASE_URL}/rest/v1/rpc/vessel_beauty_session_cadastrar_lead`, 'vessel_beauty_session_cadastrar_lead', {
       method: 'POST', headers: cabecalho(), body: JSON.stringify(corpoDoCadastro(s.codigo, f)),
     })
     const resposta = r.ok ? await r.json().catch(() => null) : null

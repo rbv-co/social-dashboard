@@ -229,6 +229,8 @@ import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import MetaDoNumero from './meta-do-numero.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `vessel` (Plano 7): praças e edições pela API em Go (5.11).
+import { rpcNaArea } from '../../compartilhado/api.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import { hasPermission, podeAbrir } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
@@ -243,7 +245,7 @@ function irParaPracas() { router.push({ name: 'pracas' }) }
 const podeEditar = computed(() => hasPermission('atendimentos.edicoes', 'editar'))
 
 async function chamar(funcao, corpo) {
-  const { data, error } = await sbClient.rpc(funcao, corpo || {})
+  const { data, error } = await rpcNaArea('vessel', sbClient, funcao, corpo || {})
   if (error) throw error
   return data
 }
@@ -258,7 +260,7 @@ async function carregarPracas() {
   carregandoPracas.value = true
   erroPracas.value = null
   try {
-    const { data, error } = await sbClient.rpc('vessel_pracas_listar')
+    const { data, error } = await rpcNaArea('vessel', sbClient, 'vessel_pracas_listar')
     if (error) throw error
     pracas.value = data || []
     if (!pracaSelecionadaId.value && pracas.value.length) pracaSelecionadaId.value = pracas.value[0].id
@@ -310,7 +312,7 @@ async function carregarEdicoes({ manterResultados = false } = {}) {
   carregandoEdicoes.value = true
   erroEdicoes.value = null
   try {
-    const { data, error } = await sbClient.rpc('vessel_edicoes_listar', { p_praca_id: pracaSelecionadaId.value })
+    const { data, error } = await rpcNaArea('vessel', sbClient, 'vessel_edicoes_listar', { p_praca_id: pracaSelecionadaId.value })
     if (error) throw error
     edicoes.value = data || []
     // O evento que abre sozinho: o que estava aberto na tela (se ainda é

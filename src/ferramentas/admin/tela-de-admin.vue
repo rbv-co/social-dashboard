@@ -222,6 +222,7 @@ import { estado, PERMISSION_TREE, RECURSOS } from '../../compartilhado/controle-
 import { areaNaApi, corpoDaEdge } from '../../compartilhado/api.js'
 // Chave `admin` (Plano 7): as tabelas do 5.1 pela API (adFetch, gravar e os .from abaixo).
 import { tabelaNaApi, fetchPostgrest, deOnde, contarPelaApi, ligarCadastroPelaApi, escreverComposto } from '../../compartilhado/banco-pela-api.js'
+import { storageNaArea } from '../../compartilhado/armazenamento-pela-api.js'
 import { APROVACOES } from '../../compartilhado/catalogo-de-ferramentas.js'
 import { agruparRecursos, contarAcoes, estadoDaSelecao, marcarTudo } from './agrupar-permissoes.js'
 import { derivarFeatures } from '../../compartilhado/derivar-features.js'
@@ -449,9 +450,9 @@ let _avCb = null
 const _avInput = (() => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/jpeg,image/png,image/webp,image/gif'; i.style.display = 'none'; document.body.appendChild(i); i.addEventListener('change', async () => { const f = i.files?.[0]; if (f && _avCb) _avCb(f); i.value = '' }); return i })()
 async function _uploadAvatar(userId, file) {
   const path = userId
-  const { error } = await sbClient.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type })
+  const { error } = await storageNaArea('admin', sbClient).from('avatars').upload(path, file, { upsert: true, contentType: file.type })
   if (error) throw error
-  const { data: { publicUrl } } = sbClient.storage.from('avatars').getPublicUrl(path)
+  const { data: { publicUrl } } = storageNaArea('admin', sbClient).from('avatars').getPublicUrl(path)
   await adFetch('profiles?id=eq.' + userId, { method: 'PATCH', body: JSON.stringify({ avatar_url: publicUrl }) })
   return publicUrl
 }

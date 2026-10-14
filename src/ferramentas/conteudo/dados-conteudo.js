@@ -13,6 +13,7 @@ import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 // Chave `conteudo` (Plano 7): as tabelas `conteudo_*`, as 6 funções e o pedido à
 // IA pela API (5.9). O Storage do bucket segue no Supabase até o Plano 6.
 import { deOnde } from '../../compartilhado/banco-pela-api.js'
+import { storageNaArea } from '../../compartilhado/armazenamento-pela-api.js'
 import { areaNaApi, invocarNaArea, rpc } from '../../compartilhado/api.js'
 import { estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { deCampoDeDataHora } from './grade-do-calendario.js'
@@ -569,7 +570,7 @@ export async function excluirPeca(pecaId) {
   // tabela — o Storage é outro mundo. Apaga primeiro, senão viram lixo eterno.
   const arquivos = await listarArquivos(pecaId).catch(() => [])
   if (arquivos.length) {
-    await sbClient.storage.from(BUCKET).remove(arquivos.map(a => a.caminho))
+    await storageNaArea('conteudo', sbClient).from(BUCKET).remove(arquivos.map(a => a.caminho))
   }
   const { error } = await deOnde(sbClient).from('conteudo_pecas').delete().eq('id', pecaId)
   if (error) throw new Error(`Não consegui excluir: ${error.message}`)
@@ -595,7 +596,7 @@ function _slug(nome) {
 export async function subirArquivo(peca, file, ordem) {
   const caminho = `${peca.account_id}/${peca.id}/${ordem}-${_slug(file.name)}.${_extensao(file.name)}`
 
-  const { error: erroUp } = await sbClient.storage
+  const { error: erroUp } = await storageNaArea('conteudo', sbClient)
     .from(BUCKET)
     .upload(caminho, file, { upsert: true, contentType: file.type })
   if (erroUp) throw new Error(`Não consegui enviar ${file.name}: ${erroUp.message}`)
@@ -615,7 +616,7 @@ export async function subirArquivo(peca, file, ordem) {
     .single()
   if (error) {
     // Não deixa o arquivo órfão no depósito se a linha não entrou.
-    await sbClient.storage.from(BUCKET).remove([caminho])
+    await storageNaArea('conteudo', sbClient).from(BUCKET).remove([caminho])
     throw new Error(`Enviei ${file.name} mas não consegui registrar: ${error.message}`)
   }
   return data
@@ -654,7 +655,7 @@ export async function duplicarPeca(peca) {
     // alguém apagar a cópia e a arte sumir das duas.
     if (destino === a.caminho) continue
 
-    const { error: erroCopia } = await sbClient.storage.from(BUCKET).copy(a.caminho, destino)
+    const { error: erroCopia } = await storageNaArea('conteudo', sbClient).from(BUCKET).copy(a.caminho, destino)
     if (erroCopia) continue   // um arquivo que falha não impede os outros
 
     const { data, error } = await deOnde(sbClient).from('conteudo_arquivos').insert({
@@ -668,7 +669,7 @@ export async function duplicarPeca(peca) {
     }).select('id').single()
     if (error) {
       // Não deixa cópia órfã no depósito se a linha não entrou.
-      await sbClient.storage.from(BUCKET).remove([destino])
+      await storageNaArea('conteudo', sbClient).from(BUCKET).remove([destino])
       continue
     }
     copiados.push(data)
@@ -683,7 +684,7 @@ export async function duplicarPeca(peca) {
 }
 
 export async function removerArquivo(arquivo) {
-  await sbClient.storage.from(BUCKET).remove([arquivo.caminho])
+  await storageNaArea('conteudo', sbClient).from(BUCKET).remove([arquivo.caminho])
   const { error } = await deOnde(sbClient).from('conteudo_arquivos').delete().eq('id', arquivo.id)
   if (error) throw new Error(`Não consegui remover o arquivo: ${error.message}`)
 }
@@ -696,7 +697,7 @@ export async function trocarOrdem(arquivoId, novaOrdem) {
 // O bucket é PRIVADO: arte que ainda não foi publicada não pode ter URL
 // adivinhável. Toda exibição passa por um link assinado de validade curta.
 export async function urlAssinada(caminho, segundos = 3600) {
-  const { data, error } = await sbClient.storage.from(BUCKET).createSignedUrl(caminho, segundos)
+  const { data, error } = await storageNaArea('conteudo', sbClient).from(BUCKET).createSignedUrl(caminho, segundos)
   if (error) return null
   return data?.signedUrl || null
 }
@@ -711,7 +712,7 @@ export async function urlAssinada(caminho, segundos = 3600) {
 // esse parâmetro, o que acontece é abrir uma aba com a imagem, que no iPhone
 // ainda esbarra no bloqueador de pop-up a partir do segundo arquivo.
 export async function urlParaBaixar(caminho, nome, segundos = 3600) {
-  const { data, error } = await sbClient.storage
+  const { data, error } = await storageNaArea('conteudo', sbClient)
     .from(BUCKET)
     .createSignedUrl(caminho, segundos, { download: nome || true })
   if (error) return null
@@ -720,7 +721,7 @@ export async function urlParaBaixar(caminho, nome, segundos = 3600) {
 
 export async function urlsAssinadas(caminhos, segundos = 3600) {
   if (!caminhos?.length) return {}
-  const { data, error } = await sbClient.storage.from(BUCKET).createSignedUrls(caminhos, segundos)
+  const { data, error } = await storageNaArea('conteudo', sbClient).from(BUCKET).createSignedUrls(caminhos, segundos)
   if (error) return {}
   return Object.fromEntries((data || []).map(d => [d.path, d.signedUrl]))
 }

@@ -172,6 +172,8 @@ import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `vessel` (Plano 7): a função de presença pela API em Go (5.11).
+import { areaNaApi, fetchRpcDeEscritaNaArea } from '../../compartilhado/api.js'
 import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import {
   SITUACOES, SELO_DE_ENSAIO, resumoDosAtendimentos, comprasDaVisita, porDia,
@@ -261,6 +263,11 @@ async function carregar() {
     // ⚠️ SEM SESSÃO NÃO SE TENTA LER. Com a chave anônima a resposta é 200 com
     // lista vazia — a tela diria "nenhum atendimento" em vez de "faça login de
     // novo", que é a verdade.
+    // Chave `vessel` ligada: `vessel_atendimentos` e `vessel_pedidos` não têm rota na API (5.11 só tem as 62 funções).
+    if (areaNaApi('vessel')) {
+      erro.value = { tipo: 'indisponivel', acao: null, mensagem: 'Esta lista ainda não está disponível nesta versão da Central (a leitura dela não tem rota na nova API). Avise quem administra.' }
+      return
+    }
     if (!estado.currentSession?.access_token) {
       erro.value = { tipo: 'sem-sessao', acao: null,
         mensagem: 'Sua sessão expirou. Recarregue a página e entre de novo.' }
@@ -327,7 +334,7 @@ async function marcar(atendimento, situacao) {
   marcando.value = atendimento.id
   erroAoMarcar.value = ''
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/vessel_situacao_do_atendimento`, {
+    const r = await fetchRpcDeEscritaNaArea('vessel', `${SUPABASE_URL}/rest/v1/rpc/vessel_situacao_do_atendimento`, 'vessel_situacao_do_atendimento', {
       method: 'POST',
       headers: cabecalho(),
       body: JSON.stringify({ p_id: atendimento.id, p_situacao: situacao }),

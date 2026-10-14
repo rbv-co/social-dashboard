@@ -150,6 +150,31 @@ export async function rpcNaArea(area, sbClient, nome, args, fraseDo403 = 'Você 
   return { data: null, error: { message, code: String(r.status), status: r.status } }
 }
 
+/**
+ * O `fetch(<supabase>/rest/v1/rpc/<nome>, init)` que as telas da Vessel fazem à mão, com o `Response`.
+ * Com a área ligada vai a `POST /rpc/<nome>` (a API tira o `apikey` e põe o token da sessão dela).
+ * `recusaComoOkFalso`: o portão da API recusa com `403 sem_permissao`; no Supabase muitas funções davam
+ * `200 {ok:false, situacao:'sem_permissao', …}` e a tela lê isso — o 403 SEM frase volta a ser esse 200.
+ */
+export async function fetchRpcNaArea(area, urlDoSupabase, nome, init, { recusaComoOkFalso = false } = {}) {
+  if (!areaNaApi(area)) return fetch(urlDoSupabase, init)
+  const r = await fetchDaApi('/rpc/' + encodeURIComponent(nome), init)
+  return recusaComoOkFalso ? okFalsoDoPortao(r) : r
+}
+
+/** O 403 do portão SEM frase vira o `200 {ok:false, situacao:'sem_permissao'}` que o Supabase dava; o resto passa. */
+export async function okFalsoDoPortao(r) {
+  if (r.status !== 403) return r
+  const corpo = await r.clone().json().catch(() => null)
+  if (corpo?.mensagem) return r // "entrar como": a frase é da API e chega à tela
+  const ok = { ok: false, situacao: 'sem_permissao', motivo: 'sem_permissao', erro: 'Você não tem permissão para isso.' }
+  return new Response(JSON.stringify(ok), { status: 200, headers: { 'Content-Type': 'application/json' } })
+}
+
+/** As gravações da Vessel que leem `resposta.ok` / `resposta.situacao`: a recusa do portão volta ao `200 ok:false`. */
+export const fetchRpcDeEscritaNaArea = (area, urlDoSupabase, nome, init) =>
+  fetchRpcNaArea(area, urlDoSupabase, nome, init, { recusaComoOkFalso: true })
+
 /** Edge portada: `POST /<nome>` com o corpo e a resposta da edge. */
 export function edge(nome, corpo) {
   return pedir('POST', '/' + nome, { corpo: corpo ?? {} })
