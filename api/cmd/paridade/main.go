@@ -87,9 +87,11 @@ func rls(ctx context.Context, arq string, maxUsuarios int) error {
 		return err
 	}
 
-	// os perfis: um de cada combinação (papel, superadmin, módulos, permissões, escopo por equipe)
+	// os perfis ATIVOS (conta desativada leva 401 na API, de propósito): um de cada combinação (papel, superadmin, módulos,
+	// permissões, escopo por equipe); `viewer` vem antes de `admin` para o corte por -usuarios não deixar os viewers de fora
 	linhas, err := prod.Query(ctx, `select distinct on (role, is_superadmin, coalesce(features::text, ''), coalesce(permissions::text, ''), escopo_por_equipe)
-		id::text, role, is_superadmin from profiles order by role, is_superadmin, coalesce(features::text, ''), coalesce(permissions::text, ''), escopo_por_equipe, created_at`)
+		id::text, role, is_superadmin from profiles where not coalesce(disabled, false)
+		order by role desc, is_superadmin, coalesce(features::text, ''), coalesce(permissions::text, ''), escopo_por_equipe, created_at`)
 	if err != nil {
 		return err
 	}
