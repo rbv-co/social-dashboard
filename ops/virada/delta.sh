@@ -6,6 +6,8 @@
 #      sh ops/virada/delta.sh exportar DB_URL DIR           foto de agora (DIR/atual), DIR/delta/<t>.{csv,apagar},
 #                                                          DIR/resumo.tsv e DIR/replay.sql
 #      sh ops/virada/delta.sh comparar DB_URL DIR           foto de DB_URL contra DIR/atual (prova do replay)
+#      sh ops/virada/delta.sh destino  DB_URL DIR           ANTES do replay: DB_URL (o Supabase congelado) tem de estar igual a DIR/base
+#                                                          (nada escrito nele depois do corte); senão o replay sobrescreveria essa escrita
 # O replay roda no Supabase (ainda congelado) como `postgres`: psql -X -v ON_ERROR_STOP=1 -f DIR/replay.sql.
 # Uma transação com session_replication_role=replica (sem gatilho nem checagem de FK, como o pg_restore; o
 # supautils libera esse parâmetro ao postgres): apaga as chaves que sumiram, faz upsert das novas/alteradas e
@@ -17,7 +19,7 @@
 # Saída: 0 ok (comparar: igual); 1 falhou (comparar: diferente; exportar: tabela sem chave mudou); 2 uso.
 set -eu
 ACAO=${1:-}; URL=${2:-}; DIR=${3:-}
-[ -n "$ACAO" ] && [ -n "$URL" ] && [ -n "$DIR" ] || { sed -n '4,19p' "$0" >&2; exit 2; }
+[ -n "$ACAO" ] && [ -n "$URL" ] && [ -n "$DIR" ] || { sed -n '4,21p' "$0" >&2; exit 2; }
 AQUI=$(cd "$(dirname "$0")" && pwd)
 . "$AQUI/../migracao/oculta.sh"
 umask 077; mkdir -p "$DIR"; DIR=$(cd "$DIR" && pwd)
@@ -118,6 +120,23 @@ EOF
   cat "$DIR/resumo.tsv"
   echo "replay: $R"
   exit $s;;
+destino)
+  [ -d "$DIR/base" ] || { echo "sem $DIR/base: rode 'base' no corte" >&2; exit 1; }
+  rm -rf "$DIR/destino"; mkdir -p "$DIR/destino"; fotos "$DIR/destino"
+  dif=0
+  for f in "$DIR"/base/*.tsv; do
+    t=$(basename "$f" .tsv); a="$DIR/destino/$t.tsv"
+    cmp -s "$f" "$a" && continue
+    if grep -q '^\*' "$f"; then echo "MUDOU no destino: $t (sem chave primária)"
+    else
+      n=$( { LC_ALL=C join -t "$TAB" -v1 "$f" "$a"; LC_ALL=C join -t "$TAB" -v2 "$f" "$a"
+             LC_ALL=C join -t "$TAB" "$f" "$a" | awk -F "$TAB" '$2 != $3'; } | cut -f1 | LC_ALL=C sort -u | wc -l | tr -d ' ')
+      echo "MUDOU no destino: $t ($n chaves)"
+    fi
+    dif=$((dif + 1))
+  done
+  [ "$dif" = 0 ] || { echo "$dif tabela(s) do destino mudaram desde o corte: o replay sobrescreveria a escrita feita depois do congelamento; descubra quem escreveu antes de rodar o replay" >&2; exit 1; }
+  echo "destino intacto desde o corte: $(ls "$DIR"/base/*.tsv | wc -l | tr -d ' ') tabelas";;
 comparar)
   [ -d "$DIR/atual" ] || { echo "sem $DIR/atual: rode 'exportar' antes" >&2; exit 1; }
   rm -rf "$DIR/comparar"; mkdir -p "$DIR/comparar"; fotos "$DIR/comparar"
@@ -127,5 +146,5 @@ comparar)
   done
   [ "$dif" = 0 ] || { echo "$dif tabela(s) diferente(s)" >&2; exit 1; }
   echo "IGUAL: $(ls "$DIR"/atual/*.tsv | wc -l | tr -d ' ') tabelas, linha a linha";;
-*) sed -n '4,19p' "$0" >&2; exit 2;;
+*) sed -n '4,21p' "$0" >&2; exit 2;;
 esac

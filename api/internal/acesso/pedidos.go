@@ -83,7 +83,7 @@ func pedirAcesso(p *pgxpool.Pool) http.HandlerFunc {
 		}
 		var corpo []byte
 		err := p.QueryRow(r.Context(), `with n as (insert into access_requests (name, email, message, status)
-			values (@nome::text, @email::text, @msg::text, 'pending') on conflict (lower(email)) where status = 'pending' do nothing returning id)
+			values (@nome::text, @email::text, @msg::text, 'pending') on conflict do nothing returning id)
 			select row_to_json(x) from (select coalesce((select id from n), gen_random_uuid()) as id) x`,
 			pgx.NamedArgs{"nome": nome, "email": email, "msg": msg}).Scan(&corpo)
 		if err != nil {

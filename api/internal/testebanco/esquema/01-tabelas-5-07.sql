@@ -1,3 +1,5 @@
+-- (plano 02, 15/10/2026) O que aqui é "presumido" foi conferido contra o information_schema de produção: as diferenças estão corrigidas
+-- em 04-ajustes-ao-real-producao.sql e esquema_vs_producao_test.go reprova divergência nova.
 -- FATIA 5.7 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1, 5.6-1 e 5.7-1).
 -- Carrega depois de 01-tabelas-5-1…5-6 (ordem de nome) e antes de 01-tabelas-5-8. As funções e o
 -- único gatilho vêm em 03-funcoes-5-07.sql. Nenhuma FK para accounts: em produção account_id destas

@@ -49,7 +49,7 @@ var colunasDoWorker = map[string]string{
 	"equipes_membros":             "id,equipe_id,profile_id,papel,criado_em,criado_por",
 	"canais_grupos":               "id,nome,ordem,ativo,criado_em",
 	"acessos_perfis":              "id,nome,permissions,criado_em,criado_por",
-	"access_requests":             "id,name,email,message,status,created_at", // esquema PRESUMIDO no 5.1: o conferir é quem pega divergência
+	"access_requests":             "id,name,email,message,status,created_at", // esquema do 5.1 conferido contra a produção em 15/10/2026 (plano 02): igual
 	"audit_log":                   "actor_id,actor_email,action,detail",
 	"canais_grupos_membros":       "id,grupo_id,profile_id,papel,concedido_por,concedido_em",
 	// Plano 5.5 (Comercial): as colunas que as rotas de internal/vendas leem e gravam (o D0 vem do pg_dump do ensaio)
