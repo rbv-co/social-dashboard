@@ -66,7 +66,7 @@ recriar_db() {
 tunel() {
   IP=$(v "docker inspect -f '{{(index .NetworkSettings.Networks \"api_net\").IPAddress}}' api-db") || return 1
   SENHA=$(v "sed -n 's/^POSTGRES_PASSWORD=//p' /root/secrets/api-db.env") || return 1
-  ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N -L "127.0.0.1:$PT:$IP:5432" "$VPS" & TUNEL=$!
+  ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -N -L "127.0.0.1:$PT:$IP:5432" "$VPS" & TUNEL=$!
   ALVO="postgres://api:$SENHA@127.0.0.1:$PT/api?sslmode=disable"; BASE="postgres://api:$SENHA@127.0.0.1:$PT/api_base?sslmode=disable"
   for i in $(seq 20); do psql "$ALVO" -X -Atqc 'select 1' > /dev/null 2>&1 && return 0; sleep 1; done; echo "túnel não abriu"; return 1
 }
