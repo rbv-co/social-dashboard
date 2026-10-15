@@ -66,6 +66,7 @@ import { temAcessoPatrimonio, pilulaDaSituacaoDoBem, agruparPorPessoa, decidirEs
 import { LIMITE_AUDITORIA, foiCortado, avisoDeCorte } from './auditoria-corte.js'
 import { deOnde, TETO_DE_LINHAS } from '../../compartilhado/banco-pela-api.js'
 import { areaNaApi } from '../../compartilhado/api.js'
+import { storageNaArea } from '../../compartilhado/armazenamento-pela-api.js'
 // A API em Go entrega no máximo TETO_DE_LINHAS por pedido (o `limit` de 5000 seria recusado): a auditoria de bens pede o teto.
 const LIMITE_BENS_AUDITORIA = areaNaApi('patrimonio') ? TETO_DE_LINHAS : LIMITE_AUDITORIA
 const LIMITE_VEICULOS_AUDITORIA = areaNaApi('frota') ? TETO_DE_LINHAS : LIMITE_AUDITORIA
@@ -1838,18 +1839,17 @@ async function _acProvisionar(id){
     await loadAcessos();_acOpenPessoa(id);
   };
 }
-// Foto e termo: a linha (`avatar_url`, `acessos_termos`) não tem rota na API (5.4: "arquivo: Plano 6") e o
-// Storage de `acessos-*` só entra com a linha. Com a área ligada, o botão diz isso em vez de falhar calado.
-const _AC_SEM_ARQUIVO='Foto e termo do colaborador ainda não estão disponíveis nesta versão da Central. Avise quem administra.';
+// Foto e termo: o ARQUIVO vai pelo Storage (`/arquivos`, Plano 6) e a LINHA (`avatar_url` no PATCH, `/acessos/termos`)
+// pela API (Plano 12). `_acStorage()` é o Storage do Supabase com a chave `acessos` desligada.
+const _acStorage=()=>storageNaArea('acessos',sbClient);
 async function _acUploadAvatar(pessoaId,file){
-  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
   if(!file)return;
   if(!file.type||!file.type.startsWith('image/')){adminToast('Envie uma imagem',false);return;}
   const ext=file.type.includes('png')?'png':file.type.includes('webp')?'webp':'jpg';
   const path=pessoaId+'.'+ext;
-  const{error}=await sbClient.storage.from('acessos-avatars').upload(path,file,{upsert:true,contentType:file.type});
+  const{error}=await _acStorage().from('acessos-avatars').upload(path,file,{upsert:true,contentType:file.type});
   if(error){adminToast('Erro: '+error.message,false);return;}
-  const url=SUPABASE_URL+'/storage/v1/object/public/acessos-avatars/'+path+'?v='+Date.now();
+  const url=_acStorage().from('acessos-avatars').getPublicUrl(path).data.publicUrl+'?v='+Date.now();
   const{error:e2}=await deOnde(sbClient).from('acessos_pessoas').update({avatar_url:url,atualizado_em:new Date().toISOString()}).eq('id',pessoaId);
   if(e2){adminToast('Erro: '+e2.message,false);return;}
   await _acLog('colaborador.avatar','colab:'+pessoaId,'ok',null);
@@ -1859,7 +1859,7 @@ async function _acExcluirColaborador(id){
   if(estado.role!=='admin'){adminToast('Só admin pode excluir',false);return;}
   const c=_acData.pessoas.find(x=>x.id===id);if(!c)return;
   if(!confirm('Excluir DEFINITIVAMENTE "'+c.nome+'"?\nRemove a pessoa e TODOS os dispositivos, veículos e termos dela. Sem volta.'))return;
-  try{await sbClient.storage.from('acessos-avatars').remove([id+'.png',id+'.jpg',id+'.webp']);}catch(e){}
+  try{await _acStorage().from('acessos-avatars').remove([id+'.png',id+'.jpg',id+'.webp']);}catch(e){}
   const{error}=await deOnde(sbClient).from('acessos_pessoas').delete().eq('id',id);
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('colaborador.excluir','colab:'+c.nome,'ok',null);
@@ -2052,30 +2052,27 @@ function _acTermoRow(pessoaId,t){
   </div>`;
 }
 async function _acUploadTermo(pessoaId,file){
-  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
   if(!file)return;
   const titulo=(prompt('Título do documento (opcional):',file.name)||file.name);
   const path=pessoaId+'/'+Date.now()+'-'+_acSanitizeName(file.name);
-  const{error:e1}=await sbClient.storage.from('acessos-termos').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'});
+  const{error:e1}=await _acStorage().from('acessos-termos').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'});
   if(e1){adminToast('Erro upload: '+e1.message,false);return;}
   const{error:e2}=await deOnde(sbClient).from('acessos_termos').insert({pessoa_id:pessoaId,titulo,arquivo_path:path});
-  if(e2){await sbClient.storage.from('acessos-termos').remove([path]);adminToast('Erro: '+e2.message,false);return;}
+  if(e2){await _acStorage().from('acessos-termos').remove([path]);adminToast('Erro: '+e2.message,false);return;}
   await _acLog('termo.enviar','termo:'+titulo,'ok',null);
   adminToast('Documento enviado');_acRenderTermos(pessoaId);
 }
 async function _acDownloadTermo(termoId){
-  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
   const{data,error}=await deOnde(sbClient).from('acessos_termos').select('arquivo_path').eq('id',termoId).single();
   if(error||!data?.arquivo_path){adminToast('Arquivo não encontrado',false);return;}
-  const{data:sg,error:e2}=await sbClient.storage.from('acessos-termos').createSignedUrl(data.arquivo_path,120);
+  const{data:sg,error:e2}=await _acStorage().from('acessos-termos').createSignedUrl(data.arquivo_path,120);
   if(e2){adminToast('Erro URL: '+e2.message,false);return;}
   window.open(sg.signedUrl,'_blank');
 }
 async function _acDelTermo(termoId,pessoaId){
-  if(areaNaApi('acessos')){adminToast(_AC_SEM_ARQUIVO,false);return;}
   if(!await _acConfirmar('Excluir este termo? O arquivo enviado também será apagado.',{ok:'Excluir',perigo:true}))return;
   const{data:t}=await deOnde(sbClient).from('acessos_termos').select('arquivo_path').eq('id',termoId).single();
-  if(t&&t.arquivo_path){await sbClient.storage.from('acessos-termos').remove([t.arquivo_path]);}
+  if(t&&t.arquivo_path){await _acStorage().from('acessos-termos').remove([t.arquivo_path]);}
   const{error}=await deOnde(sbClient).from('acessos_termos').delete().eq('id',termoId);
   if(error){adminToast('Erro: '+error.message,false);return;}
   await _acLog('termo.excluir','termo:'+termoId,'ok',null);

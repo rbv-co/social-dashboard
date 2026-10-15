@@ -109,7 +109,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { areaNaApi } from '../../compartilhado/api.js'
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { diasAtras } from '../../compartilhado/datas.js'
 import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 import {
@@ -139,13 +139,7 @@ async function carregar() {
   carregando.value = true
   erro.value = null
   const desde = diasAtras(7) + 'T00:00:00-03:00'
-  // Chave `vessel` ligada: `checkout_abandono` não tem rota na API.
-  if (areaNaApi('vessel')) {
-    erro.value = 'Esta lista ainda não está disponível nesta versão da Central (a leitura dela não tem rota na nova API). Avise quem administra.'
-    colunas.value = vazio(); cortado.value = false; carregando.value = false
-    return
-  }
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('checkout_abandono')
     .select('*')
     .gte('iniciado_em', desde)

@@ -543,3 +543,57 @@ test('bling_pedido_vendedor: upsert em lotes de 1000 e `.limit(5000)` lê em pá
   const recusa = await b.consultaPelaApi('bling_lojas').select('*').limit(5000)
   assert.match(recusa.error.message, /acima do teto/)
 })
+
+// ── Plano 12 — leituras da Vessel e termos de colaborador ──
+test('Base de Leads: `.limit(2000)` lê em páginas de 1000 com `contar=1` e o corte continua visível (length === 2000)', async () => {
+  const pagina = (n) => Array.from({ length: n }, (_, i) => ({ criado_em: 't', session_id: String(i) }))
+  const pedidos = []
+  globalThis.fetch = async (url) => {
+    const u = new URL(url, 'http://x')
+    pedidos.push(u.search)
+    return { status: 200, ok: true, text: async () => JSON.stringify(pagina(1000)), headers: { get: (k) => (k === 'X-Total-Count' ? '2500' : null) } }
+  }
+  const r = await b.consultaPelaApi('carrinho_eventos').select('criado_em,session_id').eq('tipo', 'checkout_iniciado').gte('criado_em', '2026-10-01T00:00:00-03:00').limit(2000)
+  assert.equal(r.error, null)
+  assert.equal(r.data.length, 2000)
+  const p0 = new URLSearchParams(pedidos[0])
+  assert.equal(p0.get('tipo'), 'checkout_iniciado')
+  assert.equal(p0.get('criado_desde'), '2026-10-01T00:00:00-03:00')
+  assert.equal(p0.get('contar'), '1')
+  assert.equal(new URLSearchParams(pedidos[1]).get('deslocamento'), '1000')
+  assert.equal(pedidos.length, 2)
+})
+
+test('vessel_pessoas/vessel_origens: `in` vira `id=1,2,3` e `pessoa_id=1,2,3`', async () => {
+  const pedidos = api({ 'GET /vessel/pessoas': [200, [{ id: 1, nome: 'A', telefone: null, email: null }]], 'GET /vessel/origens': [200, []] })
+  await b.consultaPelaApi('vessel_pessoas').select('id,nome,telefone,email').in('id', [1, 2, 3])
+  await b.consultaPelaApi('vessel_origens').select('pessoa_id,momento').in('pessoa_id', [1, 2, 3])
+  assert.equal(busca(pedidos[0]).id, '1,2,3')
+  assert.equal(busca(pedidos[1]).pessoa_id, '1,2,3')
+})
+
+test('checkout_abandono: `select *`, `iniciado_em >=` e a ordem fixa da rota com `.limit(500)`', async () => {
+  const pedidos = api({ 'GET /vessel/checkout-abandono': [200, [{ token: 'b' }, { token: 'a' }]] })
+  const r = await b.consultaPelaApi('checkout_abandono').select('*').gte('iniciado_em', '2026-10-08T00:00:00-03:00')
+    .order('ultimo_evento_em', { ascending: false }).limit(500)
+  assert.equal(r.error, null)
+  assert.deepEqual(r.data.map((x) => x.token), ['b', 'a'])
+  assert.deepEqual(busca(pedidos[0]), { iniciado_desde: '2026-10-08T00:00:00-03:00', limite: '500' })
+})
+
+test('acessos_termos: baixar/excluir leem pelo `id`; o insert e o delete vão para /acessos/termos', async () => {
+  const pedidos = api({
+    'GET /acessos/termos': [200, [{ id: 7, arquivo_path: '3/x.pdf' }]],
+    'POST /acessos/termos': [201, { id: 8, pessoa_id: 3, arquivo_path: '3/y.pdf' }],
+    'DELETE /acessos/termos/7': [204, undefined],
+  })
+  const lido = await b.consultaPelaApi('acessos_termos').select('arquivo_path').eq('id', 7).single()
+  assert.equal(lido.data.arquivo_path, '3/x.pdf')
+  assert.equal(busca(pedidos[0]).id, '7')
+  const novo = await b.consultaPelaApi('acessos_termos').insert({ pessoa_id: 3, titulo: 'T', arquivo_path: '3/y.pdf' })
+  assert.equal(novo.error, null)
+  assert.deepEqual(pedidos[1].corpo, { pessoa_id: 3, titulo: 'T', arquivo_path: '3/y.pdf' })
+  const apagado = await b.consultaPelaApi('acessos_termos').delete().eq('id', 7)
+  assert.equal(apagado.error, null)
+  assert.equal(pedidos[2].chave, 'DELETE /acessos/termos/7')
+})

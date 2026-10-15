@@ -76,7 +76,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { areaNaApi } from '../../compartilhado/api.js'
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { diasAtras } from '../../compartilhado/datas.js'
 import { unificarEventos, contarPorTipo, foiCortado, LIMITE_LEADS, TIPOS } from './base-de-leads.js'
 
@@ -100,22 +100,29 @@ function formatarData(iso) {
   return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 }
 
+// Junta as respostas de vários pedidos de até 1000 ids (o teto da rota); o primeiro erro vence.
+async function emFatias(ids, ler) {
+  const respostas = []
+  for (let i = 0; i < ids.length; i += 1000) respostas.push(await ler(ids.slice(i, i + 1000)))
+  const erro = respostas.find((r) => r.error)?.error || null
+  return { data: erro ? null : respostas.flatMap((r) => r.data || []), error: erro }
+}
+
 async function carregar() {
   carregando.value = true
   erro.value = null
   cortado.value = false
   linhas.value = [] // limpa antes de buscar: sem isto, período que falha deixa o anterior na tela, como se fosse dado novo
   const desde = `${diasAtras(periodoAtivo.value)}T00:00:00-03:00`
-  // Chave `vessel` ligada: as 5 tabelas daqui não têm rota na API (5.11 só tem as 62 funções).
-  if (areaNaApi('vessel')) { erro.value = 'Esta lista ainda não está disponível nesta versão da Central (a leitura dela não tem rota na nova API). Avise quem administra.'; carregando.value = false; return }
+  const banco = deOnde(sbClient) // chave `vessel` ligada: as 5 tabelas saem por `GET /vessel/*` (Plano 12)
 
   const [checkouts, popups, atendimentos] = await Promise.all([
-    sbClient.from('carrinho_eventos')
+    banco.from('carrinho_eventos')
       .select('criado_em,session_id,utm_source,utm_medium,utm_campaign,gclid,referrer,fbp,fbc')
       .eq('tipo', 'checkout_iniciado').gte('criado_em', desde).limit(LIMITE_LEADS),
-    sbClient.from('vessel_lista_espera')
+    banco.from('vessel_lista_espera')
       .select('criado_em,nome,email,whatsapp,utm_source,utm_medium,utm_campaign,clique_meta').gte('criado_em', desde).limit(LIMITE_LEADS),
-    sbClient.from('vessel_atendimentos')
+    banco.from('vessel_atendimentos')
       .select('pessoa_id,criado_em').gte('criado_em', desde).limit(LIMITE_LEADS),
   ])
 
@@ -131,9 +138,10 @@ async function carregar() {
   const idsDePessoas = [...new Set((atendimentos.data || []).map((a) => a.pessoa_id).filter(Boolean))]
   let pessoas = [], origens = []
   if (idsDePessoas.length) {
+    // A rota aceita até 1000 ids por pedido; a lista pode ter até LIMITE_LEADS pessoas.
     const [pessoasResp, origensResp] = await Promise.all([
-      sbClient.from('vessel_pessoas').select('id,nome,telefone,email').in('id', idsDePessoas),
-      sbClient.from('vessel_origens').select('pessoa_id,momento,utm_source,utm_medium,utm_campaign,clique_meta').in('pessoa_id', idsDePessoas),
+      emFatias(idsDePessoas, (ids) => banco.from('vessel_pessoas').select('id,nome,telefone,email').in('id', ids)),
+      emFatias(idsDePessoas, (ids) => banco.from('vessel_origens').select('pessoa_id,momento,utm_source,utm_medium,utm_campaign,clique_meta').in('pessoa_id', ids)),
     ])
     if (pessoasResp.error || origensResp.error) {
       erro.value = (pessoasResp.error || origensResp.error).message
