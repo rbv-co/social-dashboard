@@ -21,6 +21,15 @@
   do $$ begin raise exception 'falta SENHA_PDV no ambiente'; end $$;
 \endif
 
+-- TRAVA: "nenhuma função" só vale se o EXECUTE já foi tirado de PUBLIC (o dump do Supabase vem sem GRANT/REVOKE e as funções
+-- SECURITY DEFINER do dono, como vessel_marcar_gravada, escrevem com os poderes dele). Quem tira é o papel-copia.sql (LEIA-ME,
+-- regra 15): aplique-o ANTES. Sem isso este arquivo recusa, em vez de entregar ao PDV um papel que escreve por função.
+select exists (select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+               where p.pronamespace = 'public'::regnamespace and a.grantee = 0 and a.privilege_type = 'EXECUTE') as aberto \gset
+\if :aberto
+  do $$ begin raise exception 'PUBLIC ainda tem EXECUTE em funções do public: aplique antes o papel-copia.sql (revoga) e rode de novo'; end $$;
+\endif
+
 select not exists (select 1 from pg_roles where rolname = 'pdv_leitura') as criar \gset
 \if :criar
   create role pdv_leitura login;

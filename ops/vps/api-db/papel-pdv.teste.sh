@@ -31,12 +31,14 @@ insert into vessel_lotes values ('aaaaaaaa-0000-0000-0000-000000000001', 'SS1A.0
 insert into vessel_pecas values ('ABXCKN5PZA', 'aaaaaaaa-0000-0000-0000-000000000001', 7, now(), now(), now()), ('SEMSKU0000', 'aaaaaaaa-0000-0000-0000-000000000002', 1, now(), now(), now());
 insert into usuarios values ('aaaaaaaa-0000-0000-0000-000000000009', 'a@x', 'hash');
 create function apaga_tudo() returns void language sql security definer as $$ delete from vessel_pecas $$;
--- a base do LEIA-ME (item 15): o dump vem sem GRANT e o papel-copia.sql tira o EXECUTE de PUBLIC
-revoke execute on all functions in schema public from public;
-alter default privileges revoke execute on functions from public;
 SQLX
 
 export SENHA_PDV=senha-so-deste-teste
+# sem a base do LEIA-ME (item 15) o arquivo RECUSA: PUBLIC tem EXECUTE na função de escrita
+psql "$SERVIDOR/$NOME" -X -q -f "$SQL" >/dev/null 2>&1; confere "PUBLIC com EXECUTE em função: recusa" "$([ $? -ne 0 ] && echo recusou || echo rodou)" "recusou"
+confere "e nenhum papel ficou criado" "$(adm -c "select count(*) from pg_roles where rolname = 'pdv_leitura'")" "0"
+# a base do LEIA-ME: o dump vem sem GRANT e o papel-copia.sql tira o EXECUTE de PUBLIC
+adm -c "revoke execute on all functions in schema public from public" -c "alter default privileges revoke execute on functions from public"
 for rodada in 1 2; do   # a segunda prova que reaplicar é seguro
   psql "$SERVIDOR/$NOME" -X -v ON_ERROR_STOP=1 -q -f "$SQL" >/dev/null 2>&1; confere "papel-pdv.sql roda (rodada $rodada)" "$?" "0"
 done
@@ -57,7 +59,6 @@ nega "não insere" "insert into vessel_pecas (codigo) values ('X')"
 nega "não atualiza" "update vessel_pecas set numero_na_serie = 9 where codigo = 'ABXCKN5PZA'"
 nega "não apaga" "delete from vessel_pecas"
 nega "não executa função do banco" "select apaga_tudo()"
-nega "não cria objeto no schema public" "create table public.invasor (x int)"
 confere "nada foi apagado" "$(adm -c "select count(*) from vessel_pecas")" "2"
 
 [ "$falhas" -eq 0 ] && echo "TUDO OK" || { echo "$falhas falha(s)"; exit 1; }
