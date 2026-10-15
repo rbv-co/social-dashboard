@@ -22,7 +22,7 @@ import (
 const canario = "CANARIO-VAZOU-9f3a71"
 
 // rastros: o que NUNCA aparece no corpo de uma resposta (pilha do Go, texto do driver/Postgres, segredos de teste).
-var rastros = []string{"goroutine ", "panic(", ".go:", "SQLSTATE", "pgconn", "pgx", "ERROR:", "syntax error", "segredo-de-teste", chaveDoCore, "Bearer "}
+var rastros = []string{"goroutine ", "panic(", ".go:", "SQLSTATE", "pgconn", "pgx", "ERROR:", "syntax error", "duplicate key", "violates", "does not exist", "invalid input syntax", "Key (", "segredo-de-teste", chaveDoCore, "Bearer "}
 
 func semVazamento(t *testing.T, quem string, arquivos string, corpo string) {
 	t.Helper()
@@ -73,6 +73,9 @@ func TestPublicasComEntradaHostil(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/storage/v1/object/public/publico/ok.png", nil))
 	if w.Code != http.StatusOK || w.Body.String() != "PUBLICO-OK" {
 		t.Fatalf("controle positivo: GET público do bucket público = %d %.80s", w.Code, w.Body)
+	}
+	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("arquivo servido sem X-Content-Type-Options: nosniff (cabeçalhos: %v)", w.Header())
 	}
 
 	n := 0
@@ -201,7 +204,9 @@ func TestPublicasLimitamPorOrigem(t *testing.T) {
 // Item B (filtros do dialeto): os parâmetros de query das leituras de domínio (`limite`, `deslocamento`, `ordem`,
 // `contar` e os filtros declarados de cada rota) com identificadores e valores hostis. A gramática das consultas é
 // fechada e os valores entram como parâmetro: o pedido ruim dá 4xx, nunca 5xx, nunca atrasa o banco (pg_sleep) nem
-// muda o esquema.
+// muda o esquema. Limite honesto: o banco do teste tem as tabelas vazias, então um `pg_sleep` injetado numa cláusula que
+// nunca roda não prova nada pelo tempo; a prova de que a injeção não vira SQL é a gramática fechada + parâmetros
+// (internal/dados/consulta_*_test.go, fuzz); aqui fica o 5xx, o vazamento e o esquema intacto.
 func TestFiltrosHostisNasLeiturasDeDominio(t *testing.T) {
 	p, h, sessoes, arquivos, _ := mundoDaMatriz(t)
 	contagem := func() string {

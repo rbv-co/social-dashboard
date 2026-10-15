@@ -11,6 +11,8 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"log/slog"
@@ -21,6 +23,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -345,7 +348,7 @@ func esperado(l linha, p perfil, st int) (bool, string) {
 	switch {
 	case l.g == gPublica:
 		// sem sessão a rota NÃO é barrada por 401 de sessão (o webhook responde 401 pela assinatura: ver a lista
-		// publicasQueRecusamSemSegredo); nunca 5xx com corpo vazio/hostil
+		// TestNenhumaRotaNovaFicaAberta, em rotas_test.go); nunca 5xx com corpo vazio/hostil
 		return st < 500, "pública: nunca 5xx"
 	case p == pAnon:
 		return st == http.StatusUnauthorized, "sem sessão = 401"
@@ -360,6 +363,8 @@ func esperado(l linha, p perfil, st int) (bool, string) {
 		return true, ""
 	case p == pImp && l.e == rwE:
 		return st == http.StatusForbidden, `"entrar como" não grava: 403`
+	case (p == pSuper || p == pImp) && l.g == gDominio && l.e == rwL:
+		return st == http.StatusOK, "leitura de domínio do superadmin: 200 (controle positivo: o portão deixa passar)"
 	case p == pSuper || p == pImp:
 		return passou, "superadmin passa o portão (qualquer coisa menos 401/403)"
 	}
@@ -383,15 +388,29 @@ const origemPermitida = "https://app.permitido.example"
 
 const hashCanario = "CanarioDeSenhaNaoPodeSair000000000000000000000000000000000"
 
+// logsCapturados: buffer seguro para goroutines (a de EsqueciSenha loga depois da resposta).
+type logsCapturados struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *logsCapturados) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+func (l *logsCapturados) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+func (l *logsCapturados) Len() int       { l.mu.Lock(); defer l.mu.Unlock(); return l.b.Len() }
+
 // capturaLogs: tudo que a API loga (slog e log padrão, inclusive Debug) durante o teste.
-func capturaLogs(t *testing.T) *bytes.Buffer {
+func capturaLogs(t *testing.T) *logsCapturados {
 	t.Helper()
-	var b bytes.Buffer
+	b := &logsCapturados{}
 	anterior := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&b, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	log.SetOutput(&b)
+	slog.SetDefault(slog.New(slog.NewTextHandler(b, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	log.SetOutput(b)
 	t.Cleanup(func() { slog.SetDefault(anterior); log.SetOutput(os.Stderr) })
-	return &b
+	return b
 }
 
 // semConfiguracao: as rotas que respondem 5xx POR DESENHO quando a chave ou a URL do fornecedor não está no config do teste
@@ -529,9 +548,12 @@ func TestMatrizRotaPorPerfil(t *testing.T) {
 		t.Error("controle: a captura de logs não pegou nada (a varredura de segredo nos logs não provaria nada)")
 	}
 	for _, tk := range usados {
-		if strings.Contains(logs.String(), tk) {
-			t.Errorf("um token de sessão apareceu nos logs da API")
-			break
+		h := sha256.Sum256([]byte(tk))
+		for _, parte := range []string{tk, hex.EncodeToString(h[:]), tk[:min(16, len(tk))]} { // inteiro, o hash que vai ao banco e um prefixo
+			if strings.Contains(logs.String(), parte) {
+				t.Errorf("um token de sessão (ou o hash/prefixo dele) apareceu nos logs da API")
+				break
+			}
 		}
 	}
 	for _, seg := range []string{hashCanario, "segredo-de-teste", chaveDoCore} {
@@ -553,7 +575,7 @@ var rpcsAbertasAQualquerPainel = map[string]bool{}
 var rpcsQueDevolvemVazio = map[string]bool{"vessel_convidadas_do_encontro": true, "vessel_stylist_contatos": true, "vessel_stylist_qualificacoes": true}
 
 // reGrava: a função muda dados (o corpo SQL tem DML). Serve de oráculo independente do campo SoSessaoPropria.
-var reGrava = regexp.MustCompile(`(?i)\b(insert\s+into|update\s+[\w."]+(\s+\w+)?\s+set|delete\s+from|truncate|nextval|set_config)\b`)
+var reGrava = regexp.MustCompile(`(?i)\b(insert\s+into|update\s+[\w."]+(\s+(as\s+)?\w+)?\s+set|merge\s+into|perform\s+(public\.)?\w*(grav|salv|criar|editar|apagar|decidir|registrar|marcar)|delete\s+from|truncate|nextval|set_config)\b`)
 
 // POST /rpc/{nome} é UMA rota na matriz, mas são 92 funções. Para cada uma: sem sessão 401, cliente 403, viewer sem
 // nada 403 (salvo a lista revisada acima), e quem entrou como outra pessoa: 403 se a função GRAVA (o corpo SQL tem
@@ -596,16 +618,15 @@ func TestRPCsPorPerfil(t *testing.T) {
 			if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "[]" {
 				t.Errorf("rpc %s: viewer sem a permissão da tela = %d %s, esperava 200 []", f.Nome, w.Code, w.Body)
 			}
-			continue
+		} else {
+			switch st := pedir(pSem, tok[pSem]); {
+			case rpcsAbertasAQualquerPainel[f.Nome] && st == http.StatusForbidden:
+				t.Errorf("rpc %s consta como aberta a qualquer painel, mas o viewer sem nada levou 403 (tire da lista)", f.Nome)
+			case !rpcsAbertasAQualquerPainel[f.Nome] && st != http.StatusForbidden:
+				t.Errorf("rpc %s: viewer sem módulo nem permissão = %d, esperava 403 (ou entre na lista revisada)", f.Nome, st)
+			}
 		}
-		st := pedir(pSem, tok[pSem])
-		switch {
-		case rpcsAbertasAQualquerPainel[f.Nome] && st == http.StatusForbidden:
-			t.Errorf("rpc %s consta como aberta a qualquer painel, mas o viewer sem nada levou 403 (tire da lista)", f.Nome)
-		case !rpcsAbertasAQualquerPainel[f.Nome] && st != http.StatusForbidden:
-			t.Errorf("rpc %s: viewer sem módulo nem permissão = %d, esperava 403 (ou entre na lista revisada)", f.Nome, st)
-		}
-		st = pedir(pImp, tok[pImp])
+		st := pedir(pImp, tok[pImp])
 		if grava && st != http.StatusForbidden {
 			t.Errorf("rpc %s grava e quem entrou como outra pessoa levou %d, esperava 403", f.Nome, st)
 		}
@@ -615,5 +636,75 @@ func TestRPCsPorPerfil(t *testing.T) {
 		if st := pedir(pSuper, tok[pSuper]); st == http.StatusForbidden || st == http.StatusUnauthorized {
 			t.Errorf("rpc %s: superadmin levou %d (controle positivo)", f.Nome, st)
 		}
+	}
+}
+
+// As três rotas em que o portão fino está DENTRO do handler e depende do corpo (a matriz com `{}` só vê o 400 da edge):
+// entrar-como (só superadmin de painel), invite-user (só papel admin) e meta-proxy (escrita na Meta: não para quem entrou
+// como). Corpo válido, esperado pela regra e conferência de que nada foi criado.
+func TestPortoesDeContaEMetaProxyComCorpoValido(t *testing.T) {
+	p, h, sessoes, _, _ := mundoDaMatriz(t)
+	const idAdmin = "25555555-5555-4555-a555-555555555555"
+	for _, q := range []string{`insert into usuarios (id, email) values ($1::uuid, 'admin-simples@x.com')`,
+		`insert into profiles (id, email, name, role, is_superadmin, escopo_por_equipe, features) values ($1::uuid, 'admin-simples@x.com', 'a', 'admin', false, false, '{}')`} {
+		if _, err := p.Exec(context.Background(), q, idAdmin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var tokAdmin string
+	{
+		s := auth.NovoStore(p)
+		var err error
+		if tokAdmin, err = s.Criar(context.Background(), idAdmin, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	contar := func(sql string) int {
+		var n int
+		if err := p.QueryRow(context.Background(), sql).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	usuariosAntes, sessoesAntes := contar(`select count(*) from usuarios`), contar(`select count(*) from sessoes`)
+	pedir := func(tok, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest("POST", caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	tk := sessoes()
+	alvo := `{"alvoId":"22222222-2222-4222-a222-222222222222"}` // o superadmin da fixture
+	for nome, c := range map[string]struct {
+		tok, caminho, corpo string
+		quer                int
+	}{
+		"entrar-como sem permissão":         {tk[pSem], "/entrar-como-usuario", alvo, 400},
+		"entrar-como admin que não é super": {tokAdmin, "/entrar-como-usuario", alvo, 400},
+		"entrar-como já impersonado":        {tk[pImp], "/entrar-como-usuario", alvo, 403},
+		"entrar-como cliente":               {tk[pCli], "/entrar-como-usuario", alvo, 403},
+		"invite-user sem papel admin":       {tk[pSem], "/invite-user", `{"email":"novo@x.com","name":"Novo","role":"admin"}`, 400},
+		"invite-user impersonado":           {tk[pImp], "/invite-user", `{"email":"novo@x.com","name":"Novo","role":"admin"}`, 403},
+		"meta-proxy POST impersonado":       {tk[pImp], "/meta-proxy", `{"accountId":"1","path":"x","method":"POST"}`, 403},
+		"meta-proxy DELETE impersonado":     {tk[pImp], "/meta-proxy", `{"accountId":"1","path":"x","method":"DELETE"}`, 403},
+		"meta-proxy mídia impersonado":      {tk[pImp], "/meta-proxy", `{"accountId":"1","path":"x","imageFromURL":"https://x/y.png"}`, 403},
+		"meta-proxy sem módulo":             {tk[pSem], "/meta-proxy", `{"accountId":"1","path":"x","method":"POST"}`, 403},
+		"avisar-decisão impersonado":        {tk[pImp], "/avisar-decisao-de-reserva", `{"requisicaoId":"22222222-2222-4222-a222-222222222222"}`, 403},
+	} {
+		st, corpo := pedir(c.tok, c.caminho, c.corpo)
+		if st != c.quer {
+			t.Errorf("%s = %d %.120s, esperava %d", nome, st, corpo, c.quer)
+		}
+		if strings.Contains(corpo, `"token"`) {
+			t.Errorf("%s devolveu token de sessão: %.80s", nome, corpo)
+		}
+	}
+	if n := contar(`select count(*) from usuarios`); n != usuariosAntes {
+		t.Errorf("usuários: %d -> %d (um pedido recusado criou conta)", usuariosAntes, n)
+	}
+	if n := contar(`select count(*) from sessoes`); n != sessoesAntes+0 && n < sessoesAntes {
+		t.Errorf("sessões encolheram: %d -> %d", sessoesAntes, n)
 	}
 }
