@@ -1,3 +1,5 @@
+-- (plano 02, 15/10/2026) vessel_registros.nascimento (date, nula) e bling_atualizado_em (timestamptz, nula): CONFIRMADAS no
+-- information_schema de produção; ver esquema_vs_producao_test.go.
 -- FATIA 5.10 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1, 5.9-1 e 5.10-4). Carrega
 -- depois de 01-tabelas-5-01.sql (usuarios, profiles). As 11 tabelas com a policy is_vessel_admin() do catálogo
 -- e vessel_cartao_arquivos (lida por POST /vessel-baixar-cartao), das migrations; FKs de auth.users não há.

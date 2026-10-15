@@ -69,7 +69,7 @@ func TestFatiaDasRedes(t *testing.T) {
 		t.Errorf("%d gatilhos nas tabelas da fatia, esperava 0", n)
 	}
 
-	if _, err := p.Exec(ctx, `insert into accounts (id, name) values ('`+a1+`', 'A1'), ('`+a2+`', 'A2')`); err != nil {
+	if _, err := p.Exec(ctx, `insert into accounts (id, name, username, instagram_id) values ('`+a1+`', 'A1', 'a1', '1'), ('`+a2+`', 'A2', 'a2', '2')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -92,6 +92,10 @@ func TestFatiaDasRedes(t *testing.T) {
 	if _, err := p.Exec(ctx, `
 		insert into followers_leituras (account_id, followers_count) values ('`+a1+`', 10), ('`+a2+`', 20);
 		insert into visitas_perfil_dia (account_id, dia, visitas) values ('`+a1+`', '2026-10-11', 3), ('`+a2+`', '2026-10-11', 4)`); err != nil {
+		t.Fatal(err)
+	}
+	// em produção account_insights e data_integrity_checks referenciam a conta SEM cascade: a linha tem de sair antes
+	if _, err := p.Exec(ctx, `delete from account_insights where account_id = '`+a1+`'; delete from data_integrity_checks where account_id = '`+a1+`'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.Exec(ctx, `delete from accounts where id = '`+a1+`'`); err != nil {

@@ -164,10 +164,10 @@ func TestRotasDeRobo(t *testing.T) {
 	m.Rodar(t, []mundoteste.Caso{
 		{Nome: "execução", Quem: "robo", Metodo: "POST", Caminho: "/fabrica/robo/execucoes", Status: 201, Tem: `"id"`,
 			Corpo: `{"robo":"fabrica-gerar","acao":"gerar criativos","modelo":"gpt-image-2","itens":3,"unidade":"criativos","status":"ok","detalhe":"completo","duracao_ms":1000,"github_run_id":"999"}`},
-		{Nome: "padrões", Quer: "true", Efeito: `select (usd = 0 and input_tokens = 0 and itens = 3 and github_run_id = '999')::text from ia_execucoes where acao = 'gerar criativos'`},
+		{Nome: "padrões", Quer: "true", Efeito: `select (usd is null and input_tokens = 0 and itens = 3 and github_run_id = '999')::text from ia_execucoes where acao = 'gerar criativos'`},
 		{Nome: "null = padrão", Quem: "robo", Metodo: "POST", Caminho: "/fabrica/robo/execucoes", Status: 201,
 			Corpo: `{"robo":"fabrica-subir","acao":"subir campanha","usd":null,"status":null}`},
-		{Nome: "padrão do banco", Quer: "true", Efeito: `select (usd = 0 and status = 'ok')::text from ia_execucoes where acao = 'subir campanha'`},
+		{Nome: "padrão do banco", Quer: "true", Efeito: `select (usd is null and status = 'ok')::text from ia_execucoes where acao = 'subir campanha'`},
 		{Nome: "outro robô", Quem: "robo", Metodo: "POST", Caminho: "/fabrica/robo/execucoes", Corpo: `{"robo":"budget-ia","acao":"x"}`, Status: 400},
 		{Nome: "itens negativo", Quem: "robo", Metodo: "POST", Caminho: "/fabrica/robo/execucoes", Corpo: `{"robo":"fabrica","acao":"x","itens":-1}`, Status: 400},
 		{Nome: "usd texto", Quem: "robo", Metodo: "POST", Caminho: "/fabrica/robo/execucoes", Corpo: `{"robo":"fabrica","acao":"x","usd":"x"}`, Status: 400},

@@ -1,3 +1,5 @@
+-- (plano 02, 15/10/2026) O que aqui é "presumido" foi conferido contra o information_schema de produção: as diferenças estão corrigidas
+-- em 04-ajustes-ao-real-producao.sql e esquema_vs_producao_test.go reprova divergência nova.
 -- FATIA 5.1 do esquema de produção para os testes (D0 reconstruído: Ruling 5.1-1). Os próximos
 -- sub-planos acrescentam 01-tabelas-5-02.sql, 5-03... SEMPRE com dois dígitos (a ordem é a do nome do
 -- arquivo: 5-10 viria antes de 5-2). Carregada por testebanco.ComEsquemaDeProducao DEPOIS da camada de compatibilidade e das migrações da API.

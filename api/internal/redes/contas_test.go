@@ -91,7 +91,8 @@ func TestContas(t *testing.T) {
 			Status: 200, Tem: `"username":"vesselbr"`, NaoTem: "SEGREDO",
 			Efeito: `select name || '|' || username || '|' || accent_color || '|' || conteudo_usa_portal || '|' || publicacao_automatica from accounts where id = '` + A1 + `'`,
 			Quer:   "Vessel Brasil|vesselbr|#112233|true|true"},
+		// accounts.username é NOT NULL em produção: null é recusado e o valor fica
 		{Nome: "username nulo", Quem: "adminA1", Metodo: "PATCH", Caminho: "/redes/contas/" + A1, Corpo: `{"username":null}`,
-			Status: 200, Efeito: `select coalesce(username, '<nulo>') from accounts where id = '` + A1 + `'`, Quer: "<nulo>"},
+			Status: 400, Efeito: `select coalesce(username, '<nulo>') from accounts where id = '` + A1 + `'`, Quer: "vesselbr"},
 	})
 }

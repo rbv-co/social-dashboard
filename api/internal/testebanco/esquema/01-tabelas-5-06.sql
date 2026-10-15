@@ -1,3 +1,5 @@
+-- (plano 02, 15/10/2026) O que aqui é "presumido" foi conferido contra o information_schema de produção: as diferenças estão corrigidas
+-- em 04-ajustes-ao-real-producao.sql e esquema_vs_producao_test.go reprova divergência nova.
 -- FATIA 5.6 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1 e 5.6-1). Carrega
 -- depois de 01-tabelas-5-01…5-05 (ordem de nome); pode_ver_conta vem em 03-funcoes-5-06.sql, depois de
 -- 02-gatilhos.sql (precisa de conta_ativa). Nenhuma destas tabelas tem gatilho em produção

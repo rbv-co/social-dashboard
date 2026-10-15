@@ -47,8 +47,8 @@ var pessoas = []mundoteste.Pessoa{
 // Sem identidade. Toda linha de A2 carrega o uuid de A2 em account_id (ou é ligada à marca M2).
 // A decisão 3 não tem conta (pode_ver_conta(null) = verdadeiro: todo gestor a vê).
 const linhasDoTrafego = `
-insert into accounts (id, name, username) values
-  ('` + A1 + `', 'Vessel', 'vessel'), ('` + A2 + `', 'Mantova', 'mantova');
+insert into accounts (id, name, username, instagram_id) values
+  ('` + A1 + `', 'Vessel', 'vessel', '1784'), ('` + A2 + `', 'Mantova', 'mantova', '1785');
 insert into campaigns (campaign_id, account_id, name) values ('9001', '` + A1 + `', 'Vessel 1'), ('9002', '` + A2 + `', 'Mantova 1');
 insert into gt_config_metricas (balde, metricas, updated_at) values ('engajamento', '["cpm","custo_visita"]', '2026-10-01T00:00:00Z');
 insert into gt_objetivo_interacao (alvo_id, nivel, interacao, conta_id, updated_at) values
