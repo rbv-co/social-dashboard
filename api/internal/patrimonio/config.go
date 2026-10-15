@@ -20,7 +20,9 @@ import (
 // O log não tem leitura (nenhuma tela lê; Ruling 5.2-8).
 
 var consultaConfig = dados.Consulta{Tabela: "patrimonio_config", Alias: "t",
-	SQL: `select t.chave, t.valor, t.atualizado_em from patrimonio_config t`, OrdemPadrao: "t.chave", Desempate: "t.chave"}
+	SQL:         `select t.chave, t.valor, t.atualizado_em from patrimonio_config t`,
+	Ordens:      map[string]string{"chave": "t.chave"}, // ROTAS (banco-pela-api.js) declara `ordens: ['chave']`
+	OrdemPadrao: "t.chave", Desempate: "t.chave"}
 
 // formatosDeConfig: as chaves que a tela grava, o formato do valor e a frase de recusa (lista fechada,
 // Ruling 5.2-10).
