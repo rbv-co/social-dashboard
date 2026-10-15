@@ -17,6 +17,9 @@ var migracoes embed.FS
 // Postgres monta (dados.Lista) sai com "+00:00", no formato que o PostgREST entregava às telas.
 func Configurar(c *pgxpool.Config) {
 	c.ConnConfig.RuntimeParams["timezone"] = "UTC"
+	// jit=off: o JIT liga sozinho em consulta de custo estimado alto (função de painel com subconsulta por linha) e gasta
+	// ~2 s compilando o que roda em ~17 ms (jit_test.go); a API não tem consulta analítica pesada que o compense.
+	c.ConnConfig.RuntimeParams["jit"] = "off"
 }
 
 func Abrir(ctx context.Context, url string) (*pgxpool.Pool, error) {
