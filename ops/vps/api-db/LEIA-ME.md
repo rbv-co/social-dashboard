@@ -146,6 +146,14 @@ Cada item com o resultado esperado. Um comando por linha; consultas rodam como `
     → a mensagem "SAIU_DO_SUPABASE está ligada mas falta COPIA_DB_SENHA", `saída=1` e o aviso chegando no grupo/webhook ("Robô copia-do-banco falhou na VPS"); `tail -3 /var/log/robos/copia-do-banco.log` tem a linha `FALHOU`. Nenhuma linha nova em `robos_execucoes` é esperada (a recusa vem ANTES do `node`: o aviso é o do `rodar-robo.sh`). Depois: `rm /root/secrets/robos-ensaio.env`. A próxima rodada boa manda "voltou ao normal" (a marca `.falhou` do ensaio): é esperado. Para voltar ao Supabase de propósito apagam-se AS DUAS linhas do `/etc/robos.env`, nunca só uma.
 15. **Todo papel novo que NÃO seja o `api` precisa de `GRANT EXECUTE` explícito** nas funções do `api` de que for depender (a regra do `papel-copia.sql` revoga EXECUTE de PUBLIC e o `ALTER DEFAULT PRIVILEGES` só vale para o papel que o declarou): sem o GRANT a chamada falha com `permission denied for function`, que é o comportamento desejado. Papel novo = rodar os itens 2, 4 e 11 para ele (trocando `copia` pelo nome dele) e conferir que só tem o que deve.
 
+## PDV: papel `pdv_leitura` (no corte, só com ok do dono)
+
+O PDV lê o número de série de `vessel_pecas`/`vessel_lotes` (`pdv-backend`, `pecas-origem.service.ts`). Mínimo privilégio: só as colunas da consulta, nenhuma função (`papel-pdv.sql`, prova em `papel-pdv.teste.sh`). Na virada:
+
+1. `ssh op 'umask 077; openssl rand -hex 24 > /root/secrets/pdv.senha'`; aplicar: `SENHA_PDV="$(cat /root/secrets/pdv.senha)" docker exec -i -e SENHA_PDV api-db psql -U api -d api < /root/api-db/papel-pdv.sql`.
+2. Contêiner do PDV na rede `api_net` (o `api-db` não publica porta): branch `feat/rev06-origem-sem-tls` do `pdv-backend` (compose + `sslmode=disable`), deploy pelo `deploy-com-reversao.sh`.
+3. `/root/pdv-backend/.env`: `SUPABASE_DATABASE_URL="postgres://pdv_leitura:<senha>@api-db:5432/api?sslmode=disable"`. Conferir no log do PDV que NÃO aparece "Sem SUPABASE_DATABASE_URL" e que a busca por número de série acha uma peça (`ABXCKN5PZA`).
+
 ## Regras do projeto
 
 - **Nunca recriar o contêiner com operação em andamento** (migração, restauração, backup rodando).
