@@ -262,11 +262,16 @@ func (b *Bling) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				res.enviar(w) // erro sobe como veio: "deu ruim" ≠ "não vendeu nada"
 				return
 			}
-			if m, ok := res.corpo.(map[string]any); ok {
-				if dados, ok := m["data"].([]any); ok {
-					pedidos = append(pedidos, dados...)
-				}
+			// 2xx sem `data` em lista (JSON truncado, HTML de gateway, tipo trocado) não é "loja sem venda":
+			// juntar nada aqui devolveria 200 com lista vazia no lugar do erro.
+			m, _ := res.corpo.(map[string]any)
+			dados, ok := m["data"].([]any)
+			if !ok {
+				slog.Error("bling-proxy: resposta do Bling sem lista de pedidos", "status", res.status)
+				erro(w, http.StatusBadGateway, "resposta inesperada do Bling")
+				return
 			}
+			pedidos = append(pedidos, dados...)
 		}
 		// Cinto e suspensório: se o recorte do nosso lado tirar algo, o `idLoja` deixou de
 		// ser honrado; o certo é erro visível, não lista torta.
