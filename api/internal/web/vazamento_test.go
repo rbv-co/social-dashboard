@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -52,6 +53,7 @@ func TestSemVazamentoSobCarga(t *testing.T) {
 		{"POST", "/rpc/vessel_alertas", "{}", tok}, {"POST", "/rpc/vessel_agenda_das_lojas", "{}", tok}, // a 2ª dá 400 (parâmetro obrigatório)
 		{"GET", "/nao-existe", "", tok}, {"GET", "/auth/eu", "", "token-que-nao-existe"}, {"POST", "/rpc/vessel_alertas", "{lixo", tok},
 	}
+	var okCount, tentativas atomic.Int64
 	faz := func(pd pedido, ctx context.Context) {
 		r, err := http.NewRequestWithContext(ctx, pd.metodo, srv.URL+pd.caminho, strings.NewReader(pd.corpo))
 		if err != nil {
@@ -59,9 +61,13 @@ func TestSemVazamentoSobCarga(t *testing.T) {
 			return
 		}
 		r.Header.Set("Authorization", "Bearer "+pd.token)
+		tentativas.Add(1)
 		if resp, err := cli.Do(r); err == nil {
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				okCount.Add(1)
+			}
 		}
 	}
 	for _, pd := range pedidos { // aquece: pool, cache de statements, conexões do cliente
@@ -90,6 +96,9 @@ func TestSemVazamentoSobCarga(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	if okCount.Load() < 20 || okCount.Load() < tentativas.Load()/4 { // sem isso a carga podia ser só 401/500 e o teste passar vazio
+		t.Errorf("só %d de %d pedidos responderam 200: a carga não exercitou a API", okCount.Load(), tentativas.Load())
+	}
 	cli.CloseIdleConnections()
 	srv.Close()
 

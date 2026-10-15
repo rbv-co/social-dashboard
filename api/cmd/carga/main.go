@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -68,7 +69,11 @@ func montar(r rota, base, tok, segredoShopify string, n int) *http.Request {
 	if metodo == "WEBHOOK" {
 		metodo = "POST"
 	}
-	req, _ := http.NewRequest(metodo, base+strings.ReplaceAll(r.caminho, "{{n}}", num), bytes.NewReader(corpo))
+	req, err := http.NewRequest(metodo, base+strings.ReplaceAll(r.caminho, "{{n}}", num), bytes.NewReader(corpo))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pedido inválido:", err)
+		os.Exit(2)
+	}
 	if tok != "" && r.metodo != "WEBHOOK" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
@@ -92,7 +97,7 @@ func pct(l []time.Duration, p float64) time.Duration {
 	if len(l) == 0 {
 		return 0
 	}
-	return l[min(len(l)-1, int(float64(len(l))*p))]
+	return l[min(len(l)-1, max(int(math.Ceil(float64(len(l))*p))-1, 0))]
 }
 
 func main() {
@@ -118,7 +123,9 @@ func main() {
 			var ok, c4, erros, seq atomic.Int64
 			var freio <-chan time.Time
 			if *teto > 0 {
-				freio = time.NewTicker(time.Second / time.Duration(*teto)).C
+				tk := time.NewTicker(time.Second / time.Duration(min(*teto, 1_000_000)))
+				defer tk.Stop()
+				freio = tk.C
 			}
 			fim := time.Now().Add(*dur)
 			var wg sync.WaitGroup
@@ -157,6 +164,9 @@ func main() {
 			t0 := time.Now()
 			wg.Wait()
 			slices.Sort(lat)
+			if ok.Load() == 0 {
+				fmt.Fprintf(os.Stderr, "AVISO: %s a %d simultâneos sem nenhum 2xx (token/segredo errado?)\n", r.nome, n)
+			}
 			fmt.Printf("| %s | %d | %.0f | %s | %s | %s | %s | %d | %d | %d |\n", r.nome, n, float64(ok.Load())/time.Since(t0).Seconds(),
 				pct(lat, .5).Round(time.Microsecond*100), pct(lat, .95).Round(time.Microsecond*100), pct(lat, .99).Round(time.Microsecond*100),
 				pct(lat, 1).Round(time.Microsecond*100), ok.Load(), c4.Load(), erros.Load())

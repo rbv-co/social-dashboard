@@ -147,5 +147,21 @@ func TestConsultasPorRota(t *testing.T) {
 			t.Errorf("%s %s respondeu %d", m.metodo, m.caminho, m.status)
 		}
 	}
+	// sanidade: o tracer pegou o pool certo e a sessão vale (senão tudo daria 0 consultas ou 401 e passaria vazio)
+	var contaram, autorizadas int
+	for _, m := range ms {
+		if m.consultas > 0 {
+			contaram++
+		}
+		if m.status == 200 {
+			autorizadas++
+		}
+		if m.status == 401 || m.status == 429 {
+			t.Errorf("%s %s respondeu %d: a sessão do teste não vale", m.metodo, m.caminho, m.status)
+		}
+	}
+	if contaram < len(ms)/2 || autorizadas < len(ms)/2 {
+		t.Errorf("só %d de %d pedidos contaram consultas e %d responderam 200", contaram, len(ms), autorizadas)
+	}
 	t.Logf("%d pedidos%s", len(ms), tab.String())
 }
