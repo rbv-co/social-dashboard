@@ -205,9 +205,18 @@ func (s *Shopify) Pedido(w http.ResponseWriter, r *http.Request) {
 			on conflict (id) do update set numero = excluded.numero, loja_id = excluded.loja_id, total = excluded.total,
 			  moeda = excluded.moeda, status_financeiro = excluded.status_financeiro, cliente_nome = excluded.cliente_nome,
 			  cliente_email = excluded.cliente_email, criado_em_shopify = excluded.criado_em_shopify, bruto = excluded.bruto,
-			  atualizado_em = now()`, id, numero, total, moeda, status, nome, emailP, *criado, string(cru))
+			  atualizado_em = now()
+			where `+emAtualizado("excluded.bruto")+` >= `+emAtualizado("shopify_pedidos.bruto"), id, numero, total, moeda, status, nome, emailP, *criado, string(cru))
 		return http.StatusOK, map[string]any{"ok": true}, err
 	})
+}
+
+// emAtualizado: o updated_at do payload como instante, para a Shopify não ser desfeita por uma reentrega
+// ATRASADA (orders/create velho depois do orders/paid). Ausente ou ilegível = -infinity: nesse caso o último
+// a chegar vale, como sempre valeu (e o ::timestamptz só roda no que tem cara de ISO 8601).
+func emAtualizado(bruto string) string {
+	campo := bruto + `->>'updated_at'`
+	return `coalesce(case when ` + campo + ` ~ '^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:?\d\d)$' then (` + campo + `)::timestamptz end, '-infinity'::timestamptz)`
 }
 
 // Checkout é POST /receber-webhook-checkout (checkouts/create): só o cart_token vai para
