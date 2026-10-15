@@ -98,7 +98,8 @@ papel() {
      { printf '\\\\set senha %s\n' \"\$(cat $E/app.senha)\"; cat $E/papel-da-api.sql; } | docker exec -i api-db sh -c 'psql -X -q -At -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -f -'
      s=\$(cat $E/app.senha); printf 'DATABASE_URL=postgres://api_app:%s@api-db:5432/api?sslmode=disable&connect_timeout=5\n' \"\$s\" > $E/api.env
      cp $E/api.env $E/worker.env; echo 'WORKER_TAREFAS_DESLIGADAS=*' >> $E/worker.env
-     openssl rand -hex 24 > $E/shopify.segredo; echo \"SHOPIFY_WEBHOOK_SEGREDOS=\$(cat $E/shopify.segredo)\" >> $E/api.env" > "$OUT/papel.txt" || return 1
+     openssl rand -hex 24 > $E/shopify.segredo; echo \"SHOPIFY_WEBHOOK_SEGREDOS=\$(cat $E/shopify.segredo)\" >> $E/api.env
+     openssl rand -hex 24 > $E/chatwoot.segredo; echo \"CHATWOOT_WEBHOOK_SEGREDO=\$(cat $E/chatwoot.segredo)\" >> $E/api.env" > "$OUT/papel.txt" || return 1
   cat "$OUT/papel.txt"; grep -q '^sobrou_de_outro_dono|0$' "$OUT/papel.txt" && grep -q '^api_app|f|f|f|f|f$' "$OUT/papel.txt"
 }
 # o script do Plano 6 (coletor/), na VPS, com o `pg` dos robôs: relatório, depois --aplicar (backup em bkp_urls_*)
@@ -131,6 +132,13 @@ escritas_reais() {
      r=\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H \"X-Shopify-Hmac-Sha256: \$h\" \
           -H 'X-Shopify-Topic: checkouts/create' -H \"X-Shopify-Event-Id: ensaio-\$(date +%s%N)\" --data \"\$c\" http://127.0.0.1:18080/receber-webhook-checkout)
      echo \"webhook de checkout assinado: HTTP \$r\"; [ \"\$r\" = 200 ]" &&
+  # V8: webhook do Chatwoot (token na URL; token errado = 401) e V7: objeto do Storage servido do disco (canário no diretório do ensaio)
+  v "cd $E && U=http://127.0.0.1:18080; c=\"{\\\"tipo\\\":\\\"lead_novo\\\",\\\"conversation_id\\\":\$(date +%s)}\"
+     r=\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data \"\$c\" \"\$U/receber-webhook-chatwoot?token=\$(cat chatwoot.segredo)\")
+     x=\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data \"\$c\" \"\$U/receber-webhook-chatwoot?token=errado\")
+     echo \"webhook do Chatwoot: certo HTTP \$r, token errado HTTP \$x\"; [ \"\$r\" = 200 ] && [ \"\$x\" = 401 ] &&
+     mkdir -p arquivos/publico && echo canario-do-ensaio > arquivos/publico/ensaio.txt && chown 10001:10001 arquivos/publico arquivos/publico/ensaio.txt &&
+     g=\$(curl -s -w ' HTTP %{http_code} %{time_total}s' \"\$U/storage/v1/object/public/publico/ensaio.txt\"); echo \"storage GET: \$g\"; case \"\$g\" in 'canario-do-ensaio'*'HTTP 200'*) ;; *) false;; esac" &&
   v "$DC exec -T worker api worker rodar conferir-robos --forcar && $DC exec -T worker api worker rodar faxina-da-api --forcar"
 }
 medir() {
