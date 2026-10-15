@@ -35,6 +35,8 @@ FALHAS=""; TUNEL=""; JANELA=0
 etapa() {
   _n=$1; shift; _c=0; [ "$1" = janela ] && { _c=1; shift; }
   echo "== $_n" >> "$OUT/etapas.log"; _t0=$(date +%s); _st=0
+  # túnel que caiu entre etapas (rede do Mac, suspensão) é reaberto; sem isso o ensaio falha por infraestrutura
+  [ -z "$TUNEL" ] || kill -0 "$TUNEL" 2> /dev/null || tunel >> "$OUT/etapas.log" 2>&1 || true
   "$@" >> "$OUT/etapas.log" 2>&1 || _st=$?
   _d=$(( $(date +%s) - _t0 )); [ $_c = 0 ] || JANELA=$((JANELA + _d))
   if [ $_st = 0 ]; then rel "$(printf '%-44s %5ss  OK' "$_n" "$_d")"; return 0; fi
@@ -66,7 +68,7 @@ recriar_db() {
 tunel() {
   IP=$(v "docker inspect -f '{{(index .NetworkSettings.Networks \"api_net\").IPAddress}}' api-db") || return 1
   SENHA=$(v "sed -n 's/^POSTGRES_PASSWORD=//p' /root/secrets/api-db.env") || return 1
-  ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N -L "127.0.0.1:$PT:$IP:5432" "$VPS" & TUNEL=$!
+  ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -N -L "127.0.0.1:$PT:$IP:5432" "$VPS" & TUNEL=$!
   ALVO="postgres://api:$SENHA@127.0.0.1:$PT/api?sslmode=disable"; BASE="postgres://api:$SENHA@127.0.0.1:$PT/api_base?sslmode=disable"
   for i in $(seq 20); do psql "$ALVO" -X -Atqc 'select 1' > /dev/null 2>&1 && return 0; sleep 1; done; echo "túnel não abriu"; return 1
 }
