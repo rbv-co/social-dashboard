@@ -1,0 +1,3220 @@
+{
+ "tetoDeLinhas": 1000,
+ "tabelas": {
+  "access_requests": {
+   "area": "admin",
+   "rota": "/acesso/pedidos",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "account_insights": {
+   "area": "meta",
+   "rota": "/redes/insights-da-conta",
+   "params": [
+    "account_id",
+    "captured_at",
+    "captured_at_ate",
+    "captured_at_de",
+    "period_days"
+   ],
+   "ordens": [
+    "captured_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "accounts": {
+   "area": "meta",
+   "rota": "/redes/contas",
+   "params": [],
+   "ordens": [
+    "name"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_log": {
+   "area": "acessos",
+   "rota": "/acessos/log",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_organizacoes": {
+   "area": "acessos",
+   "rota": "/acessos/organizacoes",
+   "params": [],
+   "ordens": [
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_perfis": {
+   "area": "admin",
+   "rota": "/acesso/perfis",
+   "params": [
+    "nome"
+   ],
+   "ordens": [
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_pessoas": {
+   "area": "acessos",
+   "rota": "/acessos/pessoas",
+   "params": [
+    "status"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_recursos": {
+   "area": "acessos",
+   "rota": "/acessos/recursos",
+   "params": [
+    "arquivado",
+    "tipo"
+   ],
+   "ordens": [
+    "caminho",
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_setores": {
+   "area": "acessos",
+   "rota": "/acessos/setores",
+   "params": [],
+   "ordens": [
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_termos": {
+   "area": "acessos",
+   "rota": "/acessos/termos",
+   "params": [
+    "id",
+    "pessoa_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_vinculos": {
+   "area": "acessos",
+   "rota": "/acessos/vinculos",
+   "params": [
+    "pessoa_id",
+    "recurso_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "ad_insights_hora": {
+   "area": "meta",
+   "rota": "/redes/anuncios-por-hora",
+   "params": [
+    "account_id",
+    "dia_de"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "ads": {
+   "area": "meta",
+   "rota": "/redes/anuncios",
+   "params": [
+    "account_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_depositos": {
+   "area": "comercial",
+   "rota": "/comercial/depositos",
+   "params": [],
+   "ordens": [
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_lojas": {
+   "area": "comercial",
+   "rota": "/comercial/lojas",
+   "params": [],
+   "ordens": [
+    "loja_id",
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "loja_id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_metas": {
+   "area": "comercial",
+   "rota": "/comercial/metas-lojas",
+   "params": [
+    "ano",
+    "mes"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_pedido_ajuste_valor": {
+   "area": "comercial",
+   "rota": "/comercial/ajustes-de-valor",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_pedido_ajuste_vendedor": {
+   "area": "comercial",
+   "rota": "/comercial/ajustes-de-vendedor",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_pedido_forma_pagamento": {
+   "area": "comercial",
+   "rota": "/comercial/formas-de-pagamento",
+   "params": [
+    "eh_devolucao"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_pedido_nota": {
+   "area": "comercial",
+   "rota": "/comercial/notas",
+   "params": [
+    "janela"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_pedido_vendedor": {
+   "area": "comercial",
+   "rota": "/comercial/pedidos-vendedor",
+   "params": [
+    "pedido_id"
+   ],
+   "ordens": [
+    "pedido_data"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": true,
+   "escritas": [
+    {
+     "metodo": "POST",
+     "caminho": "/comercial/pedidos-vendedor/gravar"
+    }
+   ]
+  },
+  "bling_vendedor_metas": {
+   "area": "comercial",
+   "rota": "/comercial/metas-vendedoras",
+   "params": [
+    "ano",
+    "mes"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "bling_vendedores": {
+   "area": "comercial",
+   "rota": "/comercial/vendedoras",
+   "params": [],
+   "ordens": [
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "POST",
+     "caminho": "/comercial/vendedoras/gravar"
+    }
+   ]
+  },
+  "campaign_adsets": {
+   "area": "meta",
+   "rota": "/redes/conjuntos",
+   "params": [
+    "account_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "campaign_filters": {
+   "area": "meta",
+   "rota": "/redes/filtros-de-campanha",
+   "params": [
+    "account_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "PUT",
+     "caminho": "/redes/filtros-de-campanha/{}"
+    }
+   ]
+  },
+  "campaign_insights": {
+   "area": "meta",
+   "rota": "/redes/insights-de-campanha",
+   "params": [
+    "account_id",
+    "campaign_id",
+    "captured_at",
+    "captured_at_ate",
+    "captured_at_de",
+    "period_days"
+   ],
+   "ordens": [
+    "captured_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "campaign_insights_hora": {
+   "area": "meta",
+   "rota": "/redes/campanhas-por-hora",
+   "params": [
+    "account_id",
+    "dia_de"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "campaigns": {
+   "area": "meta",
+   "rota": "/redes/campanhas",
+   "params": [
+    "account_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "canais_grupos": {
+   "area": "admin",
+   "rota": "/equipes/grupos",
+   "params": [],
+   "ordens": [
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "canais_grupos_membros": {
+   "area": "admin",
+   "rota": "/equipes/grupos-membros",
+   "params": [
+    "grupo_id",
+    "profile_id"
+   ],
+   "ordens": [
+    "concedido_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "carrinho_eventos": {
+   "area": "vessel",
+   "rota": "/vessel/carrinho-eventos",
+   "params": [
+    "criado_desde",
+    "tipo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": true,
+   "escritas": []
+  },
+  "checkout_abandono": {
+   "area": "vessel",
+   "rota": "/vessel/checkout-abandono",
+   "params": [
+    "iniciado_desde"
+   ],
+   "ordens": [],
+   "ordemFixa": true,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "content_snapshots": {
+   "area": "meta",
+   "rota": "/redes/conteudo",
+   "params": [
+    "account_id",
+    "captured_at",
+    "captured_at_ate",
+    "captured_at_de",
+    "period_days",
+    "period_days_ate"
+   ],
+   "ordens": [
+    "captured_at",
+    "period_days"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "conteudo_arquivos": {
+   "area": "conteudo",
+   "rota": "/conteudo/arquivos",
+   "params": [
+    "account_id",
+    "peca_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "conteudo_blocos": {
+   "area": "conteudo",
+   "rota": "/conteudo/blocos",
+   "params": [
+    "account_id",
+    "ativo",
+    "da_marca"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "conteudo_concorrentes": {
+   "area": "conteudo",
+   "rota": "/conteudo/concorrentes",
+   "params": [
+    "account_id",
+    "ativo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "conteudo_eventos": {
+   "area": "conteudo",
+   "rota": "/conteudo/eventos",
+   "params": [
+    "account_id",
+    "peca_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "conteudo_ideias": {
+   "area": "conteudo",
+   "rota": "/conteudo/ideias",
+   "params": [
+    "account_id",
+    "da_marca",
+    "descartada",
+    "situacao"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "conteudo_jobs": {
+   "area": "conteudo",
+   "rota": "/conteudo/jobs",
+   "params": [
+    "account_id",
+    "id",
+    "status"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "conteudo_pecas": {
+   "area": "conteudo",
+   "rota": "/conteudo/pecas",
+   "params": [
+    "account_id",
+    "id",
+    "status"
+   ],
+   "ordens": [
+    "created_at",
+    "publicar_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "daily_snapshots": {
+   "area": "meta",
+   "rota": "/redes/seguidores",
+   "params": [
+    "account_id",
+    "captured_at",
+    "captured_at_ate",
+    "captured_at_de"
+   ],
+   "ordens": [
+    "captured_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "data_integrity_checks": {
+   "area": "admin",
+   "rota": "/saude/conferencias",
+   "params": [
+    "checked_date",
+    "status"
+   ],
+   "ordens": [
+    "checked_date",
+    "created_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "engagement_snapshots": {
+   "area": "meta",
+   "rota": "/redes/engajamento",
+   "params": [
+    "account_id",
+    "captured_at",
+    "captured_at_ate",
+    "captured_at_de",
+    "period_days"
+   ],
+   "ordens": [
+    "captured_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "equipes": {
+   "area": "admin",
+   "rota": "/equipes/times",
+   "params": [],
+   "ordens": [
+    "nome",
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "equipes_membros": {
+   "area": "admin",
+   "rota": "/equipes/membros",
+   "params": [
+    "equipe_id",
+    "papel",
+    "profile_id"
+   ],
+   "ordens": [
+    "criado_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "equipes_permissoes": {
+   "area": "admin",
+   "rota": "/equipes/permissoes",
+   "params": [
+    "equipe_id",
+    "profile_id"
+   ],
+   "ordens": [
+    "criado_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_campanhas": {
+   "area": "fabrica",
+   "rota": "/fabrica/campanhas",
+   "params": [
+    "aberta",
+    "id",
+    "purgada",
+    "status"
+   ],
+   "ordens": [
+    "created_at",
+    "fechada_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_criativos": {
+   "area": "fabrica",
+   "rota": "/fabrica/criativos",
+   "params": [
+    "arquetipo",
+    "campanha_id",
+    "escolhido",
+    "purgado"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_jobs": {
+   "area": "fabrica",
+   "rota": "/fabrica/jobs",
+   "params": [
+    "campanha_id",
+    "id",
+    "status",
+    "tipo"
+   ],
+   "ordens": [
+    "created_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_lojas": {
+   "area": "fabrica",
+   "rota": "/fabrica/lojas",
+   "params": [
+    "ativo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_looks": {
+   "area": "fabrica",
+   "rota": "/fabrica/looks",
+   "params": [
+    "ativo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_marcas": {
+   "area": "fabrica",
+   "rota": "/fabrica/marcas",
+   "params": [
+    "account_id",
+    "ativo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_meta_jobs": {
+   "area": "fabrica",
+   "rota": "/fabrica/meta-jobs",
+   "params": [
+    "campanha_id",
+    "com_campanha_meta",
+    "tipo"
+   ],
+   "ordens": [
+    "created_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_objetivos": {
+   "area": "fabrica",
+   "rota": "/fabrica/objetivos",
+   "params": [
+    "ativo",
+    "chave"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "fabrica_publicos": {
+   "area": "fabrica",
+   "rota": "/fabrica/publicos",
+   "params": [
+    "ativo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "followers_leituras": {
+   "area": "meta",
+   "rota": "/redes/leituras-de-seguidores",
+   "params": [
+    "account_id",
+    "lido_em_de"
+   ],
+   "ordens": [
+    "lido_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_abastecimentos": {
+   "area": "frota",
+   "rota": "/frota/abastecimentos",
+   "params": [],
+   "ordens": [
+    "abastecido_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_checklist": {
+   "area": "frota",
+   "rota": "/frota/checklists",
+   "params": [
+    "assinada",
+    "feita_ate",
+    "feita_de",
+    "veiculo_id"
+   ],
+   "ordens": [
+    "feita_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_checklist_config": {
+   "area": "frota",
+   "rota": "/frota/checklist-config",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": true,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_checklist_itens": {
+   "area": "frota",
+   "rota": "/frota/checklist-itens",
+   "params": [],
+   "ordens": [
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_checklist_pdf": {
+   "area": "frota",
+   "rota": "/frota/checklists/copias",
+   "params": [
+    "pendente",
+    "situacao"
+   ],
+   "ordens": [
+    "criado_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_checklist_respostas": {
+   "area": "frota",
+   "rota": "/frota/checklists/respostas",
+   "params": [
+    "checklist_id"
+   ],
+   "ordens": [
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_plano_revisao": {
+   "area": "frota",
+   "rota": "/frota/plano-revisao",
+   "params": [],
+   "ordens": [
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_requisicoes": {
+   "area": "frota",
+   "rota": "/frota/requisicoes",
+   "params": [],
+   "ordens": [
+    "retirada_prevista"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_revisoes": {
+   "area": "frota",
+   "rota": "/frota/revisoes",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_uso": {
+   "area": "frota",
+   "rota": "/frota/usos",
+   "params": [
+    "aberta",
+    "saida_ate",
+    "saida_de",
+    "veiculo_id"
+   ],
+   "ordens": [
+    "saida_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "frota_veiculos": {
+   "area": "frota",
+   "rota": "/frota/veiculos",
+   "params": [
+    "pessoa_id"
+   ],
+   "ordens": [
+    "nome"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gc_estoque_item": {
+   "area": "comercial",
+   "rota": "/comercial/estoque",
+   "params": [
+    "deposito_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gc_vendas_item": {
+   "area": "comercial",
+   "rota": "/comercial/vendas-por-item",
+   "params": [
+    "mes"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gestao_comercial_briefings": {
+   "area": "comercial",
+   "rota": "/comercial/briefings",
+   "params": [],
+   "ordens": [
+    "created_at",
+    "rodada"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gt_ad_analises": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/analises-de-anuncio",
+   "params": [
+    "account_id",
+    "campaign_id",
+    "veredito"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gt_budget_analises": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/analises-de-orcamento",
+   "params": [
+    "account_id",
+    "veredito"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gt_campanhas_rascunho": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/rascunhos",
+   "params": [
+    "account_id",
+    "status"
+   ],
+   "ordens": [
+    "updated_at"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gt_config_metricas": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/config-metricas",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "PUT",
+     "caminho": "/gestao-trafego/config-metricas/{}"
+    }
+   ]
+  },
+  "gt_fila_decisoes": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/decisoes",
+   "params": [
+    "account_id",
+    "campaign_id",
+    "escopo"
+   ],
+   "ordens": [
+    "decidido_em"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "gt_objetivo_interacao": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/objetivos",
+   "params": [
+    "alvo_id",
+    "conta_id",
+    "nivel"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "PUT",
+     "caminho": "/gestao-trafego/objetivos/{}"
+    },
+    {
+     "metodo": "DELETE",
+     "caminho": "/gestao-trafego/objetivos/{}"
+    }
+   ]
+  },
+  "gt_ponderada_config": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/regua",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "interesses_sugeridos": {
+   "area": "trafego",
+   "rota": "/gestao-trafego/interesses-sugeridos",
+   "params": [
+    "account_id",
+    "marca_id",
+    "objetivo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_bens": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/bens",
+   "params": [
+    "pessoa_id"
+   ],
+   "ordens": [
+    "nome",
+    "numero"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_categorias": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/categorias",
+   "params": [
+    "nome_como"
+   ],
+   "ordens": [
+    "nome",
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_comodos": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/comodos",
+   "params": [],
+   "ordens": [
+    "nome",
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_config": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/config",
+   "params": [],
+   "ordens": [
+    "chave"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "PUT",
+     "caminho": "/patrimonio/config/{}"
+    }
+   ]
+  },
+  "patrimonio_empresas": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/empresas",
+   "params": [],
+   "ordens": [
+    "nome",
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_locais": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/locais",
+   "params": [],
+   "ordens": [
+    "nome",
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_log": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/log",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_posse": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/posses",
+   "params": [
+    "aberta",
+    "bem_id",
+    "de_ate",
+    "de_desde"
+   ],
+   "ordens": [
+    "de"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "patrimonio_tipos": {
+   "area": "patrimonio",
+   "rota": "/patrimonio/tipos",
+   "params": [],
+   "ordens": [
+    "nome",
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "perfil_visitas_hora": {
+   "area": "meta",
+   "rota": "/redes/visitas-por-hora",
+   "params": [
+    "account_id",
+    "dia_de"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "profiles": {
+   "area": "admin",
+   "rota": "/acesso/usuarios",
+   "params": [
+    "email",
+    "id",
+    "perfil_id"
+   ],
+   "ordens": [
+    "created_at",
+    "email",
+    "name"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "push_preferencias": {
+   "area": "admin",
+   "rota": "/avisos/preferencias",
+   "params": [
+    "user_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "POST",
+     "caminho": "/avisos/preferencias"
+    }
+   ]
+  },
+  "push_subs": {
+   "area": "admin",
+   "rota": null,
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "POST",
+     "caminho": "/eu/push/inscrever"
+    },
+    {
+     "metodo": "POST",
+     "caminho": "/eu/push/desinscrever"
+    }
+   ]
+  },
+  "shopify_pedidos": {
+   "area": "comercial",
+   "rota": "/comercial/pedidos-shopify",
+   "params": [
+    "criado_ate",
+    "criado_de",
+    "status_financeiro"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "social_metas": {
+   "area": "meta",
+   "rota": "/redes/metas",
+   "params": [
+    "account_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "PUT",
+     "caminho": "/redes/metas"
+    }
+   ]
+  },
+  "vessel_atendimentos": {
+   "area": "vessel",
+   "rota": "/vessel/atendimentos",
+   "params": [
+    "criado_desde"
+   ],
+   "ordens": [],
+   "ordemFixa": true,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": true,
+   "escritas": []
+  },
+  "vessel_baixas": {
+   "area": "autenticidade",
+   "rota": "/autenticidade/baixas",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": true,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_cartao_pedidos": {
+   "area": "autenticidade",
+   "rota": "/autenticidade/cartao-pedidos",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": true,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_lembretes": {
+   "area": "autenticidade",
+   "rota": "/autenticidade/lembretes",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": true,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_lista_espera": {
+   "area": "vessel",
+   "rota": "/vessel/lista-espera",
+   "params": [
+    "criado_desde"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": true,
+   "escritas": []
+  },
+  "vessel_lotes": {
+   "area": "autenticidade",
+   "rota": "/autenticidade/lotes",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": true,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_origens": {
+   "area": "vessel",
+   "rota": "/vessel/origens",
+   "params": [
+    "pessoa_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_pecas": {
+   "area": "autenticidade",
+   "rota": "/autenticidade/pecas",
+   "params": [
+    "codigo"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_pedidos": {
+   "area": "vessel",
+   "rota": "/vessel/pedidos",
+   "params": [
+    "pessoa_id",
+    "situacao_id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_pessoas": {
+   "area": "vessel",
+   "rota": "/vessel/pessoas",
+   "params": [
+    "id"
+   ],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "vessel_registros": {
+   "area": "autenticidade",
+   "rota": "/autenticidade/registros",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": true,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  }
+ },
+ "usos": {
+  "tabelas": {
+   "access_requests": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/login/tela-de-login.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "account_insights": {
+    "arquivos": [
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "accounts": {
+    "arquivos": [
+     "coletor/ig-coletor.mjs",
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-campanhas/tela-de-analise-campanhas.vue",
+     "src/ferramentas/analise-vendas/tela-de-marca-vendas.vue",
+     "src/ferramentas/conteudo/dados-conteudo.js",
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue",
+     "src/ferramentas/redes-sociais/tela-de-relatorio-redes.vue"
+    ],
+    "escreve": [
+     "update"
+    ]
+   },
+   "acessos_drive_marcas": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "acessos_drive_overrides": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ],
+    "escreve": [
+     "delete",
+     "upsert"
+    ]
+   },
+   "acessos_drive_setores": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "acessos_log": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "acessos_organizacoes": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue",
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "acessos_perfis": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "acessos_pessoas": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue",
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert",
+     "update"
+    ]
+   },
+   "acessos_recursos": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ]
+   },
+   "acessos_setores": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue",
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "acessos_termos": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "acessos_vinculos": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "ad_insights_hora": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-relatorio-por-hora.vue"
+    ]
+   },
+   "ads": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-relatorio-por-hora.vue"
+    ]
+   },
+   "ads_snapshots": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ]
+   },
+   "bling_depositos": {
+    "arquivos": [
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue"
+    ]
+   },
+   "bling_lojas": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue"
+    ]
+   },
+   "bling_metas": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue"
+    ]
+   },
+   "bling_pedido_ajuste_valor": {
+    "arquivos": [
+     "coletor/lib/ajustes-de-valor.mjs",
+     "src/compartilhado/valor-corrigido.js"
+    ]
+   },
+   "bling_pedido_ajuste_vendedor": {
+    "arquivos": [
+     "src/compartilhado/vendedor-corrigido.js"
+    ]
+   },
+   "bling_pedido_forma_pagamento": {
+    "arquivos": [
+     "src/compartilhado/valor-liquido-de-troca.js"
+    ]
+   },
+   "bling_pedido_nota": {
+    "arquivos": [
+     "coletor/lib/notas-bling.mjs",
+     "src/compartilhado/data-da-venda.js"
+    ]
+   },
+   "bling_pedido_vendedor": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue"
+    ],
+    "escreve": [
+     "upsert"
+    ]
+   },
+   "bling_vendedor_metas": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ]
+   },
+   "bling_vendedores": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue"
+    ],
+    "escreve": [
+     "upsert"
+    ]
+   },
+   "campaign_filters": {
+    "arquivos": [
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "campaign_insights": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
+     "src/ferramentas/meta-ads/tela-de-relatorio-opr.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue",
+     "src/ferramentas/redes-sociais/tela-de-relatorio-redes.vue"
+    ]
+   },
+   "campaign_insights_hora": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-relatorio-por-hora.vue"
+    ]
+   },
+   "campaigns": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-relatorio-opr.vue",
+     "src/ferramentas/meta-ads/tela-de-relatorio-por-hora.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "canais_grupos": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ]
+   },
+   "canais_grupos_membros": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "carrinho_eventos": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-base-de-leads.vue"
+    ]
+   },
+   "chatwoot_eventos": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-relatorio-opr.vue"
+    ]
+   },
+   "checkout_abandono": {
+    "arquivos": [
+     "src/ferramentas/abandono-carrinho/tela-de-abandono-carrinho.vue"
+    ]
+   },
+   "content_snapshots": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "conteudo_arquivos": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ],
+    "escreve": [
+     "delete",
+     "insert",
+     "update"
+    ]
+   },
+   "conteudo_blocos": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "conteudo_casamentos": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ]
+   },
+   "conteudo_concorrentes": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "conteudo_eventos": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "conteudo_ideias": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "conteudo_jobs": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ]
+   },
+   "conteudo_metricas": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ]
+   },
+   "conteudo_pecas": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ],
+    "escreve": [
+     "delete",
+     "insert",
+     "update"
+    ]
+   },
+   "daily_snapshots": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue",
+     "src/ferramentas/redes-sociais/tela-de-relatorio-redes.vue"
+    ]
+   },
+   "data_integrity_checks": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ]
+   },
+   "engagement_snapshots": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "equipes": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue",
+     "src/ferramentas/gestao-comercial/time-de-vendas.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "equipes_membros": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue",
+     "src/ferramentas/gestao-comercial/tela-de-gestao-comercial.vue",
+     "src/ferramentas/gestao-comercial/time-de-vendas.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert",
+     "update"
+    ]
+   },
+   "equipes_permissoes": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/gestao-comercial/time-de-vendas.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "fabrica_campanhas": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/painel-curar.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue",
+     "src/ferramentas/meta-ads/tela-de-fabrica-home.vue"
+    ]
+   },
+   "fabrica_criativos": {
+    "arquivos": [
+     "coletor/spike-meta.mjs",
+     "src/ferramentas/meta-ads/painel-curar.vue",
+     "src/ferramentas/meta-ads/tela-de-fabrica-home.vue"
+    ],
+    "escreve": [
+     "update"
+    ]
+   },
+   "fabrica_jobs": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/painel-curar.vue",
+     "src/ferramentas/meta-ads/tela-de-fabrica-estudio.vue",
+     "src/ferramentas/meta-ads/use-job-status.js"
+    ]
+   },
+   "fabrica_lojas": {
+    "arquivos": [
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue",
+     "src/ferramentas/meta-ads/painel-curar.vue",
+     "src/ferramentas/meta-ads/painel-gerar.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue"
+    ]
+   },
+   "fabrica_looks": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-fabrica-looks.vue"
+    ]
+   },
+   "fabrica_marcas": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/painel-subir.vue"
+    ]
+   },
+   "fabrica_objetivos": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/painel-gerar.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue"
+    ]
+   },
+   "fabrica_publicos": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue"
+    ]
+   },
+   "followers_leituras": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
+     "src/ferramentas/meta-ads/tela-de-relatorio-opr.vue",
+     "src/ferramentas/meta-ads/tela-de-relatorio-por-hora.vue"
+    ]
+   },
+   "frota_abastecimentos": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "frota_checklist": {
+    "arquivos": [
+     "src/ferramentas/frota/relatorios-da-frota.js",
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "frota_checklist_config": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "update"
+    ]
+   },
+   "frota_checklist_itens": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "frota_checklist_pdf": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "frota_checklist_respostas": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "frota_manutencoes": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "frota_plano_revisao": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "frota_requisicoes": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "frota_revisoes": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert"
+    ]
+   },
+   "frota_uso": {
+    "arquivos": [
+     "src/ferramentas/frota/relatorios-da-frota.js",
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "frota_veiculos": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue",
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "gc_estoque_item": {
+    "arquivos": [
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue",
+     "src/ferramentas/gestao-comercial/relatorios-comerciais.vue"
+    ]
+   },
+   "gc_vendas_item": {
+    "arquivos": [
+     "src/ferramentas/gestao-comercial/relatorios-comerciais.vue"
+    ]
+   },
+   "gestao_comercial_briefings": {
+    "arquivos": [
+     "src/ferramentas/gestao-comercial/tela-de-gestao-comercial.vue"
+    ]
+   },
+   "gt_ad_analises": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ]
+   },
+   "gt_budget_analises": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ]
+   },
+   "gt_campanhas_rascunho": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert",
+     "update"
+    ]
+   },
+   "gt_config_metricas": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ],
+    "escreve": [
+     "upsert"
+    ]
+   },
+   "gt_fila_decisoes": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "gt_objetivo_interacao": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ],
+    "escreve": [
+     "delete",
+     "upsert"
+    ]
+   },
+   "gt_ponderada_config": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ],
+    "escreve": [
+     "update"
+    ]
+   },
+   "gt_ponderada_config_log": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "ia_execucoes": {
+    "arquivos": [
+     "coletor/registrar-execucao.mjs",
+     "src/ferramentas/claude-status/tela-de-status-claude.vue"
+    ]
+   },
+   "interesses_sugeridos": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue"
+    ]
+   },
+   "noticias_concorrentes": {
+    "arquivos": [
+     "coletor/passo-faxina.mjs",
+     "src/ferramentas/noticias/tela-de-noticias.vue"
+    ]
+   },
+   "noticias_panorama": {
+    "arquivos": [
+     "src/ferramentas/noticias/tela-de-noticias.vue"
+    ]
+   },
+   "patrimonio_bens": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue",
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ],
+    "escreve": [
+     "delete",
+     "insert",
+     "update"
+    ]
+   },
+   "patrimonio_categorias": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "patrimonio_comodos": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "patrimonio_config": {
+    "arquivos": [
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ],
+    "escreve": [
+     "upsert"
+    ]
+   },
+   "patrimonio_empresas": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "patrimonio_locais": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "patrimonio_log": {
+    "arquivos": [
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "patrimonio_posse": {
+    "arquivos": [
+     "src/ferramentas/patrimonio/relatorios-do-patrimonio.js",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ],
+    "escreve": [
+     "insert",
+     "update"
+    ]
+   },
+   "patrimonio_tipos": {
+    "arquivos": [
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "perfil_visitas_hora": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-relatorio-por-hora.vue"
+    ]
+   },
+   "profiles": {
+    "arquivos": [
+     "coletor/apagar-contas-de-prova.mjs",
+     "src/compartilhado/controle-de-login-e-usuario.js",
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/conteudo/dados-conteudo.js",
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/gestao-comercial/time-de-vendas.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ],
+    "escreve": [
+     "update"
+    ]
+   },
+   "push_preferencias": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ],
+    "escreve": [
+     "insert"
+    ]
+   },
+   "push_subs": {
+    "arquivos": [
+     "src/compartilhado/notificacoes-push.js"
+    ],
+    "escreve": [
+     "delete",
+     "upsert"
+    ]
+   },
+   "robos_saude": {
+    "arquivos": [
+     "src/ferramentas/claude-status/tela-de-status-claude.vue"
+    ]
+   },
+   "shopify_pedidos": {
+    "arquivos": [
+     "src/compartilhado/pedidos-shopify.js"
+    ]
+   },
+   "social_metas": {
+    "arquivos": [
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ],
+    "escreve": [
+     "upsert"
+    ]
+   },
+   "vessel_atendimentos": {
+    "arquivos": [
+     "src/ferramentas/atendimentos/tela-de-atendimentos.vue",
+     "src/ferramentas/meta-ads/tela-de-base-de-leads.vue"
+    ]
+   },
+   "vessel_baixas": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_cartao_arquivos": {
+    "arquivos": [
+     "coletor/preencher-arquivos-dos-cartoes.mjs",
+     "coletor/robo-de-cartoes.mjs"
+    ]
+   },
+   "vessel_cartao_pedidos": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_lembretes": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_lista_espera": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-base-de-leads.vue"
+    ]
+   },
+   "vessel_lotes": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_origens": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-base-de-leads.vue"
+    ]
+   },
+   "vessel_pecas": {
+    "arquivos": [
+     "coletor/preencher-arquivos-dos-cartoes.mjs",
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_pedidos": {
+    "arquivos": [
+     "src/ferramentas/atendimentos/tela-de-atendimentos.vue"
+    ]
+   },
+   "vessel_pessoas": {
+    "arquivos": [
+     "coletor/provar-porta-de-vessel-pessoas.mjs",
+     "src/ferramentas/meta-ads/tela-de-base-de-leads.vue"
+    ]
+   },
+   "vessel_registros": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   }
+  },
+  "rpcs": {
+   "criar_pessoa_rapida": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "criar_setor_rapido": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "etiqueta_quem_e": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "frota_corrente_do_veiculo": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "gt_registrar_problemas": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ]
+   },
+   "marcar_senha_trocada": {
+    "arquivos": [
+     "src/moldura-do-aplicativo.vue"
+    ]
+   },
+   "minha_conta_esta_desativada": {
+    "arquivos": [
+     "src/compartilhado/controle-de-login-e-usuario.js"
+    ]
+   },
+   "pessoas_para_escolher": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "setores_para_escolher": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "sincronizar_carro_e_bem": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "vessel_agenda_das_lojas": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "src/ferramentas/comercial-vessel/agenda-do-private-edit.vue"
+    ]
+   },
+   "vessel_alertas": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_baixar_garantia": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_baixar_peca": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_beauty_session_apagar": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_beauty_session_arquivar": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_beauty_session_cadastrar_lead": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_beauty_session_criar": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_beauty_session_editar": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_beauty_session_encerrar": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_cartao_pedido_terminou": {
+    "arquivos": [
+     "coletor/robo-de-cartoes.mjs"
+    ]
+   },
+   "vessel_cartao_pegar_da_fila": {
+    "arquivos": [
+     "coletor/robo-de-cartoes.mjs"
+    ]
+   },
+   "vessel_cartao_recolocar_travados": {
+    "arquivos": [
+     "coletor/robo-de-cartoes.mjs"
+    ]
+   },
+   "vessel_chave_da_convidada": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/cartao-da-convidada.vue"
+    ]
+   },
+   "vessel_conta_da_sessao": {
+    "arquivos": [
+     "coletor/provar-transferencia-de-propriedade.mjs"
+    ]
+   },
+   "vessel_conta_das_beauty_sessions": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_conta_das_private_edits": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_convidadas_do_encontro": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_convidar_para_encontro": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_convite_marcar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/cartao-da-convidada.vue",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_criar_private_edit": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_decidir_pedido_de_registro": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_definir_material_do_lote": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_desfazer_baixa": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_desmarcar_gravada": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_edicao_abrir": {
+    "arquivos": [
+     "coletor/aplicar-vessel-edicao-e-o-evento.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue"
+    ]
+   },
+   "vessel_edicao_criar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-edicao-e-o-evento.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue"
+    ]
+   },
+   "vessel_edicao_encerrar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-edicao-e-o-evento.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue"
+    ]
+   },
+   "vessel_edicao_incluir_stylist": {
+    "arquivos": [
+     "coletor/aplicar-vessel-edicao-e-o-evento.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue"
+    ]
+   },
+   "vessel_edicao_tirar_stylist": {
+    "arquivos": [
+     "coletor/aplicar-vessel-edicao-e-o-evento.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue"
+    ]
+   },
+   "vessel_edicao_turma": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue"
+    ]
+   },
+   "vessel_edicoes_listar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/ficha-da-stylist.vue",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_editar_lote": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_eventos_de_origem": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/ficha-da-stylist.vue",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_excluir_lote": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_excluir_peca": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_fila_de_registros": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_gerar_lote": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_leads_da_beauty_session": {
+    "arquivos": [
+     "src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue"
+    ]
+   },
+   "vessel_marcar_gravada": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_pedido_marcado_presente": {
+    "arquivos": [
+     "coletor/provar-transferencia-de-propriedade.mjs"
+    ]
+   },
+   "vessel_pedir_cartoes": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_placar_da_edicao": {
+    "arquivos": [
+     "coletor/aplicar-vessel-edicao-e-o-evento.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_praca_cidade_desvincular": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-pracas.vue"
+    ]
+   },
+   "vessel_praca_cidade_vincular": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-pracas.vue"
+    ]
+   },
+   "vessel_praca_criar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-pracas.vue"
+    ]
+   },
+   "vessel_praca_editar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-pracas.vue"
+    ]
+   },
+   "vessel_pracas_listar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue",
+     "src/ferramentas/comercial-vessel/tela-de-pracas.vue",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_private_edit_apagar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_private_edit_arquivar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_private_edit_editar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_private_edit_encerrar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_private_edit_situacao": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_private_edit_sobreposicoes": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_qualificacoes_vigentes": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_rastreio_dos_stylists": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-edicoes.vue",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_registrar_cartao": {
+    "arquivos": [
+     "coletor/provar-porta-de-vessel-pessoas.mjs"
+    ]
+   },
+   "vessel_scorecard_da_stylist": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/scorecard-da-stylist.vue"
+    ]
+   },
+   "vessel_situacao_do_atendimento": {
+    "arquivos": [
+     "src/ferramentas/atendimentos/tela-de-atendimentos.vue",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_sobrescrever_etiqueta": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   },
+   "vessel_stylist_avaliar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/avaliar-a-stylist.vue"
+    ]
+   },
+   "vessel_stylist_contatos": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/ficha-da-stylist.vue"
+    ]
+   },
+   "vessel_stylist_criar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "coletor/aplicar-vessel-stylist-etapa-identificada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs",
+     "coletor/aplicar-vessel-stylist-sem-contato.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_stylist_desativar": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_stylist_editar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-stylist-etapa-identificada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs",
+     "coletor/aplicar-vessel-stylist-sem-contato.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_stylist_etapa_criar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs"
+    ]
+   },
+   "vessel_stylist_etapa_excluir": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs"
+    ]
+   },
+   "vessel_stylist_etapa_liberar_private_edit": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs"
+    ]
+   },
+   "vessel_stylist_etapa_marcar_prospectada": {
+    "arquivos": [
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs"
+    ]
+   },
+   "vessel_stylist_etapa_mover": {
+    "arquivos": [
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs"
+    ]
+   },
+   "vessel_stylist_etapa_renomear": {
+    "arquivos": [
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs"
+    ]
+   },
+   "vessel_stylist_etapa_tipo": {
+    "arquivos": [
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs"
+    ]
+   },
+   "vessel_stylist_etapas": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_stylist_historico_de_etapas": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs",
+     "src/ferramentas/comercial-vessel/ficha-da-stylist.vue"
+    ]
+   },
+   "vessel_stylist_motivo_ativar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs"
+    ]
+   },
+   "vessel_stylist_motivo_criar": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs"
+    ]
+   },
+   "vessel_stylist_motivo_exigir_nota": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs"
+    ]
+   },
+   "vessel_stylist_motivo_mover": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs"
+    ]
+   },
+   "vessel_stylist_motivo_renomear": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs"
+    ]
+   },
+   "vessel_stylist_mover_de_etapa": {
+    "arquivos": [
+     "coletor/aplicar-vessel-agenda-do-private-edit.mjs",
+     "coletor/aplicar-vessel-edicao-e-o-evento.mjs",
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "coletor/aplicar-vessel-stylist-funil-configuravel.mjs",
+     "coletor/aplicar-vessel-stylist-sem-contato.mjs",
+     "coletor/aplicar-vessel-stylist-trocar-motivo.mjs",
+     "src/ferramentas/comercial-vessel/ficha-da-stylist.vue",
+     "src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue"
+    ]
+   },
+   "vessel_stylist_qualificacoes": {
+    "arquivos": [
+     "src/ferramentas/comercial-vessel/qualificacao-da-stylist.vue"
+    ]
+   },
+   "vessel_stylist_registrar_contato": {
+    "arquivos": [
+     "coletor/aplicar-vessel-stylist-sem-contato.mjs",
+     "src/ferramentas/comercial-vessel/ficha-da-stylist.vue"
+    ]
+   },
+   "vessel_stylist_trocar_motivo": {
+    "arquivos": [
+     "coletor/aplicar-vessel-stylist-trocar-motivo.mjs"
+    ]
+   },
+   "vessel_stylists_para_escolher": {
+    "arquivos": [
+     "coletor/aplicar-vessel-private-edit-so-com-stylist-liberada.mjs",
+     "src/ferramentas/comercial-vessel/tela-de-private-edit.vue"
+    ]
+   },
+   "vessel_trocar_dono": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   }
+  },
+  "edges": {
+   "acessos-proxy": {
+    "arquivos": [
+     "src/ferramentas/acessos/tela-de-acessos.vue"
+    ]
+   },
+   "avisar-decisao-de-reserva": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "bling-proxy": {
+    "arquivos": [
+     "src/compartilhado/chamada-do-bling.js",
+     "src/ferramentas/gestao-comercial/tela-de-gestao-comercial.vue"
+    ]
+   },
+   "buscar-lugar": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue"
+    ]
+   },
+   "conferir-senha": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue",
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "contar-collabs": {
+    "arquivos": [
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "conteudo-trigger": {
+    "arquivos": [
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ]
+   },
+   "entrar-como-usuario": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ]
+   },
+   "fabrica-apagar": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-fabrica-home.vue"
+    ]
+   },
+   "fabrica-candidatos": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/use-candidatos.js"
+    ]
+   },
+   "fabrica-looks": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/tela-de-fabrica-looks.vue"
+    ]
+   },
+   "fabrica-publicos": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/painel-subir.vue"
+    ]
+   },
+   "fabrica-trigger": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/painel-conferir.vue",
+     "src/ferramentas/meta-ads/painel-gerar.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue",
+     "src/ferramentas/meta-ads/tela-de-fabrica-looks.vue"
+    ]
+   },
+   "insights-ao-vivo": {
+    "arquivos": [
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "invite-user": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue",
+     "src/ferramentas/frota/tela-de-frota.vue",
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "ler-documento": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ]
+   },
+   "meta-proxy": {
+    "arquivos": [
+     "coletor/adicionar-looks-favoritos.mjs",
+     "coletor/reparar-looks-quebrados.mjs",
+     "coletor/sondar-app-review.mjs",
+     "coletor/sondar-criativo-do-anuncio.mjs",
+     "coletor/sondar-interesses.mjs",
+     "coletor/sondar-permissoes-meta.mjs",
+     "coletor/sondar-posicionamentos.mjs",
+     "coletor/spike-meta.mjs",
+     "coletor/subir-campanha-genspark.mjs",
+     "coletor/subir-campanha-meta.mjs",
+     "coletor/validar-criar-no-gestor.mjs",
+     "coletor/validar-duplicar.mjs",
+     "coletor/validar-editor-do-gestor.mjs",
+     "coletor/validar-envio-de-imagem.mjs",
+     "coletor/validar-objetivos-combos.mjs",
+     "coletor/validar-orcamento-combos.mjs",
+     "coletor/validar-publico-targeting.mjs",
+     "src/ferramentas/analise-campanhas/tela-de-analise-campanhas.vue",
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
+     "src/ferramentas/meta-ads/painel-subir.vue",
+     "src/ferramentas/meta-ads/tela-de-fabrica-home.vue"
+    ]
+   },
+   "serie-novos-dia": {
+    "arquivos": [
+     "src/ferramentas/redes-sociais/tela-de-redes-sociais.vue"
+    ]
+   },
+   "sugerir-publico-ia": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ]
+   },
+   "vessel-baixar-cartao": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
+    ]
+   }
+  },
+  "caminhos": {
+   "GET /auth/eu": {
+    "arquivos": [
+     "src/compartilhado/controle-de-login-e-usuario.js"
+    ]
+   },
+   "GET /eu/canais": {
+    "arquivos": [
+     "src/ferramentas/analise-vendas/tela-de-analise-vendas.vue",
+     "src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue"
+    ]
+   },
+   "GET /eu/perfil": {
+    "arquivos": [
+     "src/compartilhado/controle-de-login-e-usuario.js"
+    ]
+   },
+   "GET /noticias/concorrentes": {
+    "arquivos": [
+     "src/ferramentas/noticias/tela-de-noticias.vue"
+    ]
+   },
+   "GET /noticias/panorama": {
+    "arquivos": [
+     "src/ferramentas/noticias/tela-de-noticias.vue"
+    ]
+   },
+   "GET /noticias/rodadas": {
+    "arquivos": [
+     "src/ferramentas/noticias/tela-de-noticias.vue"
+    ]
+   },
+   "GET /status-ia/execucoes": {
+    "arquivos": [
+     "src/ferramentas/claude-status/tela-de-status-claude.vue"
+    ]
+   },
+   "GET /status-ia/saude-dos-robos": {
+    "arquivos": [
+     "src/ferramentas/claude-status/tela-de-status-claude.vue"
+    ]
+   },
+   "GET /vessel/atendimentos": {
+    "arquivos": [
+     "src/ferramentas/atendimentos/tela-de-atendimentos.vue"
+    ]
+   },
+   "GET /vessel/pedidos": {
+    "arquivos": [
+     "src/ferramentas/atendimentos/tela-de-atendimentos.vue"
+    ]
+   },
+   "PATCH /fabrica/robo/campanhas/{}": {
+    "arquivos": [
+     "coletor/lib/fabrica-banco.mjs"
+    ]
+   },
+   "PATCH /fabrica/robo/jobs/{}": {
+    "arquivos": [
+     "coletor/lib/fabrica-banco.mjs"
+    ]
+   },
+   "PATCH /fabrica/robo/looks/{}": {
+    "arquivos": [
+     "coletor/lib/fabrica-banco.mjs"
+    ]
+   },
+   "POST /auth/definir-senha": {
+    "arquivos": [
+     "src/ferramentas/login/tela-de-login.vue"
+    ]
+   },
+   "POST /auth/entrar": {
+    "arquivos": [
+     "src/compartilhado/controle-de-login-e-usuario.js"
+    ]
+   },
+   "POST /auth/esqueci-senha": {
+    "arquivos": [
+     "src/ferramentas/login/tela-de-login.vue"
+    ]
+   },
+   "POST /auth/sair": {
+    "arquivos": [
+     "src/compartilhado/controle-de-login-e-usuario.js"
+    ]
+   },
+   "POST /auth/trocar-senha": {
+    "arquivos": [
+     "src/moldura-do-aplicativo.vue"
+    ]
+   },
+   "POST /comercial/metas/salvar": {
+    "arquivos": [
+     "src/ferramentas/admin/tela-de-admin.vue"
+    ]
+   },
+   "POST /fabrica/criativos/escolher": {
+    "arquivos": [
+     "src/ferramentas/meta-ads/painel-curar.vue"
+    ]
+   },
+   "POST /fabrica/robo/criativos": {
+    "arquivos": [
+     "coletor/lib/fabrica-banco.mjs"
+    ]
+   },
+   "POST /fabrica/robo/execucoes": {
+    "arquivos": [
+     "coletor/lib/fabrica-banco.mjs"
+    ]
+   },
+   "POST /fabrica/robo/jobs/{}/proximo-lote": {
+    "arquivos": [
+     "coletor/lib/fabrica-banco.mjs"
+    ]
+   },
+   "POST /fabrica/robo/meta-jobs": {
+    "arquivos": [
+     "coletor/lib/fabrica-banco.mjs"
+    ]
+   },
+   "POST /frota/checklists": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "POST /frota/manutencoes": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "POST /frota/usos/trocar": {
+    "arquivos": [
+     "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "POST /patrimonio/bens/apagar-em-massa": {
+    "arquivos": [
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "POST /patrimonio/bens/em-massa": {
+    "arquivos": [
+     "src/ferramentas/patrimonio/tela-de-patrimonio.vue"
+    ]
+   },
+   "POST /pedir-acesso": {
+    "arquivos": [
+     "src/ferramentas/login/tela-de-login.vue"
+    ]
+   },
+   "PUT /gestao-trafego/regua": {
+    "arquivos": [
+     "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue"
+    ]
+   }
+  },
+  "dinamicas": {
+   "rpc(nome)": {
+    "arquivos": [
+     "src/ferramentas/autenticidade/cliente-do-selo.js",
+     "src/ferramentas/conteudo/dados-conteudo.js"
+    ]
+   }
+  }
+ }
+}

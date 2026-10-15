@@ -48,7 +48,7 @@ const lotes = (caminho, linhas) => {
   for (let i = 0; i < linhas.length; i += POR_LOTE) chamadas.push({ metodo: 'POST', caminho, corpo: { linhas: linhas.slice(i, i + POR_LOTE) } })
   return chamadas
 }
-const ROTAS = {
+export const ROTAS = {
   // ── 5.1 — admin, equipes e acesso ──
   profiles: {
     area: 'admin', rota: '/acesso/usuarios',
