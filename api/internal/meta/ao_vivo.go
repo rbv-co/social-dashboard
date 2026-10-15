@@ -56,6 +56,11 @@ func (av *AoVivo) graph(ctx context.Context, caminho string, params obj) (obj, e
 	d := json.NewDecoder(bytes.NewReader(r.Corpo))
 	d.UseNumber() // ids e contagens saem como entraram
 	if d.Decode(&j) != nil || j == nil {
+		if r.Status < 400 {
+			// 2xx que não é um objeto JSON (truncado, HTML de gateway, vazio, lista): erro no formato da
+			// Graph. Passar o `raw` adiante deixaria a coleta ler "sem dados" onde houve falha.
+			return obj{"error": obj{"message": "core: resposta inválida da Meta", "type": "CoreProxy", "code": r.Status}}, nil
+		}
 		j = obj{"raw": string(r.Corpo)}
 	}
 	return comoGraph(r.Status, j), nil

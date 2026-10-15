@@ -35,7 +35,10 @@ func Paginas(ctx context.Context, c *core.Cliente, caminho string, params map[st
 	if err != nil {
 		return nil, err
 	}
-	todos, _ := j["data"].([]any)
+	todos, ok := j["data"].([]any)
+	if !ok { // coleção da Graph sempre traz `data` em lista: sem ela não é "vazio", é resposta quebrada
+		return nil, fmt.Errorf("Meta API %s: resposta sem lista data", caminho)
+	}
 	for n := 1; n < max; n++ {
 		paging, _ := j["paging"].(map[string]any)
 		next, _ := paging["next"].(string)
@@ -53,7 +56,14 @@ func Paginas(ctx context.Context, c *core.Cliente, caminho string, params map[st
 			}
 			return nil, err
 		}
-		pagina, _ := j["data"].([]any)
+		pagina, ok := j["data"].([]any)
+		if !ok {
+			if tolerante {
+				slog.Warn("meta: página seguinte sem lista data; fico com o que já li", "caminho", caminho)
+				return todos, nil
+			}
+			return nil, fmt.Errorf("Meta API %s: resposta sem lista data", cam)
+		}
 		todos = append(todos, pagina...)
 	}
 	return todos, nil
