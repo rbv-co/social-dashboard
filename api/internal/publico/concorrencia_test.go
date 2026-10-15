@@ -45,7 +45,9 @@ func donaEDuasCompradoras(t *testing.T, m *mundo, n int) (tokens [3]string, ids 
 }
 
 // deuOk: as funções devolvem json do Postgres, com espaço antes e depois dos dois pontos.
-func deuOk(r string) bool { return strings.Contains(r, `"ok" : true`) || strings.Contains(r, `"ok":true`) }
+func deuOk(r string) bool {
+	return strings.Contains(r, `"ok" : true`) || strings.Contains(r, `"ok":true`)
+}
 
 func codigoDaPeca(i int) string { return fmt.Sprintf("VBTR%04d", i) }
 
