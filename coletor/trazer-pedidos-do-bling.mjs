@@ -39,12 +39,11 @@ import { blingDoColetor } from './lib/bling-token.mjs';
 import { loginServico, blingProxy, blingFormasDePagamento } from './lib/bling-comercial.mjs';
 import { linhasDeFormaPagamento } from './lib/forma-pagamento.mjs';
 import { aplicarValorCorrigido } from '../supabase/functions/_shared/valor-corrigido.js';
-import { ajustesDeValor } from './lib/ajustes-de-valor.mjs';
+import { ajustesDeValorPg } from './lib/ajustes-de-valor.mjs';
 import { colunasExistem } from './lib/colunas-existem.mjs';
 import { contasDoItem } from './lib/preco-do-item.mjs';
 import { indiceDeLeads, leadDoPedido } from './lib/lead-do-pedido.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const BLING = 'https://api.bling.com.br/Api/v3';
 // CORE_BLING_PROXY=true: as chamadas vão pelo proxy do core; aqui nunca se renova token (ver lib/bling-token.mjs).
 const CORE_BLING = blingDoColetor();
@@ -180,8 +179,7 @@ try {
   console.log(`${leads.length} leads da LP para cruzar`);
 
   // ── 3. o valor corrigido, pela MESMA regra das telas ───────────────────────
-  const chave = process.env.SUPABASE_SERVICE_KEY;
-  const ajustes = await ajustesDeValor(SUPABASE_URL, chave);
+  const ajustes = await ajustesDeValorPg(cli);
   const { pedidos: comValor } = aplicarValorCorrigido(pedidos, ajustes);
   const corrigidoPorId = new Map(comValor.filter((p) => p.valorAjustado)
     .map((p) => [String(p.id), p.total]));

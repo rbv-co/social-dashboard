@@ -29,16 +29,10 @@ import { CONFERENCIAS, montarAbasDoLog } from '../supabase/functions/_shared/car
 import { montarXlsx, bytesIguais } from '../supabase/functions/_shared/planilha-xlsx.js';
 import { abasDoXlsx } from '../supabase/functions/_shared/ler-xlsx.mjs';
 import {
-  RAIZ_RBV, conexaoZoho, tokenZoho, caminhoDePastas,
+  RAIZ_RBV, conexaoZohoPg, tokenZoho, caminhoDePastas,
   baixarArquivoBinario, subirArquivoBinario,
 } from './lib/zoho-da-central.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const REST = SUPABASE_URL + '/rest/v1';
-const cab = {
-  apikey: process.env.SUPABASE_SERVICE_KEY,
-  Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-};
 
 const ensaio = process.argv.includes('--ensaio');
 const gravarEm = (() => {
@@ -60,6 +54,7 @@ await cli.connect();
 // robô de verdade faz.
 const resultados = {};
 const quebradas = [];
+let zoho;
 try {
   const { rows: [{ vessel_carocos: tudo }] } = await cli.query('select public.vessel_carocos()');
   for (const c of CONFERENCIAS) {
@@ -68,6 +63,8 @@ try {
     resultados[c.chave] = [];
     quebradas.push(`${c.chave}: a função do banco não devolveu esta conferência`);
   }
+  // A conexão do Zoho sai do MESMO banco da função (antes ia à REST do Supabase); no ensaio nada vai ao Zoho.
+  if (!ensaio) zoho = await conexaoZohoPg(cli);
 } finally {
   await cli.end();
 }
@@ -114,7 +111,7 @@ if (ensaio) {
   process.exit(0);
 }
 
-const tz = await tokenZoho(await conexaoZoho(REST, cab));
+const tz = await tokenZoho(zoho);
 const pasta = await caminhoDePastas(tz, RAIZ_RBV, CAMINHO);
 const laDentro = await baixarArquivoBinario(tz, pasta, ARQUIVO);
 // ⚠️ SÓ REGRAVA SE DIFERE — o mesmo cuidado do espelho da base: subir igual

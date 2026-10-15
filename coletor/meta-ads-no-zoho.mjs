@@ -17,15 +17,10 @@ import { CONSULTAS, montarAbasDoMetaAds, CONTA_DA_VESSEL, DIAS_NA_JANELA }
 import { montarXlsx, bytesIguais } from '../supabase/functions/_shared/planilha-xlsx.js';
 import { abasDoXlsx } from '../supabase/functions/_shared/ler-xlsx.mjs';
 import {
-  RAIZ_RBV, conexaoZoho, tokenZoho, caminhoDePastas,
+  RAIZ_RBV, conexaoZohoPg, tokenZoho, caminhoDePastas,
   baixarArquivoBinario, subirArquivoBinario,
 } from './lib/zoho-da-central.mjs';
 
-const REST = (process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co') + '/rest/v1';
-const cab = {
-  apikey: process.env.SUPABASE_SERVICE_KEY,
-  Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-};
 const ensaio = process.argv.includes('--ensaio');
 const gravarEm = (() => {
   const i = process.argv.indexOf('--gravar-em');
@@ -39,7 +34,7 @@ const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
 
-let dados;
+let dados, zoho;
 try {
   // ⚠️ A TRADUÇÃO DO NÚMERO DA META PARA O ID INTERNO ACONTECE AQUI, UMA VEZ.
   // As consultas recebem o UUID de `accounts.id`; nenhuma delas precisa saber
@@ -59,6 +54,8 @@ try {
     leads: (await cli.query(CONSULTAS.leads, [conta.id])).rows,
     problemas: (await cli.query(CONSULTAS.problemas, [CONTA_DA_VESSEL])).rows,
   };
+  // A conexão do Zoho sai do MESMO banco dos dados (antes ia à REST do Supabase); no ensaio nada vai ao Zoho.
+  if (!ensaio) zoho = await conexaoZohoPg(cli);
 } finally {
   await cli.end();
 }
@@ -85,7 +82,7 @@ if (ensaio) {
   process.exit(0);
 }
 
-const tz = await tokenZoho(await conexaoZoho(REST, cab));
+const tz = await tokenZoho(zoho);
 const pasta = await caminhoDePastas(tz, RAIZ_RBV, CAMINHO);
 const laDentro = await baixarArquivoBinario(tz, pasta, ARQUIVO);
 if (bytesIguais(laDentro, bytes)) {

@@ -33,6 +33,19 @@ export async function conexaoZoho(rest, cab) {
   return c;
 }
 
+/**
+ * O mesmo que `conexaoZoho`, pelo `pg` que o robô já usa (`DATABASE_URL`): é a fonte única do banco, antes e depois do
+ * Supabase. Quem já tem um cliente `pg` usa esta; a REST fica para o robô que só fala REST.
+ */
+export async function conexaoZohoPg(cli) {
+  const { rows: [c] } = await cli.query(`select client_id, client_secret, refresh_token, data_center
+    from public.acessos_conexoes where provedor = 'zoho' limit 1`);
+  if (!c?.refresh_token) {
+    throw new Error('A Central não está conectada ao Zoho. Abra Acessos → Zoho e clique em conectar.');
+  }
+  return c;
+}
+
 /** ⚠️ O refresh_token do Zoho NÃO rotaciona (o do Bling sim). Não regravar. */
 export async function tokenZoho(c) {
   let dc = String(c.data_center || '.com');
