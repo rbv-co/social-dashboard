@@ -30,7 +30,8 @@ func TestShopifyPedidoAtrasadoNaoDesfazOMaisNovo(t *testing.T) {
 		{novo, "orders/paid", "ev-novo", "paid"},
 		{velho, "orders/create", "ev-velho", "paid"},                                                  // atrasado: ignorado, 200 (a Shopify não deve reentregar)
 		{pedidoEm("refunded", "2026-10-09T10:05:00-03:00"), "orders/updated", "ev-igual", "refunded"}, // mesmo instante: vale o último
-		{pedidoEm("paid", "2026-10-09T13:06:00Z"), "orders/updated", "ev-outro-fuso", "paid"},         // 10:06-03:00 = 13:06Z: é mais novo
+		{pedidoEm("paid", "2026-10-09T12:00:00Z"), "orders/updated", "ev-outro-fuso", "refunded"},     // 12:00Z = 09:00-03:00 é MAIS VELHO que 10:05-03:00, apesar de maior como texto: ignorado
+		{pedidoEm("paid", "2026-10-09T13:06:00Z"), "orders/updated", "ev-outro-fuso-novo", "paid"},    // 13:06Z = 10:06-03:00: mais novo, vale
 	} {
 		if w := enviar(h, rotaPedido, c.corpo, assinar(segredoAdmin, c.corpo), c.topico, c.ev); w.Code != 200 {
 			t.Fatalf("passo %d: %d %s", i, w.Code, w.Body)
@@ -41,22 +42,35 @@ func TestShopifyPedidoAtrasadoNaoDesfazOMaisNovo(t *testing.T) {
 	}
 }
 
-// updated_at lixo ou ausente não pode travar o pedido: segue o comportamento de sempre (o último vale).
+// updated_at ausente, lixo ou data impossível no payload novo não trava o pedido nem dá 500: sem data válida o
+// último a chegar vale, como sempre valeu.
 func TestShopifyPedidoSemUpdatedAtValidoContinuaAtualizando(t *testing.T) {
 	p, h := montarShopify(t, segredoAdmin)
-	for i, ua := range []string{"ontem", "", "2026-10-09T10:00:00-03:00", "lixo"} {
-		corpo := pedidoEm("pending", ua)
-		if ua == "" {
-			corpo = pedido
-		}
+	status := func() string {
+		var s string
+		p.QueryRow(context.Background(), `select status_financeiro from shopify_pedidos where id = 7001`).Scan(&s)
+		return s
+	}
+	enviarPedido := func(corpo string) {
+		t.Helper()
 		if w := enviar(h, rotaPedido, corpo, assinar(segredoAdmin, corpo), "orders/updated", ""); w.Code != 200 {
-			t.Fatalf("passo %d: %d %s", i, w.Code, w.Body)
+			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	}
-	var s string
-	p.QueryRow(context.Background(), `select status_financeiro from shopify_pedidos where id = 7001`).Scan(&s)
-	if s != "pending" && s != "paid" || contar(t, p, `select count(*) from shopify_pedidos`) != 1 {
-		t.Fatalf("status=%q", s)
+	enviarPedido(pedidoEm("pending", "2026-10-09T10:00:00-03:00"))
+	for i, c := range []struct{ corpo, quer string }{
+		{strings.Replace(pedido, `"paid"`, `"authorized"`, 1), "authorized"}, // sem updated_at
+		{pedidoEm("paid", "lixo"), "paid"},
+		{pedidoEm("refunded", "2026-13-45T10:05:00Z"), "refunded"}, // passa na regex de formato, não é data
+		{pedidoEm("voided", ""), "voided"},
+	} {
+		enviarPedido(c.corpo)
+		if got := status(); got != c.quer {
+			t.Fatalf("passo %d: status = %q, esperava %q", i, got, c.quer)
+		}
+	}
+	if contar(t, p, `select count(*) from shopify_pedidos`) != 1 {
+		t.Fatal("mais de uma linha")
 	}
 }
 

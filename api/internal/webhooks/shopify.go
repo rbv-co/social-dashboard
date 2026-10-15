@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -199,6 +200,7 @@ func (s *Shopify) Pedido(w http.ResponseWriter, r *http.Request) {
 		if email != "" {
 			emailP = &email
 		}
+		atualizado := atualizadoEm(c["updated_at"])
 		_, err := tx.Exec(ctx, `insert into shopify_pedidos
 			  (id, numero, loja_id, total, moeda, status_financeiro, cliente_nome, cliente_email, criado_em_shopify, bruto, atualizado_em)
 			values ($1, $2, 205512275, coalesce(nullif($3::text, '')::numeric, 0), $4, $5, $6, $7, $8::text::timestamptz, $9::text::jsonb, now())
@@ -206,17 +208,30 @@ func (s *Shopify) Pedido(w http.ResponseWriter, r *http.Request) {
 			  moeda = excluded.moeda, status_financeiro = excluded.status_financeiro, cliente_nome = excluded.cliente_nome,
 			  cliente_email = excluded.cliente_email, criado_em_shopify = excluded.criado_em_shopify, bruto = excluded.bruto,
 			  atualizado_em = now()
-			where `+emAtualizado("excluded.bruto")+` >= `+emAtualizado("shopify_pedidos.bruto"), id, numero, total, moeda, status, nome, emailP, *criado, string(cru))
+			where $10::text::timestamptz is null or $10::text::timestamptz >= `+instanteGuardado, id, numero, total, moeda, status, nome, emailP, *criado, string(cru), atualizado)
 		return http.StatusOK, map[string]any{"ok": true}, err
 	})
 }
 
-// emAtualizado: o updated_at do payload como instante, para a Shopify não ser desfeita por uma reentrega
-// ATRASADA (orders/create velho depois do orders/paid). Ausente ou ilegível = -infinity: nesse caso o último
-// a chegar vale, como sempre valeu (e o ::timestamptz só roda no que tem cara de ISO 8601).
-func emAtualizado(bruto string) string {
-	campo := bruto + `->>'updated_at'`
-	return `coalesce(case when ` + campo + ` ~ '^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:?\d\d)$' then (` + campo + `)::timestamptz end, '-infinity'::timestamptz)`
+// instanteGuardado: o updated_at do pedido já gravado como instante (-infinity se faltar ou não for uma data
+// ISO 8601 válida: o ::timestamptz só roda no que passa na regex).
+const instanteGuardado = `coalesce(case when shopify_pedidos.bruto->>'updated_at' ~ '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?(Z|[+-]\d\d:?\d\d)$'
+	then (shopify_pedidos.bruto->>'updated_at')::timestamptz end, '-infinity'::timestamptz)`
+
+// atualizadoEm: o updated_at do payload (UTC), ou nil se faltar ou não for data. Serve para a Shopify não ser
+// desfeita por uma reentrega ATRASADA (orders/create velho depois do orders/paid): payload mais velho que o
+// gravado não regrava. Sem data válida no payload, o último a chegar vale, como sempre valeu.
+func atualizadoEm(v any) *string {
+	s, ok := v.(string)
+	if !ok {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return nil
+	}
+	u := t.UTC().Format(time.RFC3339Nano)
+	return &u
 }
 
 // Checkout é POST /receber-webhook-checkout (checkouts/create): só o cart_token vai para
