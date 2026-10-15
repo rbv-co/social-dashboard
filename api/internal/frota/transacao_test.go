@@ -1,0 +1,115 @@
+package frota
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// Plano 03-D: a troca de posse mexe em duas linhas (fecha a posse e abre a nova) na MESMA transação. Se
+// a abertura falha (aqui, um gatilho que recusa), o fechamento já feito tem de ser desfeito: o carro
+// não pode ficar "devolvido" sem a posse nova.
+func TestTrocaQueFalhaNoMeioDesfazOFechamento(t *testing.T) {
+	m := novoMundo(t, montarUsos)
+	if _, err := m.P.Exec(t.Context(), `create function recusa_posse_nova() returns trigger language plpgsql as
+		$$ begin if new.pessoa_nome = 'Explode' then raise exception 'recusada' using errcode = '23514'; end if; return new; end $$;
+		create trigger recusa_posse_nova before insert on frota_uso for each row execute function recusa_posse_nova();`); err != nil {
+		t.Fatal(err)
+	}
+	foto := m.Um(t, fotoDaFrota)
+	st, corpo := m.Pedir(t, "motorista", "POST", "/frota/usos/trocar",
+		`{"veiculo_id":"`+V1+`","fechar":{"id":"`+U1+`","volta_em":"2026-10-12T10:00:00Z"},`+
+			`"abrir":{"pessoa_id":null,"pessoa_nome":"Explode","saida_em":"2026-10-12T10:00:00Z"}}`)
+	if st != http.StatusBadRequest {
+		t.Fatalf("troca com abertura recusada = %d %s, esperava 400", st, corpo)
+	}
+	if v := m.Um(t, fotoDaFrota); v != foto {
+		t.Errorf("a troca que falhou no meio deixou rastro: o fechamento da posse não foi desfeito")
+	}
+	if v := m.Um(t, `select coalesce(volta_em::text, '<nulo>') from frota_uso where id = '`+U1+`'`); v != "<nulo>" {
+		t.Errorf("U1 voltou em %s, esperava continuar aberta", v)
+	}
+}
+
+// Plano 03-D: pedido que espera numa linha travada por outra transação tem prazo: o contexto vence, a
+// resposta é 504 (não pendura), a conexão volta ao pool e, solta a trava, o mesmo pedido passa.
+func TestPedidoPresoNaTravaEsgotaOPrazoESoltaAConexao(t *testing.T) {
+	m := novoMundo(t, montarUsos)
+	ctx := t.Context()
+	preso, err := m.P.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer preso.Rollback(ctx)
+	if _, err := preso.Exec(ctx, `select 1 from frota_uso where id = $1::uuid for update`, U1); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(prazo time.Duration) (int, time.Duration) {
+		c, cancela := context.WithTimeout(ctx, prazo)
+		defer cancela()
+		r := httptest.NewRequest("POST", "/frota/usos/trocar", strings.NewReader(
+			`{"veiculo_id":"`+V1+`","fechar":{"id":"`+U1+`","volta_em":"2026-10-12T10:00:00Z"}}`)).WithContext(c)
+		r.Header.Set("Authorization", "Bearer "+m.Tok["motorista"])
+		w := httptest.NewRecorder()
+		ini := time.Now()
+		m.H.ServeHTTP(w, r)
+		return w.Code, time.Since(ini)
+	}
+	st, dur := pedir(400 * time.Millisecond)
+	if st != http.StatusGatewayTimeout || dur > 5*time.Second {
+		t.Fatalf("pedido preso na trava = %d em %s, esperava 504 perto do prazo", st, dur)
+	}
+	preso.Rollback(ctx)
+	if !conexoesSoltas(m) {
+		t.Fatalf("depois do prazo estourado ficaram %d conexões do pool em uso", m.P.Stat().AcquiredConns())
+	}
+	if st, _ := pedir(5 * time.Second); st != http.StatusOK {
+		t.Fatalf("solta a trava, o mesmo pedido deu %d", st)
+	}
+}
+
+// conexoesSoltas espera (até 2 s) o pool devolver todas as conexões e confere no servidor que nenhuma
+// ficou "idle in transaction" (a transação esquecida aberta).
+func conexoesSoltas(m *mundoteste.Mundo) bool {
+	for range 40 {
+		if m.P.Stat().AcquiredConns() == 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	var presas int
+	err := m.P.QueryRow(context.Background(), `select count(*) from pg_stat_activity
+		where datname = current_database() and state like 'idle in transaction%' and pid <> pg_backend_pid()`).Scan(&presas)
+	return m.P.Stat().AcquiredConns() <= 1 && err == nil && presas == 0 // 1 = a conexão desta consulta
+}
+
+// Plano 03-D: depois de uma enxurrada de pedidos de todo tipo (200, 201, 400, 403, 404, 409), em
+// paralelo, o pool não perdeu conexão e o servidor não tem transação esquecida aberta.
+func TestEnxurradaDePedidosNaoVazaConexao(t *testing.T) {
+	m := novoMundo(t, montarUsos)
+	antes := m.P.Stat().TotalConns()
+	pedidos := []struct{ quem, metodo, caminho, corpo string }{
+		{"motorista", "GET", "/frota/usos", ""},
+		{"motorista", "POST", "/frota/usos", `{"veiculo_id":"` + V1 + `","km_saida":150}`},     // 409: carro fora
+		{"motorista", "POST", "/frota/usos", `{"veiculo_id":"` + V2 + `","tipo":"posse"}`},     // 400: corpo
+		{"admin", "PATCH", "/frota/usos/" + U1, `{"volta_em":"2026-10-12T18:00:00Z"}`},         // 404: invisível
+		{"viewer", "POST", "/frota/usos", `{"veiculo_id":"` + V2 + `","km_saida":150}`},        // 403
+		{"motorista", "PATCH", "/frota/usos/" + U1, `{"observacao":"x"}`},                      // grava em linha dele
+		{"motorista", "POST", "/frota/usos/trocar", `{"veiculo_id":"` + V1 + `","fechar":{}}`}, // 400
+	}
+	mundoteste.EmParalelo(210, func(i int) {
+		p := pedidos[i%len(pedidos)]
+		m.Resposta(t, p.quem, p.metodo, p.caminho, p.corpo)
+	})
+	if !conexoesSoltas(m) {
+		t.Fatalf("depois da enxurrada: %d conexões em uso ou transação esquecida aberta", m.P.Stat().AcquiredConns())
+	}
+	if total := m.P.Stat().TotalConns(); total > m.P.Config().MaxConns {
+		t.Errorf("pool com %d conexões (antes %d), teto %d", total, antes, m.P.Config().MaxConns)
+	}
+}
