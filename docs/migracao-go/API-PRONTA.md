@@ -6,7 +6,7 @@
 
 **Regra da trilha C.** Lê este arquivo do `origin/main` e só troca o que está listado. Se o texto divergir do código, vale `rotas.go`: abra a correção aqui, não improvise no front.
 
-**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.13, 5.6, 5.7, 5.2, 5.8, 5.9, 5.3, 5.5, 5.10, 5.11 e 6 (o 5.13 não traz rota nova; o 5.11 só acrescenta RPCs; o Plano 6 acrescenta 13 rotas, no dialeto do Supabase, e tira a RD do worker; a contagem por `chi.Walk` na branch do Plano 6 é 254, a lista por área abaixo é de antes do Plano 6). 225 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, com 92 funções registradas, nenhuma pendente), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Patrimônio e cadastros 30, Frota 27, Fábrica 23 (10 leituras e 13 escritas: 1 de catálogo, 5 edges e 7 de robô; o `material-do-sku` é a 10ª leitura), Conteúdo 21 (20 de tabela e o `POST /conteudo-trigger`), Comercial 18 (14 leituras e 4 escritas), Autenticidade 7 (6 leituras e o cartão EAN), Outras 2.
+**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.13, 5.6, 5.7, 5.2, 5.8, 5.9, 5.3, 5.5, 5.10, 5.11, 6 e 12 (o 5.13 não traz rota nova; o 5.11 só acrescenta RPCs; o Plano 6 acrescenta 13 rotas, no dialeto do Supabase, e tira a RD do worker; a contagem por `chi.Walk` na branch do Plano 6 é 254, a lista por área abaixo é de antes do Plano 6; o Plano 12 acrescenta 9 rotas — 2 escritas de termo e 7 leituras da Vessel — e a contagem por `chi.Walk` em `web.Rotas` passa a 264). 225 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, com 92 funções registradas, nenhuma pendente), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Patrimônio e cadastros 30, Frota 27, Fábrica 23 (10 leituras e 13 escritas: 1 de catálogo, 5 edges e 7 de robô; o `material-do-sku` é a 10ª leitura), Conteúdo 21 (20 de tabela e o `POST /conteudo-trigger`), Comercial 18 (14 leituras e 4 escritas), Autenticidade 7 (6 leituras e o cartão EAN), Outras 2.
 
 ## Convenções que valem para todas as rotas
 
@@ -413,17 +413,17 @@ Montagem, `soPainel`, varreduras de vazamento por conta, "entrar como" e sessão
 As 2 RPCs (`POST /rpc/{nome}`): `frota_corrente_do_veiculo` (`{p_veiculo}`; portão = Frota; devolve a ficha corrente e as respostas; carro inexistente = `200 []`) e `etiqueta_quem_e` (`{p_numero}`; portão = admin do Patrimônio, Ruling 5.3-10: a função dava `{existe:false}` a quem só tinha a Frota, e a tela mostrava "Número livre"; agora `403`). As duas só leem: a sessão de "entrar como" passa.
 ## Colaboradores e Acessos (5.4)
 
-16 rotas no grupo de domínio de `web.Rotas` (`acessos.Montar`: 6 leituras e 10 escritas). Regra de cada rota = catálogo de produção (`is_acessos_admin()`: conta ativa e papel `admin` ou a feature `acessos`). Super-admin sem a feature não vê colaboradores (como hoje). Detalhe em `NOTAS-DA-IMPLANTACAO.md`, "Plano 5.4".
+18 rotas no grupo de domínio de `web.Rotas` (`acessos.Montar`: 6 leituras e 12 escritas; as 2 de termo são do Plano 12). Regra de cada rota = catálogo de produção (`is_acessos_admin()`: conta ativa e papel `admin` ou a feature `acessos`). Super-admin sem a feature não vê colaboradores (como hoje). Detalhe em `NOTAS-DA-IMPLANTACAO.md`, "Plano 5.4".
 
 - **Escrita:** sessão de "entrar como" = `403 sem_permissao` + "Quem entrou como outra pessoa não grava em Colaboradores e Acessos.", nada gravado. Quem não tem a feature: leitura `200 []`, criar `403`, linha existente `404`.
 - **Embutidos** (chaves iguais às da tela): `acessos_setores`, `acessos_organizacoes`, `patrimonio_empresas` em pessoas; `acessos_recursos` em vínculos. Tabela que a pessoa não lê sai `null`.
-- **Não existe rota** para `acessos_conexoes` (segredos do Zoho/Microsoft: Plano 6), nem para enviar termo ou foto (arquivo: Plano 6).
+- **Não existe rota** para `acessos_conexoes` (segredos do Zoho/Microsoft: Plano 6). Foto e termo: o ARQUIVO vai pelo Storage (`/storage/v1`, buckets `acessos-avatars` e `acessos-termos`, Plano 6) e a LINHA por estas rotas (Plano 12, no fim da tabela).
 
 | Método e caminho | Substitui (Supabase) | Quem pode | Observações |
 |---|---|---|---|
 | `GET /acessos/pessoas` | `acessos_pessoas` (Colaboradores e Acessos, Frota, Admin) | catálogo | `?status=`; `contar=1&limite=1` → `X-Total-Count`; embutidos acima |
 | `POST /acessos/pessoas` | `.insert` (cadastro e "criar cadastro" do Admin) | catálogo, sessão própria | `nome` obrigatório; nasce `ativo`; `profile_id` na criação só com papel `admin` (`403 "Só admin pode ligar."`) |
-| `PATCH /acessos/pessoas/{id}` | `.update` (ficha, desligar, reativar, Zoho, lotação) | catálogo, sessão própria | `profile_id`, `avatar_url`, `id`, `criado_em` → `400` |
+| `PATCH /acessos/pessoas/{id}` | `.update` (ficha, desligar, reativar, Zoho, lotação, **foto**) | catálogo, sessão própria | `profile_id`, `id`, `criado_em` → `400`. **`avatar_url` (Plano 12):** a tela manda `{avatar_url, atualizado_em}` depois do upload; só URL `http(s)` absoluta de até 2048 caracteres (`400` "A foto precisa ser uma URL http(s)…"), `null` remove a foto. O `POST /acessos/pessoas` continua recusando `avatar_url` |
 | `POST /acessos/pessoas/{id}/ligar` | `.update({profile_id})` (Admin :3217, Frota :836) | **papel `admin`**, sessão própria | `{profile_id}`; ficha ligada a OUTRO login = `409`; ao mesmo = `200`; só a feature `acessos` = `403 "Só admin pode ligar."` (404 antes, para ficha invisível) |
 | `DELETE /acessos/pessoas/{id}` | `.delete` | **papel `admin`**, sessão própria | `204`, cascata do banco; só a feature = `403 "Só admin pode excluir."` |
 | `POST /acessos/log` | `acessos_log.insert` | catálogo, sessão própria | `quem` = sessão (no corpo = `400`); `resultado` só `ok`/`erro` |
@@ -432,7 +432,9 @@ As 2 RPCs (`POST /rpc/{nome}`): `frota_corrente_do_veiculo` (`{p_veiculo}`; port
 | `GET /acessos/recursos` | `acessos_recursos` | catálogo | `?tipo=&arquivado=&ordem=`; `contar=1&limite=1` |
 | `GET /acessos/vinculos` | `acessos_vinculos` | catálogo | `?recurso_id=&pessoa_id=` |
 | `POST /acessos/vinculos` | `acessos_vinculos.insert` | catálogo, sessão própria | `papel` e `estado` pelos checks; recurso inexistente = `409` |
-| `GET /acessos/termos` | `acessos_termos` | catálogo | `?pessoa_id=`; enviar/baixar/apagar termo = Plano 6 |
+| `GET /acessos/termos` | `acessos_termos` | catálogo | `?pessoa_id=`; `contar=1&limite=1` → `X-Total-Count` |
+| `POST /acessos/termos` | `acessos_termos.insert` (depois do upload ao bucket `acessos-termos`) | catálogo, sessão própria | **Plano 12.** `{pessoa_id, arquivo_path, titulo?, observacao?}` → `201` com a linha. `arquivo_path` tem de ser `<pessoa_id>/<nome>` (sem `..`, sem `\`, até 500): outra pessoa, fora da pasta ou sem nome = `400` "O arquivo do termo tem de estar na pasta da pessoa…"; pessoa que não existe = `409`; `id`/`enviado_em` no corpo = `400`. Só a LINHA: o arquivo já foi enviado pelo Storage (a tela apaga o arquivo se este POST falhar) |
+| `DELETE /acessos/termos/{id}` | `acessos_termos.delete` | catálogo, sessão própria | **Plano 12.** `204`; invisível ou inexistente = `404`. Só a LINHA: a tela apaga o arquivo do bucket ANTES (`storage.remove`), como já fazia |
 
 ## Comercial: Bling e Shopify (5.5)
 
@@ -458,6 +460,22 @@ As 2 RPCs (`POST /rpc/{nome}`): `frota_corrente_do_veiculo` (`{p_veiculo}`; port
 | `GET /comercial/pedidos-vendedor` | `bling_pedido_vendedor` (`gav:758`, `admin:560, 4111`, `av:485`) | toda sessão | filtro `pedido_id=a,b` (até 1000); `?ordem=pedido_data.desc`; **a consulta sem `qtd_itens` (`av:487`) sai** | `f5e53214` |
 | `POST /comercial/vendedoras/gravar` | `.upsert(onConflict)` (`gav:314`) | quem vê vendas (papel `admin`, super ou módulo `sales`), sessão própria | corpo `{linhas:[{vendor_id, nome?, updated_at?}]}` (1 a 1000) → `200 {"gravadas":n}`; coluna ausente não muda; tudo ou nada | `f5e53214` |
 | `POST /comercial/pedidos-vendedor/gravar` | `.upsert(onConflict)` (`gav:264, 293, 313`, `av:641`) | idem | corpo `{linhas:[{pedido_id, vendor_id?, pedido_data?, qtd_itens?, loja_id?}]}` → `200 {"gravadas":n}`. **`vendor_id` é NOT NULL no banco:** linha NOVA sem vendedor e `vendor_id: null` = `400` (como já era) | `f5e53214` |
+
+## Leituras da Vessel sem rota (Plano 12)
+
+7 leituras no grupo de domínio (`atendimentos.Montar`, `api/internal/atendimentos/leituras.go`): as tabelas que as telas Atendimentos, Base de Leads (Meta Ads) e Abandono de carrinho liam direto do Supabase. Regra de cada rota = a policy de produção da SUA tabela, pelo catálogo (nenhuma é "o portão do 5.11" em bloco: as policies diferem). **Sem permissão = `200 []` com `X-Total-Count: 0`** (convenção de toda leitura de domínio; é o que o RLS devolvia), nunca `403`; sem sessão `401`. Só leitura (`POST`/`PATCH`/`DELETE` = `405`). Só as colunas que a tela usa: `ip_hash`, `origem_registro`, `ip`, `url_de_recuperacao`, `chatwoot_conversation_id` e as de controle da mensagem de abandono NÃO saem. `limite` até 1000 (`2000` = `400`): a Base de Leads pede 2000, então deve pedir `limite=1000&contar=1` e comparar com `X-Total-Count` para saber que cortou.
+
+| Método e caminho | Substitui (Supabase) | Quem pode | Filtros e observações |
+|---|---|---|---|
+| `GET /vessel/atendimentos` | `vessel_atendimentos` (Atendimentos, Base de Leads) | `vessel_pode('atendimentos','ver')` ou `is_vessel_leads()` (`meta.leads`) | `?criado_desde=` (instante RFC 3339); `?janela_de=&janela_ate=` (instantes): a janela da tela de Atendimentos, pelo dia marcado e, quem não tem dia, pela criação (`or(and(quando…), and(quando.is.null, criado_em…))`). Ordem `quando desc nulls last`. Embutido `pessoa` = `{id, nome, telefone}` (`null` se a pessoa não é legível). Colunas: `id, pessoa_id, loja, client_advisor, quando, status, convite_codigo, presenca_em, teste, criado_em, pessoa` |
+| `GET /vessel/pedidos` | `vessel_pedidos` (compras do Atendimentos) | `vessel_pode('atendimentos','ver')` | `?situacao_id=9` (atendido: a única que é venda), `?pessoa_id=1,2,3` (até 1000), `?pedido_de=&pedido_ate=` (`AAAA-MM-DD`, data do pedido). Colunas: `pessoa_id, numero, data_da_venda, data_do_pedido, receita_liquida, total_corrigido` |
+| `GET /vessel/pessoas` | `vessel_pessoas` (Base de Leads) | `vessel_pode('atendimentos','ver')` ou `is_vessel_leads()` | `?id=1,2,3` (até 1000). Colunas: `id, nome, telefone, email` |
+| `GET /vessel/origens` | `vessel_origens` (Base de Leads) | `is_vessel_leads()` | `?pessoa_id=1,2,3`. Colunas: `pessoa_id, momento, utm_source, utm_medium, utm_campaign, clique_meta` |
+| `GET /vessel/lista-espera` | `vessel_lista_espera` (Base de Leads) | `is_vessel_leads()` | `?criado_desde=`. Colunas: `criado_em, nome, email, whatsapp, utm_source, utm_medium, utm_campaign, clique_meta` |
+| `GET /vessel/carrinho-eventos` | `carrinho_eventos` (Base de Leads) | `is_vessel_leads()` ou módulo `carrinho` ou papel `admin`/super | `?tipo=checkout_iniciado&criado_desde=`. Colunas: `criado_em, session_id, utm_source, utm_medium, utm_campaign, gclid, referrer, fbp, fbc` |
+| `GET /vessel/checkout-abandono` | `checkout_abandono` (Abandono de carrinho) | módulo `abandono-carrinho` ou papel `admin`/super | `?iniciado_desde=`. Ordem `ultimo_evento_em desc`. Colunas: `token, nome, email, telefone, total, moeda, status, iniciado_em, ultimo_evento_em, fila_envio_em, comprou_em, comprou_depois, pedido_criado_em, mensagem_status, mensagem_enviada_em, mensagem_motivo` |
+
+Mudanças de contrato para o front (Plano 01): (1) a janela do Atendimentos vai em `janela_de`/`janela_ate` como INSTANTES com fuso (`…T00:00:00-03:00`), não mais como `or(...)` do PostgREST nem data sem fuso; (2) o embutido `pessoa:vessel_pessoas(...)` já vem pronto em `pessoa`; (3) `.in('id', ids)` vira `?id=1,2,3`; (4) a leitura `[]` por falta de permissão é igual a "sem dados": quem decide a mensagem é o módulo da tela.
 
 ## Atendimentos da Vessel (5.11)
 
@@ -501,5 +519,7 @@ Sem equivalente no Supabase e sem troca no front; servem à operação (health c
 | `GET /pronto` | nada | sem sessão | `200 ok` (texto) se o banco responde, `503` (texto) senão | PR #333 `514ab223` |
 
 ## Ainda NÃO pronto
+
+As lacunas que o Plano 01 listou (foto e termo do colaborador; leituras de Atendimentos, Base de Leads e Abandono) fecharam no Plano 12. Seguem sem rota Go: `acessos-proxy`/`acessos-oauth` e os `core-*.js` (plano 08/virada).
 
 `POST /fabrica-candidatos` (5.8, Task 7: as tabelas `gc_*` já têm rota no 5.5) já está na `main` (PR #376); do Plano 6 só falta o que ficou de fora de propósito: os robôs de Zoho/planilha em JS (`vessel-espelhar-lista`, `-log-de-carocos`, `-triagem-da-vaga`, `enviar-pdf-checklist`, `vessel-lembretes`) e `acessos-proxy`/`acessos-oauth` (ver `NOTAS-DA-IMPLANTACAO.md`, "Plano 6"); consulte o plano-mãe `docs/superpowers/plans/2026-10-11-api-go-plano-5-dominios.md`, seção IV.2, para o dono de cada área e as telas a trocar.

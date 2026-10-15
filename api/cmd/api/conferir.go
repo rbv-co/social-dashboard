@@ -85,15 +85,20 @@ var colunasDoWorker = map[string]string{
 	"conteudo_eventos":             "id,peca_id,de,para,acao,detalhe,quem,quando",                                                                                                                                                                           // + Plano 5.9
 	"conteudo_casamentos":          "id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo,decidido_por,decidido_em,created_at",                                                                                    // + Plano 5.9
 	"conteudo_metricas":            "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
-	"checkout_abandono":            "token,status",
+	"checkout_abandono":            "token,status,nome,email,telefone,total,moeda,iniciado_em,ultimo_evento_em,fila_envio_em,comprou_em,comprou_depois,pedido_criado_em,mensagem_status,mensagem_enviada_em,mensagem_motivo", // as 16 últimas: GET /vessel/checkout-abandono (Plano 12)
 	"contatos_sem_mensagem":        "telefone,motivo",
 	"chatwoot_eventos":             "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
 	"shopify_pedidos":              "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
-	"carrinho_eventos":             "tipo,cart_token,evento_shopify_id",
-	"vessel_pessoas":               "id,email",
-	"fabrica_campanhas":            "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
-	"fabrica_criativos":            "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
-	"robos_execucoes":              "robo,disparado_em,status_code,ok,resposta,conferido_em",
+	"carrinho_eventos":             "tipo,cart_token,evento_shopify_id,criado_em,session_id,utm_source,utm_medium,utm_campaign,gclid,referrer,fbp,fbc", // as 8 últimas: GET /vessel/carrinho-eventos (Plano 12)
+	"vessel_pessoas":               "id,email,nome,telefone",
+	// Plano 12 (GET /vessel/*): as colunas que as leituras de Atendimentos, Base de Leads e Abandono selecionam
+	"vessel_atendimentos": "id,pessoa_id,loja,client_advisor,quando,status,convite_codigo,presenca_em,teste,criado_em",
+	"vessel_pedidos":      "id,pessoa_id,numero,data_da_venda,data_do_pedido,receita_liquida,total_corrigido,situacao_id",
+	"vessel_origens":      "id,pessoa_id,momento,utm_source,utm_medium,utm_campaign,clique_meta",
+	"vessel_lista_espera": "id,criado_em,nome,email,whatsapp,utm_source,utm_medium,utm_campaign,clique_meta",
+	"fabrica_campanhas":   "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
+	"fabrica_criativos":   "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
+	"robos_execucoes":     "robo,disparado_em,status_code,ok,resposta,conferido_em",
 	// Plano 5.6 (rotas /redes): os presumidos (sem DDL no repositório) são conferidos aqui no banco restaurado
 	"account_insights":      "account_id,captured_at,period_days,spend,impressions,clicks,reach,frequency",
 	"social_metas":          "account_id,periodo,indicador,valor",
