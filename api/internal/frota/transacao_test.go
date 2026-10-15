@@ -113,3 +113,40 @@ func TestEnxurradaDePedidosNaoVazaConexao(t *testing.T) {
 		t.Errorf("pool com %d conexões (antes %d), teto %d", total, antes, m.P.Config().MaxConns)
 	}
 }
+
+// Plano 03-D: isolamento. Enquanto a troca de posse está no meio (a posse velha já fechada, a nova ainda
+// sendo gravada: o gatilho de atraso segura 400 ms), quem lê vê o carro como estava ANTES, inteiro: a
+// posse velha aberta e nenhuma nova. Nunca o meio-termo (velha fechada sem a nova).
+func TestLeituraDuranteATrocaNaoVeOMeioTermo(t *testing.T) {
+	m := novoMundo(t, montarUsos)
+	m.Atrasar(t, "frota_uso", "insert", 400)
+	feito := make(chan int, 1)
+	go func() {
+		c, _ := m.Pedir(t, "motorista", "POST", "/frota/usos/trocar",
+			`{"veiculo_id":"`+V1+`","fechar":{"id":"`+U1+`","volta_em":"2026-10-12T10:00:00Z"},`+
+				`"abrir":{"pessoa_id":null,"pessoa_nome":"Fulano de Fora","saida_em":"2026-10-12T10:00:00Z"}}`)
+		feito <- c
+	}()
+	// espera estar DENTRO da janela: a troca dormindo no gatilho do insert (o fechamento já rodou)
+	dormindo := false
+	for range 40 {
+		if m.Um(t, `select count(*)::text from pg_stat_activity where datname = current_database() and wait_event = 'PgSleep'`) == "1" {
+			dormindo = true
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !dormindo {
+		t.Fatal("a troca não chegou ao gatilho de atraso: o teste não está lendo no meio dela")
+	}
+	st, corpo := m.Pedir(t, "motorista", "GET", "/frota/usos?veiculo_id="+V1, "")
+	if st != http.StatusOK || strings.Count(corpo, `"veiculo_id"`) != 1 || !strings.Contains(corpo, U1) || !strings.Contains(corpo, `"volta_em":null`) {
+		t.Errorf("leitura no meio da troca = %d %s: esperava só a posse velha, ainda aberta", st, corpo)
+	}
+	if c := <-feito; c != http.StatusOK {
+		t.Fatalf("troca = %d", c)
+	}
+	if v := m.Um(t, `select count(*) filter (where volta_em is null)::text || '/' || count(*)::text from frota_uso where veiculo_id = '`+V1+`'`); v != "1/2" {
+		t.Errorf("depois da troca: %s, esperava 1 aberta de 2", v)
+	}
+}

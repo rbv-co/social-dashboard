@@ -3,6 +3,7 @@ package vendas
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
@@ -48,5 +49,26 @@ func TestSalvarMetasQueFalhaNoMeioNaoGravaNada(t *testing.T) {
 	}
 	if v := m.Um(t, `select count(*)::text from bling_metas where loja_id in (61, 99) and year = 2026 and month = 12`); v != "0" {
 		t.Errorf("%s metas gravadas apesar da falha no meio, esperava 0", v)
+	}
+}
+
+// Plano 03-B: o mesmo "Salvar" repetido (clique duplo, reenvio do navegador): três vezes, 200 nas três, uma
+// linha e o mesmo conteúdo.
+func TestSalvarMetasRepetidoDeixaOMesmoEstado(t *testing.T) {
+	m := novoMundo(t, montarMetas)
+	corpo := `{"ano":2026,"mes":12,"lojas":{"gravar":[{"loja_id":62,"meta_valor":500}]}}`
+	foto := `select count(*)::text || '|' || string_agg(meta_valor::text || coalesce(daily_goals::text, '-'), ',') from bling_metas where loja_id = 62 and year = 2026 and month = 12`
+	var primeira string
+	for i := range 3 {
+		if st, c := m.Pedir(t, "admin", http.MethodPost, "/comercial/metas/salvar", corpo); st != http.StatusOK {
+			t.Fatalf("salvamento %d = %d %s", i, st, c)
+		}
+		if i == 0 {
+			if primeira = m.Um(t, foto); !strings.HasPrefix(primeira, "1|") {
+				t.Fatalf("depois do primeiro salvamento: %s", primeira)
+			}
+		} else if got := m.Um(t, foto); got != primeira {
+			t.Fatalf("salvamento %d mudou o estado: %s (era %s)", i, got, primeira)
+		}
 	}
 }
