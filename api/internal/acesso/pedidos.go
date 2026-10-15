@@ -57,7 +57,10 @@ func soJSON(next http.Handler) http.Handler {
 // pedirAcesso: POST /pedir-acesso {name, email, message}, sem sessão (a tela de login). Grava só essas
 // três colunas e status 'pending' — o insert anônimo de hoje aceitava qualquer coluna, inclusive status.
 // Nome e e-mail são dado pessoal: nunca vão para log nem para a resposta. A resposta é a mesma para
-// e-mail novo ou repetido (não há unicidade: a rota não serve para descobrir quem já pediu).
+// e-mail novo ou repetido: a rota não serve para descobrir quem já pediu. Em PRODUÇÃO há um índice único parcial
+// (lower(email) onde status = 'pending'): o e-mail que já tem pedido pendente não grava outra linha, e o
+// `on conflict do nothing` mantém o mesmo 201 {"id"} (id de mentira, que ninguém usa) em vez de um 409 que
+// denunciaria quem já pediu.
 func pedirAcesso(p *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, tetoCorpoPedido)
@@ -80,7 +83,8 @@ func pedirAcesso(p *pgxpool.Pool) http.HandlerFunc {
 		}
 		var corpo []byte
 		err := p.QueryRow(r.Context(), `with n as (insert into access_requests (name, email, message, status)
-			values (@nome::text, @email::text, @msg::text, 'pending') returning id) select row_to_json(n) from n`,
+			values (@nome::text, @email::text, @msg::text, 'pending') on conflict (lower(email)) where status = 'pending' do nothing returning id)
+			select row_to_json(x) from (select coalesce((select id from n), gen_random_uuid()) as id) x`,
 			pgx.NamedArgs{"nome": nome, "email": email, "msg": msg}).Scan(&corpo)
 		if err != nil {
 			dados.ErroDoBanco(w, err) // texto com NUL = 22021 = 400; o resto loga só código e mensagem do banco

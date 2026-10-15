@@ -216,3 +216,12 @@ test('fraseDoCorpo: código das rotas novas vira frase (inclusive com maiúscula
   assert.equal(fraseDoCorpo({ error: 'dispatch_falhou', detail: 'O GitHub recusou o disparo.' }), 'O GitHub recusou o disparo.')
   assert.equal(fraseDoCorpo({ error: 'algum_codigo' }), null)
 })
+
+// plano 02 (REVISAO-TESTES-2026-10): as telas leem `e.code === '42501'` para dizer qual permissão falta; o 403 da API
+// tem de chegar com esse código, não com '403'.
+test('erroDeRpc: 403 vira code 42501; frase do servidor vence a padrão; o resto leva o status', () => {
+  assert.deepEqual(api.erroDeRpc({ status: 403, data: null, error: { message: 'm' } }, 'Sem permissão.'), { message: 'Sem permissão.', code: '42501', status: 403 })
+  assert.equal(api.erroDeRpc({ status: 403, data: { mensagem: 'entrou como' }, error: { message: 'm' } }, 'padrão').message, 'entrou como')
+  assert.deepEqual(api.erroDeRpc({ status: 400, data: { mensagem: 'Nome vazio' }, error: { message: 'm' } }, 'x'), { message: 'Nome vazio', code: '400', status: 400 })
+  assert.equal(api.erroDeRpc({ status: 500, data: null, error: { message: 'falhou' } }, 'x').code, '500')
+})

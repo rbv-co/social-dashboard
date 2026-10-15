@@ -1,0 +1,1736 @@
+access_requests.created_at	timestamp with time zone | null | now() | | 
+access_requests.email	text | NOT NULL | - | | 
+access_requests.id	uuid | NOT NULL | gen_random_uuid() | | 
+access_requests.message	text | null | ''::text | | 
+access_requests.name	text | NOT NULL | - | | 
+access_requests.status	text | null | 'pending'::text | | 
+account_insights.account_id	uuid | NOT NULL | - | | 
+account_insights.captured_at	date | NOT NULL | - | | 
+account_insights.clicks	integer | null | 0 | | 
+account_insights.created_at	timestamp with time zone | null | now() | | 
+account_insights.frequency	numeric | null | 0 | | 
+account_insights.id	bigint | NOT NULL | - | | identity a
+account_insights.impressions	integer | null | 0 | | 
+account_insights.period_days	integer | NOT NULL | - | | 
+account_insights.reach	integer | null | 0 | | 
+account_insights.spend	numeric | null | 0 | | 
+accounts.accent_color	text | null | - | | 
+accounts.access_token	text | null | - | | 
+accounts.ad_account_id	text | null | - | | 
+accounts.conteudo_usa_portal	boolean | NOT NULL | false | | 
+accounts.created_at	timestamp with time zone | null | now() | | 
+accounts.id	uuid | NOT NULL | gen_random_uuid() | | 
+accounts.instagram_id	text | NOT NULL | - | | 
+accounts.name	text | NOT NULL | - | | 
+accounts.page_id	text | null | - | | 
+accounts.persona	text | null | - | | 
+accounts.picture_url	text | null | - | | 
+accounts.profile_picture_url	text | null | - | | 
+accounts.publicacao_automatica	boolean | NOT NULL | false | | 
+accounts.username	text | NOT NULL | - | | 
+acessos_conexoes.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_conexoes.client_id	text | null | - | | 
+acessos_conexoes.client_secret	text | null | - | | 
+acessos_conexoes.conectado_em	timestamp with time zone | null | - | | 
+acessos_conexoes.conectado_por	uuid | null | - | | 
+acessos_conexoes.data_center	text | null | '.com'::text | | 
+acessos_conexoes.escopos	text | null | - | | 
+acessos_conexoes.oauth_state	text | null | - | | 
+acessos_conexoes.oauth_state_em	timestamp with time zone | null | - | | 
+acessos_conexoes.org_id	text | null | - | | 
+acessos_conexoes.provedor	text | NOT NULL | - | | 
+acessos_conexoes.refresh_token	text | null | - | | 
+acessos_config.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_config.empresa	text | null | - | | 
+acessos_config.id	integer | NOT NULL | 1 | | 
+acessos_config.modelo_termo	text | null | - | | 
+acessos_dispositivos.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_dispositivos.categoria	text | NOT NULL | 'dispositivo'::text | | 
+acessos_dispositivos.descricao	text | NOT NULL | - | | 
+acessos_dispositivos.desde	date | null | - | | 
+acessos_dispositivos.detalhes	jsonb | NOT NULL | '{}'::jsonb | | 
+acessos_dispositivos.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_dispositivos.identificador	text | null | - | | 
+acessos_dispositivos.observacao	text | null | - | | 
+acessos_dispositivos.pessoa_id	uuid | NOT NULL | - | | 
+acessos_dispositivos.status	text | NOT NULL | 'em_uso'::text | | 
+acessos_dispositivos.tipo	text | NOT NULL | - | | 
+acessos_dispositivos.valor_centavos	bigint | null | - | | 
+acessos_drive_marcas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_drive_marcas.external_id	text | NOT NULL | - | | 
+acessos_drive_marcas.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_drive_marcas.nome	text | NOT NULL | - | | 
+acessos_drive_marcas.ordem	integer | NOT NULL | 0 | | 
+acessos_drive_overrides.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_drive_overrides.external_id	text | NOT NULL | - | | 
+acessos_drive_overrides.nome	text | null | - | | 
+acessos_drive_overrides.setor_chave	text | NOT NULL | - | | 
+acessos_drive_setores.chave	text | NOT NULL | - | | 
+acessos_drive_setores.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_drive_setores.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_drive_setores.label	text | NOT NULL | - | | 
+acessos_drive_setores.ordem	integer | NOT NULL | 100 | | 
+acessos_log.acao	text | NOT NULL | - | | 
+acessos_log.alvo	text | null | - | | 
+acessos_log.detalhe	text | null | - | | 
+acessos_log.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_log.provedor	text | null | - | | 
+acessos_log.quando	timestamp with time zone | NOT NULL | now() | | 
+acessos_log.quem	uuid | null | - | | 
+acessos_log.resultado	text | NOT NULL | 'ok'::text | | 
+acessos_organizacoes.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_organizacoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_organizacoes.nome	text | NOT NULL | - | | 
+acessos_organizacoes.ordem	integer | NOT NULL | 0 | | 
+acessos_patrimonio_historico.ate	date | null | - | | 
+acessos_patrimonio_historico.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_patrimonio_historico.de	date | NOT NULL | - | | 
+acessos_patrimonio_historico.dispositivo_id	uuid | NOT NULL | - | | 
+acessos_patrimonio_historico.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_patrimonio_historico.motivo	text | null | - | | 
+acessos_patrimonio_historico.pessoa_id	uuid | null | - | | 
+acessos_patrimonio_historico.pessoa_nome	text | null | - | | 
+acessos_perfis.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_perfis.criado_por	uuid | null | - | | 
+acessos_perfis.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_perfis.nome	text | NOT NULL | - | | 
+acessos_perfis.permissions	jsonb | NOT NULL | '{}'::jsonb | | 
+acessos_pessoas.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_pessoas.avatar_url	text | null | - | | 
+acessos_pessoas.cargo	text | null | - | | 
+acessos_pessoas.conta_apple	text | null | - | | 
+acessos_pessoas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_pessoas.data_fim_contrato	date | null | - | | 
+acessos_pessoas.data_inicio_contrato	date | null | - | | 
+acessos_pessoas.email_corporativo	text | null | - | | 
+acessos_pessoas.email_outlook	text | null | - | | 
+acessos_pessoas.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_pessoas.marca_id	uuid | null | - | | 
+acessos_pessoas.motivo_saida	text | null | - | | 
+acessos_pessoas.nome	text | NOT NULL | - | | 
+acessos_pessoas.numero_corporativo	text | null | - | | 
+acessos_pessoas.numero_pessoal	text | null | - | | 
+acessos_pessoas.organizacao_id	uuid | null | - | | 
+acessos_pessoas.profile_id	uuid | null | - | | 
+acessos_pessoas.setor_id	uuid | null | - | | 
+acessos_pessoas.status	text | NOT NULL | 'ativo'::text | | 
+acessos_pessoas.zoho_account_id	text | null | - | | 
+acessos_recursos.arquivado_em	timestamp with time zone | null | - | | 
+acessos_recursos.arquivado_motivo	text | null | - | | 
+acessos_recursos.caminho	text | null | - | | 
+acessos_recursos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_recursos.drive_id	text | null | - | | 
+acessos_recursos.external_id	text | null | - | | 
+acessos_recursos.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_recursos.nome	text | NOT NULL | - | | 
+acessos_recursos.provedor	text | null | 'microsoft'::text | | 
+acessos_recursos.tipo	text | NOT NULL | 'onedrive'::text | | 
+acessos_setores.cor	text | null | - | | 
+acessos_setores.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_setores.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_setores.nome	text | NOT NULL | - | | 
+acessos_setores.ordem	integer | NOT NULL | 0 | | 
+acessos_setores.organizacao_id	uuid | null | - | | 
+acessos_termos.arquivo_path	text | NOT NULL | - | | 
+acessos_termos.enviado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_termos.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_termos.observacao	text | null | - | | 
+acessos_termos.pessoa_id	uuid | NOT NULL | - | | 
+acessos_termos.titulo	text | null | - | | 
+acessos_vinculos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+acessos_vinculos.estado	text | NOT NULL | 'pendente'::text | | 
+acessos_vinculos.feito_em	timestamp with time zone | null | - | | 
+acessos_vinculos.id	uuid | NOT NULL | gen_random_uuid() | | 
+acessos_vinculos.observacao	text | null | - | | 
+acessos_vinculos.papel	text | NOT NULL | 'leitura'::text | | 
+acessos_vinculos.pessoa_id	uuid | NOT NULL | - | | 
+acessos_vinculos.recurso_id	uuid | NOT NULL | - | | 
+ad_insights_hora.account_id	uuid | NOT NULL | - | | 
+ad_insights_hora.ad_id	text | NOT NULL | - | | 
+ad_insights_hora.campaign_id	text | NOT NULL | - | | 
+ad_insights_hora.cliques_acumulados	integer | NOT NULL | 0 | | 
+ad_insights_hora.cliques_hora	integer | NOT NULL | 0 | | 
+ad_insights_hora.coletado_em	timestamp with time zone | NOT NULL | now() | | 
+ad_insights_hora.dia	date | NOT NULL | - | | 
+ad_insights_hora.gasto_acumulado	numeric | NOT NULL | 0 | | 
+ad_insights_hora.gasto_hora	numeric | NOT NULL | 0 | | 
+ad_insights_hora.hora	smallint | NOT NULL | - | | 
+ads.account_id	uuid | NOT NULL | - | | 
+ads.ad_id	text | NOT NULL | - | | 
+ads.campaign_id	text | NOT NULL | - | | 
+ads.destino_link	text | null | - | | 
+ads.name	text | NOT NULL | ''::text | | 
+ads.status	text | NOT NULL | ''::text | | 
+ads.synced_at	date | NOT NULL | CURRENT_DATE | | 
+ads_snapshots.account_id	uuid | null | - | | 
+ads_snapshots.captured_at	date | NOT NULL | - | | 
+ads_snapshots.clicks	integer | null | 0 | | 
+ads_snapshots.created_at	timestamp with time zone | null | now() | | 
+ads_snapshots.id	uuid | NOT NULL | gen_random_uuid() | | 
+ads_snapshots.impressions	integer | null | 0 | | 
+ads_snapshots.new_followers	integer | null | 0 | | 
+ads_snapshots.period_days	integer | NOT NULL | 1 | | 
+ads_snapshots.reach	integer | null | 0 | | 
+ads_snapshots.spend	numeric(10,2) | null | 0 | | 
+audit_log.action	text | null | - | | 
+audit_log.actor_email	text | null | - | | 
+audit_log.actor_id	uuid | null | - | | 
+audit_log.at	timestamp with time zone | null | now() | | 
+audit_log.detail	jsonb | null | - | | 
+audit_log.id	bigint | NOT NULL | - | | identity a
+bling_depositos.ativo	boolean | NOT NULL | true | | 
+bling_depositos.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+bling_depositos.deposito_id	bigint | NOT NULL | - | | 
+bling_depositos.nome	text | NOT NULL | - | | 
+bling_depositos.padrao	boolean | NOT NULL | false | | 
+bling_lojas.fechado_em	date | null | - | | 
+bling_lojas.foco	boolean | NOT NULL | true | | 
+bling_lojas.grupo	text | null | - | | 
+bling_lojas.grupo_id	uuid | null | - | | 
+bling_lojas.loja_id	bigint | NOT NULL | - | | 
+bling_lojas.nome	text | NOT NULL | - | | 
+bling_lojas.updated_at	timestamp with time zone | null | now() | | 
+bling_metas.created_at	timestamp with time zone | null | now() | | 
+bling_metas.daily_goals	jsonb | null | - | | 
+bling_metas.id	integer | NOT NULL | nextval('bling_metas_id_seq'::regclass) | | 
+bling_metas.loja_id	integer | NOT NULL | - | | 
+bling_metas.loja_nome	text | null | - | | 
+bling_metas.meta_valor	numeric(14,2) | NOT NULL | 0 | | 
+bling_metas.month	integer | NOT NULL | - | | 
+bling_metas.updated_at	timestamp with time zone | null | now() | | 
+bling_metas.year	integer | NOT NULL | - | | 
+bling_pedido_ajuste_valor.criado_em	timestamp with time zone | NOT NULL | now() | | 
+bling_pedido_ajuste_valor.criado_por	uuid | null | - | | 
+bling_pedido_ajuste_valor.loja_id	bigint | null | - | | 
+bling_pedido_ajuste_valor.motivo	text | NOT NULL | - | | 
+bling_pedido_ajuste_valor.pedido_id	bigint | NOT NULL | - | | 
+bling_pedido_ajuste_valor.total_corrigido	numeric(12,2) | NOT NULL | - | | 
+bling_pedido_ajuste_valor.total_do_bling	numeric(12,2) | null | - | | 
+bling_pedido_ajuste_vendedor.criado_em	timestamp with time zone | NOT NULL | now() | | 
+bling_pedido_ajuste_vendedor.criado_por	uuid | null | - | | 
+bling_pedido_ajuste_vendedor.loja_id	bigint | null | - | | 
+bling_pedido_ajuste_vendedor.motivo	text | NOT NULL | - | | 
+bling_pedido_ajuste_vendedor.pedido_id	bigint | NOT NULL | - | | 
+bling_pedido_ajuste_vendedor.vendor_id_corrigido	bigint | NOT NULL | - | | 
+bling_pedido_ajuste_vendedor.vendor_id_do_bling	bigint | null | - | | 
+bling_pedido_forma_pagamento.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+bling_pedido_forma_pagamento.data_vencimento	date | null | - | | 
+bling_pedido_forma_pagamento.eh_devolucao	boolean | NOT NULL | - | | 
+bling_pedido_forma_pagamento.forma_pagamento_id	bigint | NOT NULL | - | | 
+bling_pedido_forma_pagamento.loja_id	bigint | null | - | | 
+bling_pedido_forma_pagamento.parcela_id	bigint | NOT NULL | - | | 
+bling_pedido_forma_pagamento.pedido_id	bigint | NOT NULL | - | | 
+bling_pedido_forma_pagamento.valor	numeric(12,2) | NOT NULL | - | | 
+bling_pedido_nota.conferido_em	timestamp with time zone | NOT NULL | now() | | 
+bling_pedido_nota.data_da_nota	date | null | - | | 
+bling_pedido_nota.data_da_venda	date | null | COALESCE(data_da_nota, data_pedido) | gerada | 
+bling_pedido_nota.data_pedido	date | NOT NULL | - | | 
+bling_pedido_nota.emitida_em	timestamp with time zone | null | - | | 
+bling_pedido_nota.loja_id	bigint | null | - | | 
+bling_pedido_nota.modelo	text | null | - | | 
+bling_pedido_nota.nota_id	bigint | null | - | | 
+bling_pedido_nota.nota_numero	text | null | - | | 
+bling_pedido_nota.nota_serie	integer | null | - | | 
+bling_pedido_nota.nota_situacao	smallint | null | - | | 
+bling_pedido_nota.origem_da_data	text | null | CASE WHEN (data_da_nota IS NULL) THEN 'pedido'::text ELSE 'nota'::text END | gerada | 
+bling_pedido_nota.pedido_id	bigint | NOT NULL | - | | 
+bling_pedido_nota.pedido_numero	text | null | - | | 
+bling_pedido_nota.total	numeric(12,2) | null | - | | 
+bling_pedido_vendedor.loja_id	bigint | null | - | | 
+bling_pedido_vendedor.pedido_data	date | null | - | | 
+bling_pedido_vendedor.pedido_id	bigint | NOT NULL | - | | 
+bling_pedido_vendedor.qtd_itens	integer | null | 1 | | 
+bling_pedido_vendedor.updated_at	timestamp with time zone | NOT NULL | now() | | 
+bling_pedido_vendedor.vendor_id	bigint | NOT NULL | - | | 
+bling_tokens.access_token	text | NOT NULL | - | | 
+bling_tokens.client_id	text | NOT NULL | - | | 
+bling_tokens.client_secret	text | NOT NULL | - | | 
+bling_tokens.created_at	timestamp with time zone | null | now() | | 
+bling_tokens.expires_at	timestamp with time zone | NOT NULL | - | | 
+bling_tokens.id	integer | NOT NULL | nextval('bling_tokens_id_seq'::regclass) | | 
+bling_tokens.refresh_token	text | NOT NULL | - | | 
+bling_tokens.updated_at	timestamp with time zone | null | now() | | 
+bling_vendedor_metas.created_at	timestamp with time zone | null | now() | | 
+bling_vendedor_metas.daily_goals	jsonb | null | - | | 
+bling_vendedor_metas.id	integer | NOT NULL | nextval('bling_vendedor_metas_id_seq'::regclass) | | 
+bling_vendedor_metas.meta_valor	numeric | null | - | | 
+bling_vendedor_metas.month	integer | NOT NULL | - | | 
+bling_vendedor_metas.updated_at	timestamp with time zone | null | now() | | 
+bling_vendedor_metas.vendor_id	bigint | NOT NULL | - | | 
+bling_vendedor_metas.year	integer | NOT NULL | - | | 
+bling_vendedores.nome	text | NOT NULL | ''::text | | 
+bling_vendedores.updated_at	timestamp with time zone | NOT NULL | now() | | 
+bling_vendedores.vendor_id	bigint | NOT NULL | - | | 
+campaign_adsets.account_id	uuid | NOT NULL | - | | 
+campaign_adsets.adset_id	text | NOT NULL | - | | 
+campaign_adsets.campaign_id	text | NOT NULL | - | | 
+campaign_adsets.destination_type	text | null | - | | 
+campaign_adsets.optimization_goal	text | null | - | | 
+campaign_adsets.synced_at	date | NOT NULL | CURRENT_DATE | | 
+campaign_filters.account_id	uuid | NOT NULL | - | | 
+campaign_filters.selected_ids	text[] | null | '{}'::text[] | | 
+campaign_filters.updated_at	timestamp with time zone | null | now() | | 
+campaign_insights.account_id	uuid | NOT NULL | - | | 
+campaign_insights.cadastros	integer | null | - | | 
+campaign_insights.campaign_id	text | NOT NULL | - | | 
+campaign_insights.captured_at	date | NOT NULL | - | | 
+campaign_insights.clicks	integer | null | 0 | | 
+campaign_insights.comments	integer | null | - | | 
+campaign_insights.compras	integer | null | - | | 
+campaign_insights.conversas	integer | null | - | | 
+campaign_insights.id	bigint | NOT NULL | nextval('campaign_insights_id_seq'::regclass) | | 
+campaign_insights.impressions	integer | null | 0 | | 
+campaign_insights.likes	integer | null | - | | 
+campaign_insights.period_days	integer | NOT NULL | - | | 
+campaign_insights.post_engagement	integer | null | - | | 
+campaign_insights.reach	integer | null | 0 | | 
+campaign_insights.saves	integer | null | - | | 
+campaign_insights.shares	integer | null | - | | 
+campaign_insights.spend	numeric(14,4) | null | 0 | | 
+campaign_insights.visitas	integer | null | - | | 
+campaign_insights_hora.account_id	uuid | NOT NULL | - | | 
+campaign_insights_hora.campaign_id	text | NOT NULL | - | | 
+campaign_insights_hora.cliques_acumulados	integer | NOT NULL | 0 | | 
+campaign_insights_hora.cliques_hora	integer | NOT NULL | 0 | | 
+campaign_insights_hora.coletado_em	timestamp with time zone | NOT NULL | now() | | 
+campaign_insights_hora.conversas_acumuladas	integer | NOT NULL | 0 | | 
+campaign_insights_hora.conversas_hora	integer | NOT NULL | 0 | | 
+campaign_insights_hora.dia	date | NOT NULL | - | | 
+campaign_insights_hora.gasto_acumulado	numeric(12,2) | NOT NULL | 0 | | 
+campaign_insights_hora.gasto_hora	numeric(12,2) | NOT NULL | 0 | | 
+campaign_insights_hora.hora	smallint | NOT NULL | - | | 
+campaigns.account_id	uuid | NOT NULL | - | | 
+campaigns.campaign_id	text | NOT NULL | - | | 
+campaigns.name	text | null | - | | 
+campaigns.objective	text | null | - | | 
+campaigns.status	text | null | - | | 
+campaigns.synced_at	date | null | CURRENT_DATE | | 
+canais_grupos.ativo	boolean | NOT NULL | true | | 
+canais_grupos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+canais_grupos.id	uuid | NOT NULL | gen_random_uuid() | | 
+canais_grupos.nome	text | NOT NULL | - | | 
+canais_grupos.ordem	integer | NOT NULL | 0 | | 
+canais_grupos_membros.concedido_em	timestamp with time zone | NOT NULL | now() | | 
+canais_grupos_membros.concedido_por	uuid | null | - | | 
+canais_grupos_membros.grupo_id	uuid | NOT NULL | - | | 
+canais_grupos_membros.id	uuid | NOT NULL | gen_random_uuid() | | 
+canais_grupos_membros.papel	text | NOT NULL | 'supervisora'::text | | 
+canais_grupos_membros.profile_id	uuid | NOT NULL | - | | 
+carrinho_eventos.cart_token	text | null | - | | 
+carrinho_eventos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+carrinho_eventos.evento_shopify_id	text | null | - | | 
+carrinho_eventos.fbc	text | null | - | | 
+carrinho_eventos.fbp	text | null | - | | 
+carrinho_eventos.gclid	text | null | - | | 
+carrinho_eventos.id	bigint | NOT NULL | - | | identity a
+carrinho_eventos.ip	text | null | - | | 
+carrinho_eventos.preco	numeric | null | - | | 
+carrinho_eventos.produto_id	text | null | - | | 
+carrinho_eventos.produto_titulo	text | null | - | | 
+carrinho_eventos.quantidade	integer | null | - | | 
+carrinho_eventos.referrer	text | null | - | | 
+carrinho_eventos.session_id	text | null | - | | 
+carrinho_eventos.tipo	text | NOT NULL | - | | 
+carrinho_eventos.utm_campaign	text | null | - | | 
+carrinho_eventos.utm_medium	text | null | - | | 
+carrinho_eventos.utm_source	text | null | - | | 
+carrinho_eventos.variante_id	text | null | - | | 
+chatwoot_eventos.chatwoot_account_id	integer | null | - | | 
+chatwoot_eventos.classificacao_ia	text | null | - | | 
+chatwoot_eventos.contact_id	bigint | null | - | | 
+chatwoot_eventos.contact_name	text | null | - | | 
+chatwoot_eventos.contact_phone_number	text | null | - | | 
+chatwoot_eventos.conversation_display_id	bigint | null | - | | 
+chatwoot_eventos.conversation_id	bigint | NOT NULL | - | | 
+chatwoot_eventos.criado_em_chatwoot	timestamp with time zone | NOT NULL | - | | 
+chatwoot_eventos.dia_br	date | NOT NULL | - | | 
+chatwoot_eventos.id	bigint | NOT NULL | - | | identity a
+chatwoot_eventos.loja	text | null | - | | 
+chatwoot_eventos.recebido_em	timestamp with time zone | NOT NULL | now() | | 
+chatwoot_eventos.tipo	text | NOT NULL | - | | 
+checkout_abandono.chatwoot_conversation_id	bigint | null | - | | 
+checkout_abandono.comprou_depois	boolean | NOT NULL | false | | 
+checkout_abandono.comprou_em	timestamp with time zone | null | - | | 
+checkout_abandono.email	text | null | - | | 
+checkout_abandono.fila_envio_em	timestamp with time zone | null | - | | 
+checkout_abandono.iniciado_em	timestamp with time zone | NOT NULL | now() | | 
+checkout_abandono.mensagem_enviada_em	timestamp with time zone | null | - | | 
+checkout_abandono.mensagem_motivo	text | null | - | | 
+checkout_abandono.mensagem_reservada_em	timestamp with time zone | null | - | | 
+checkout_abandono.mensagem_status	text | null | - | | 
+checkout_abandono.mensagem_tentativas	integer | NOT NULL | 0 | | 
+checkout_abandono.moeda	text | null | - | | 
+checkout_abandono.nome	text | null | - | | 
+checkout_abandono.pedido_criado_em	timestamp with time zone | null | - | | 
+checkout_abandono.status	text | NOT NULL | 'aguardando'::text | | 
+checkout_abandono.telefone	text | null | - | | 
+checkout_abandono.token	text | NOT NULL | - | | 
+checkout_abandono.total	numeric | null | - | | 
+checkout_abandono.ultimo_evento_em	timestamp with time zone | NOT NULL | now() | | 
+checkout_abandono.url_de_recuperacao	text | null | - | | 
+coletor_log.detalhe	text | null | - | | 
+coletor_log.encontradas	integer | null | - | | 
+coletor_log.erro	text | null | - | | 
+coletor_log.fase	text | null | - | | 
+coletor_log.id	uuid | NOT NULL | gen_random_uuid() | | 
+coletor_log.inseridas	integer | null | - | | 
+coletor_log.run_at	timestamp with time zone | NOT NULL | now() | | 
+contatos_sem_mensagem.criado_em	timestamp with time zone | NOT NULL | now() | | 
+contatos_sem_mensagem.motivo	text | null | - | | 
+contatos_sem_mensagem.telefone	text | NOT NULL | - | | 
+content_snapshots.account_id	uuid | null | - | | 
+content_snapshots.captured_at	date | NOT NULL | - | | 
+content_snapshots.created_at	timestamp with time zone | null | now() | | 
+content_snapshots.id	uuid | NOT NULL | gen_random_uuid() | | 
+content_snapshots.period_days	integer | NOT NULL | 30 | | 
+content_snapshots.posts_count	integer | null | 0 | | 
+content_snapshots.reels_count	integer | null | 0 | | 
+content_snapshots.stories_count	integer | null | 0 | | 
+content_snapshots.story_follows	integer | NOT NULL | 0 | | 
+content_snapshots.story_impressions	integer | null | 0 | | 
+content_snapshots.story_interactions	integer | NOT NULL | 0 | | 
+content_snapshots.story_nav_back	integer | NOT NULL | 0 | | 
+content_snapshots.story_nav_exit	integer | NOT NULL | 0 | | 
+content_snapshots.story_nav_forward	integer | NOT NULL | 0 | | 
+content_snapshots.story_nav_next	integer | NOT NULL | 0 | | 
+content_snapshots.story_navigation	integer | NOT NULL | 0 | | 
+content_snapshots.story_profile_visits	integer | NOT NULL | 0 | | 
+content_snapshots.story_reach	integer | null | 0 | | 
+content_snapshots.story_replies	integer | null | 0 | | 
+content_snapshots.story_shares	integer | null | 0 | | 
+conteudo_arquivos.altura	integer | null | - | | 
+conteudo_arquivos.bucket	text | NOT NULL | 'conteudo'::text | | 
+conteudo_arquivos.bytes	bigint | null | - | | 
+conteudo_arquivos.caminho	text | NOT NULL | - | | 
+conteudo_arquivos.created_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_arquivos.duracao_s	numeric | null | - | | 
+conteudo_arquivos.id	uuid | NOT NULL | gen_random_uuid() | | 
+conteudo_arquivos.largura	integer | null | - | | 
+conteudo_arquivos.mime	text | null | - | | 
+conteudo_arquivos.ordem	integer | NOT NULL | 1 | | 
+conteudo_arquivos.peca_id	uuid | NOT NULL | - | | 
+conteudo_arquivos.tipo	text | NOT NULL | - | | 
+conteudo_blocos.account_id	uuid | null | - | | 
+conteudo_blocos.ativo	boolean | NOT NULL | true | | 
+conteudo_blocos.created_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_blocos.criado_por	uuid | null | - | | 
+conteudo_blocos.id	uuid | NOT NULL | gen_random_uuid() | | 
+conteudo_blocos.nome	text | NOT NULL | - | | 
+conteudo_blocos.texto	text | NOT NULL | - | | 
+conteudo_blocos.tipo	text | NOT NULL | - | | 
+conteudo_blocos.usos	integer | NOT NULL | 0 | | 
+conteudo_casamentos.created_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_casamentos.decidido_em	timestamp with time zone | null | - | | 
+conteudo_casamentos.decidido_por	uuid | null | - | | 
+conteudo_casamentos.id	uuid | NOT NULL | gen_random_uuid() | | 
+conteudo_casamentos.ig_caption	text | null | - | | 
+conteudo_casamentos.ig_media_id	text | NOT NULL | - | | 
+conteudo_casamentos.ig_permalink	text | null | - | | 
+conteudo_casamentos.ig_thumb	text | null | - | | 
+conteudo_casamentos.ig_timestamp	timestamp with time zone | null | - | | 
+conteudo_casamentos.motivo	text | null | - | | 
+conteudo_casamentos.peca_id	uuid | NOT NULL | - | | 
+conteudo_casamentos.pontuacao	numeric | NOT NULL | - | | 
+conteudo_casamentos.situacao	text | NOT NULL | 'sugerido'::text | | 
+conteudo_concorrentes.account_id	uuid | NOT NULL | - | | 
+conteudo_concorrentes.ativo	boolean | NOT NULL | true | | 
+conteudo_concorrentes.created_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_concorrentes.handle	text | NOT NULL | - | | 
+conteudo_concorrentes.id	uuid | NOT NULL | gen_random_uuid() | | 
+conteudo_concorrentes.nome	text | null | - | | 
+conteudo_concorrentes.observacao	text | null | - | | 
+conteudo_eventos.acao	text | NOT NULL | - | | 
+conteudo_eventos.de	text | null | - | | 
+conteudo_eventos.detalhe	text | null | - | | 
+conteudo_eventos.id	bigint | NOT NULL | nextval('conteudo_eventos_id_seq'::regclass) | | 
+conteudo_eventos.para	text | null | - | | 
+conteudo_eventos.peca_id	uuid | NOT NULL | - | | 
+conteudo_eventos.quando	timestamp with time zone | NOT NULL | now() | | 
+conteudo_eventos.quem	uuid | null | - | | 
+conteudo_ideias.account_id	uuid | null | - | | 
+conteudo_ideias.created_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_ideias.criado_por	uuid | null | - | | 
+conteudo_ideias.cta	text | null | - | | 
+conteudo_ideias.formato	text | null | - | | 
+conteudo_ideias.gancho	text | null | - | | 
+conteudo_ideias.hashtags_sugeridas	text | null | - | | 
+conteudo_ideias.id	uuid | NOT NULL | gen_random_uuid() | | 
+conteudo_ideias.job_id	uuid | null | - | | 
+conteudo_ideias.legenda_sugerida	text | null | - | | 
+conteudo_ideias.modelo	text | null | - | | 
+conteudo_ideias.origem	text | NOT NULL | 'manual'::text | | 
+conteudo_ideias.peca_id	uuid | null | - | | 
+conteudo_ideias.pilar	text | null | - | | 
+conteudo_ideias.por_que_agora	text | null | - | | 
+conteudo_ideias.porque_formato	text | null | - | | 
+conteudo_ideias.producao	text | null | - | | 
+conteudo_ideias.referencia	text | null | - | | 
+conteudo_ideias.roteiro	jsonb | NOT NULL | '[]'::jsonb | | 
+conteudo_ideias.situacao	text | NOT NULL | 'nova'::text | | 
+conteudo_ideias.titulo	text | NOT NULL | - | | 
+conteudo_jobs.account_id	uuid | null | - | | 
+conteudo_jobs.created_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_jobs.criado_por	uuid | null | - | | 
+conteudo_jobs.erro	text | null | - | | 
+conteudo_jobs.github_run_id	text | null | - | | 
+conteudo_jobs.id	uuid | NOT NULL | gen_random_uuid() | | 
+conteudo_jobs.params	jsonb | NOT NULL | '{}'::jsonb | | 
+conteudo_jobs.resultado	jsonb | null | - | | 
+conteudo_jobs.status	text | NOT NULL | 'enfileirado'::text | | 
+conteudo_jobs.tipo	text | NOT NULL | 'ideias'::text | | 
+conteudo_jobs.updated_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_metricas.alcance	integer | null | - | | 
+conteudo_metricas.bruto	jsonb | null | - | | 
+conteudo_metricas.capturado_em	date | NOT NULL | - | | 
+conteudo_metricas.comentarios	integer | null | - | | 
+conteudo_metricas.compartilhamentos	integer | null | - | | 
+conteudo_metricas.curtidas	integer | null | - | | 
+conteudo_metricas.peca_id	uuid | NOT NULL | - | | 
+conteudo_metricas.salvamentos	integer | null | - | | 
+conteudo_metricas.visualizacoes	integer | null | - | | 
+conteudo_pecas.account_id	uuid | NOT NULL | - | | 
+conteudo_pecas.aprovado_em	timestamp with time zone | null | - | | 
+conteudo_pecas.aprovado_por	uuid | null | - | | 
+conteudo_pecas.avisado_em	timestamp with time zone | null | - | | 
+conteudo_pecas.created_at	timestamp with time zone | NOT NULL | now() | | 
+conteudo_pecas.criado_por	uuid | null | - | | 
+conteudo_pecas.formato	text | NOT NULL | - | | 
+conteudo_pecas.hashtags	text | NOT NULL | ''::text | | 
+conteudo_pecas.id	uuid | NOT NULL | gen_random_uuid() | | 
+conteudo_pecas.ig_media_id	text | null | - | | 
+conteudo_pecas.ig_permalink	text | null | - | | 
+conteudo_pecas.legenda	text | NOT NULL | ''::text | | 
+conteudo_pecas.motivo_reprovacao	text | null | - | | 
+conteudo_pecas.observacoes	text | null | - | | 
+conteudo_pecas.publicado_em	timestamp with time zone | null | - | | 
+conteudo_pecas.publicar_em	timestamp with time zone | null | - | | 
+conteudo_pecas.responsavel	uuid | null | - | | 
+conteudo_pecas.status	text | NOT NULL | 'rascunho'::text | | 
+conteudo_pecas.titulo	text | NOT NULL | - | | 
+conteudo_pecas.updated_at	timestamp with time zone | NOT NULL | now() | | 
+daily_snapshots.account_id	uuid | null | - | | 
+daily_snapshots.captured_at	date | NOT NULL | - | | 
+daily_snapshots.created_at	timestamp with time zone | null | now() | | 
+daily_snapshots.followers_count	integer | NOT NULL | 0 | | 
+daily_snapshots.gained	integer | null | - | | 
+daily_snapshots.id	uuid | NOT NULL | gen_random_uuid() | | 
+daily_snapshots.lost	integer | null | - | | 
+data_integrity_checks.account_id	uuid | null | - | | 
+data_integrity_checks.check_name	text | NOT NULL | - | | 
+data_integrity_checks.checked_date	date | NOT NULL | - | | 
+data_integrity_checks.created_at	timestamp with time zone | null | now() | | 
+data_integrity_checks.detail	text | null | ''::text | | 
+data_integrity_checks.id	bigint | NOT NULL | nextval('data_integrity_checks_id_seq'::regclass) | | 
+data_integrity_checks.status	text | NOT NULL | - | | 
+engagement_snapshots.account_id	uuid | null | - | | 
+engagement_snapshots.accounts_engaged	integer | NOT NULL | 0 | | 
+engagement_snapshots.captured_at	date | NOT NULL | - | | 
+engagement_snapshots.comments	integer | NOT NULL | 0 | | 
+engagement_snapshots.created_at	timestamp with time zone | null | now() | | 
+engagement_snapshots.id	uuid | NOT NULL | gen_random_uuid() | | 
+engagement_snapshots.likes	integer | null | 0 | | 
+engagement_snapshots.period_days	integer | NOT NULL | 30 | | 
+engagement_snapshots.profile_views	integer | NOT NULL | 0 | | 
+engagement_snapshots.reach	bigint | NOT NULL | 0 | | 
+engagement_snapshots.saves	integer | null | 0 | | 
+engagement_snapshots.shares	integer | null | 0 | | 
+engagement_snapshots.total_interactions	integer | NOT NULL | 0 | | 
+engagement_snapshots.views	bigint | NOT NULL | 0 | | 
+entradas_como_outro_usuario.admin_email	text | NOT NULL | - | | 
+entradas_como_outro_usuario.admin_id	uuid | NOT NULL | - | | 
+entradas_como_outro_usuario.alvo_email	text | NOT NULL | - | | 
+entradas_como_outro_usuario.alvo_id	uuid | NOT NULL | - | | 
+entradas_como_outro_usuario.criado_em	timestamp with time zone | NOT NULL | now() | | 
+entradas_como_outro_usuario.id	uuid | NOT NULL | gen_random_uuid() | | 
+equipes.ativo	boolean | NOT NULL | true | | 
+equipes.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+equipes.canal_loja_id	bigint | null | - | | 
+equipes.criado_em	timestamp with time zone | NOT NULL | now() | | 
+equipes.deposito_id	bigint | null | - | | 
+equipes.empresa_id	uuid | null | - | | 
+equipes.id	uuid | NOT NULL | gen_random_uuid() | | 
+equipes.local_id	uuid | null | - | | 
+equipes.nome	text | NOT NULL | - | | 
+equipes.ordem	integer | NOT NULL | 100 | | 
+equipes.setor_id	uuid | null | - | | 
+equipes.tipo	text | NOT NULL | 'loja'::text | | 
+equipes_membros.criado_em	timestamp with time zone | NOT NULL | now() | | 
+equipes_membros.criado_por	uuid | null | auth.uid() | | 
+equipes_membros.equipe_id	uuid | NOT NULL | - | | 
+equipes_membros.id	uuid | NOT NULL | gen_random_uuid() | | 
+equipes_membros.papel	text | NOT NULL | 'vendedora'::text | | 
+equipes_membros.profile_id	uuid | NOT NULL | - | | 
+equipes_permissoes.chave	text | NOT NULL | - | | 
+equipes_permissoes.concedido_por	uuid | null | auth.uid() | | 
+equipes_permissoes.criado_em	timestamp with time zone | NOT NULL | now() | | 
+equipes_permissoes.equipe_id	uuid | NOT NULL | - | | 
+equipes_permissoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+equipes_permissoes.profile_id	uuid | NOT NULL | - | | 
+estoque_do_site_estado.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+estoque_do_site_estado.chave	text | NOT NULL | - | | 
+estoque_do_site_estado.valor	jsonb | NOT NULL | - | | 
+fabrica_campanhas.created_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_campanhas.criado_por	uuid | null | - | | 
+fabrica_campanhas.desconto_pct	numeric | null | - | | 
+fabrica_campanhas.desconto_tipo	text | NOT NULL | 'fixo'::text | | 
+fabrica_campanhas.fechada_em	timestamp with time zone | null | - | | 
+fabrica_campanhas.id	uuid | NOT NULL | gen_random_uuid() | | 
+fabrica_campanhas.job_id	uuid | null | - | | 
+fabrica_campanhas.nome	text | NOT NULL | - | | 
+fabrica_campanhas.objetivo	text | NOT NULL | 'engajamento'::text | | 
+fabrica_campanhas.parcelas	integer | NOT NULL | 10 | | 
+fabrica_campanhas.purgado_em	timestamp with time zone | null | - | | 
+fabrica_campanhas.status	text | NOT NULL | 'gerando'::text | | 
+fabrica_criativos.arquetipo	text | NOT NULL | - | | 
+fabrica_criativos.campanha_id	uuid | null | - | | 
+fabrica_criativos.created_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_criativos.escolhido	boolean | NOT NULL | false | | 
+fabrica_criativos.formato	text | NOT NULL | - | | 
+fabrica_criativos.id	uuid | NOT NULL | gen_random_uuid() | | 
+fabrica_criativos.legenda	text | null | - | | 
+fabrica_criativos.preco_de	numeric | null | - | | 
+fabrica_criativos.preco_por	numeric | null | - | | 
+fabrica_criativos.purgado_em	timestamp with time zone | null | - | | 
+fabrica_criativos.sku	text | null | - | | 
+fabrica_criativos.storage_path	text | null | - | | 
+fabrica_criativos.template	text | NOT NULL | - | | 
+fabrica_criativos.url	text | null | - | | 
+fabrica_criativos.variante	text | null | - | | 
+fabrica_jobs.created_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_jobs.criado_por	uuid | null | - | | 
+fabrica_jobs.erro	text | null | - | | 
+fabrica_jobs.github_run_id	text | null | - | | 
+fabrica_jobs.id	uuid | NOT NULL | gen_random_uuid() | | 
+fabrica_jobs.params	jsonb | NOT NULL | '{}'::jsonb | | 
+fabrica_jobs.resultado	jsonb | null | - | | 
+fabrica_jobs.status	text | NOT NULL | 'enfileirado'::text | | 
+fabrica_jobs.tipo	text | NOT NULL | - | | 
+fabrica_jobs.updated_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_lojas.ativo	boolean | NOT NULL | true | | 
+fabrica_lojas.canal_loja_id	text | null | - | | 
+fabrica_lojas.deposito_id	text | NOT NULL | - | | 
+fabrica_lojas.geo_cities	jsonb | null | - | | 
+fabrica_lojas.marca_id	uuid | null | - | | 
+fabrica_lojas.nome	text | NOT NULL | - | | 
+fabrica_lojas.ordem	integer | NOT NULL | 0 | | 
+fabrica_lojas.whatsapp	text | null | - | | 
+fabrica_looks.arquetipo	text | NOT NULL | - | | 
+fabrica_looks.ativo	boolean | NOT NULL | true | | 
+fabrica_looks.campo_map	jsonb | NOT NULL | '{}'::jsonb | | 
+fabrica_looks.canva_formato_map	jsonb | NOT NULL | '{}'::jsonb | | 
+fabrica_looks.chave	text | NOT NULL | - | | 
+fabrica_looks.created_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_looks.criado_por	uuid | null | - | | 
+fabrica_looks.excluido	boolean | NOT NULL | false | | 
+fabrica_looks.nome	text | NOT NULL | - | | 
+fabrica_looks.objetivos	text[] | NOT NULL | '{}'::text[] | | 
+fabrica_looks.ordem	integer | NOT NULL | 0 | | 
+fabrica_looks.preview_url	text | null | - | | 
+fabrica_looks.tipo	text | NOT NULL | 'codigo'::text | | 
+fabrica_marcas.account_id	text | NOT NULL | - | | 
+fabrica_marcas.ad_account	text | NOT NULL | - | | 
+fabrica_marcas.ativo	boolean | NOT NULL | true | | 
+fabrica_marcas.caption_template	text | NOT NULL | '{desconto} em bolsas {marca} · chame a gente 💬'::text | | 
+fabrica_marcas.created_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_marcas.id	uuid | NOT NULL | gen_random_uuid() | | 
+fabrica_marcas.ig_id	text | NOT NULL | - | | 
+fabrica_marcas.nome	text | NOT NULL | - | | 
+fabrica_marcas.page_id	text | NOT NULL | - | | 
+fabrica_marcas.segmento	text | null | - | | 
+fabrica_marcas.termos_produto	text[] | NOT NULL | '{}'::text[] | | 
+fabrica_meta_jobs.ad_account_id	text | null | - | | 
+fabrica_meta_jobs.ad_ids	jsonb | null | - | | 
+fabrica_meta_jobs.adset_ids	jsonb | null | - | | 
+fabrica_meta_jobs.conta_id	uuid | null | - | | 
+fabrica_meta_jobs.created_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_meta_jobs.erro	text | null | - | | 
+fabrica_meta_jobs.id	uuid | NOT NULL | gen_random_uuid() | | 
+fabrica_meta_jobs.loja	text | null | - | | 
+fabrica_meta_jobs.meta_campaign_id	text | null | - | | 
+fabrica_meta_jobs.payload	jsonb | null | - | | 
+fabrica_meta_jobs.status	text | NOT NULL | 'criado'::text | | 
+fabrica_meta_jobs.tipo	text | null | - | | 
+fabrica_objetivos.ativo	boolean | NOT NULL | true | | 
+fabrica_objetivos.billing_event	text | NOT NULL | 'IMPRESSIONS'::text | | 
+fabrica_objetivos.chave	text | NOT NULL | - | | 
+fabrica_objetivos.cta_type	text | NOT NULL | 'LEARN_MORE'::text | | 
+fabrica_objetivos.descricao	text | NOT NULL | ''::text | | 
+fabrica_objetivos.destination_type	text | null | - | | 
+fabrica_objetivos.looks	text[] | NOT NULL | '{}'::text[] | | 
+fabrica_objetivos.meta_objective	text | NOT NULL | - | | 
+fabrica_objetivos.optimization_goal	text | NOT NULL | - | | 
+fabrica_objetivos.ordem	integer | NOT NULL | 0 | | 
+fabrica_objetivos.pede_desconto	boolean | NOT NULL | true | | 
+fabrica_objetivos.promoted_object_tipo	text | NOT NULL | 'none'::text | | 
+fabrica_objetivos.rotulo	text | NOT NULL | - | | 
+fabrica_publicos.ativo	boolean | NOT NULL | true | | 
+fabrica_publicos.created_at	timestamp with time zone | NOT NULL | now() | | 
+fabrica_publicos.criado_por	uuid | null | - | | 
+fabrica_publicos.custom_audiences	jsonb | NOT NULL | '[]'::jsonb | | 
+fabrica_publicos.generos	integer[] | NOT NULL | '{}'::integer[] | | 
+fabrica_publicos.geo	jsonb | NOT NULL | '{}'::jsonb | | 
+fabrica_publicos.id	uuid | NOT NULL | gen_random_uuid() | | 
+fabrica_publicos.idade_max	integer | NOT NULL | 65 | | 
+fabrica_publicos.idade_min	integer | NOT NULL | 18 | | 
+fabrica_publicos.interesses	jsonb | NOT NULL | '[]'::jsonb | | 
+fabrica_publicos.marca_id	uuid | null | - | | 
+fabrica_publicos.nome	text | NOT NULL | - | | 
+followers_leituras.account_id	uuid | NOT NULL | - | | 
+followers_leituras.followers_count	integer | NOT NULL | - | | 
+followers_leituras.id	bigint | NOT NULL | nextval('followers_leituras_id_seq'::regclass) | | 
+followers_leituras.lido_em	timestamp with time zone | NOT NULL | now() | | 
+followers_leituras.origem	text | null | - | | 
+frota_abastecimentos.abastecido_em	timestamp with time zone | NOT NULL | now() | | 
+frota_abastecimentos.combustivel	text | NOT NULL | - | | 
+frota_abastecimentos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+frota_abastecimentos.criado_por	uuid | null | - | | 
+frota_abastecimentos.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_abastecimentos.km	integer | NOT NULL | - | | 
+frota_abastecimentos.litros	numeric(7,3) | NOT NULL | - | | 
+frota_abastecimentos.observacao	text | null | - | | 
+frota_abastecimentos.pessoa_id	uuid | null | - | | 
+frota_abastecimentos.pessoa_nome	text | null | - | | 
+frota_abastecimentos.posto	text | null | - | | 
+frota_abastecimentos.tanque_depois	smallint | NOT NULL | - | | 
+frota_abastecimentos.total_centavos	integer | NOT NULL | - | | 
+frota_abastecimentos.veiculo_id	uuid | NOT NULL | - | | 
+frota_checklist.aberta_em	timestamp with time zone | null | - | | 
+frota_checklist.anomalias	text | null | - | | 
+frota_checklist.assinada_em	timestamp with time zone | null | - | | 
+frota_checklist.assinada_por	uuid | null | - | | 
+frota_checklist.assinatura_hash	text | null | - | | 
+frota_checklist.assinatura_hash_anterior	text | null | - | | 
+frota_checklist.assinatura_rabisco	jsonb | null | - | | 
+frota_checklist.assinatura_versao	smallint | null | - | | 
+frota_checklist.cadencias	text[] | NOT NULL | '{diario}'::text[] | | 
+frota_checklist.criada_em	timestamp with time zone | NOT NULL | now() | | 
+frota_checklist.criada_por	uuid | null | - | | 
+frota_checklist.feita_em	date | NOT NULL | - | | 
+frota_checklist.hodometro	integer | NOT NULL | - | | 
+frota_checklist.hodometro_justificativa	text | null | - | | 
+frota_checklist.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_checklist.pessoa_id	uuid | null | - | | 
+frota_checklist.pessoa_nome	text | null | - | | 
+frota_checklist.resultado	text | NOT NULL | 'liberado'::text | | 
+frota_checklist.sem_assinatura_motivo	text | null | - | | 
+frota_checklist.veiculo_id	uuid | NOT NULL | - | | 
+frota_checklist_config.dia_mensal	integer | NOT NULL | 3 | | 
+frota_checklist_config.dia_semanal	integer | NOT NULL | 5 | | 
+frota_checklist_config.id	boolean | NOT NULL | true | | 
+frota_checklist_config.semana_mensal	integer | NOT NULL | 1 | | 
+frota_checklist_itens.ativo	boolean | NOT NULL | true | | 
+frota_checklist_itens.cadencia	text | NOT NULL | - | | 
+frota_checklist_itens.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_checklist_itens.impede_uso	boolean | NOT NULL | false | | 
+frota_checklist_itens.item	text | NOT NULL | - | | 
+frota_checklist_itens.observacao	text | null | - | | 
+frota_checklist_itens.ordem	integer | NOT NULL | 0 | | 
+frota_checklist_pdf.checklist_id	uuid | NOT NULL | - | | 
+frota_checklist_pdf.criado_em	timestamp with time zone | NOT NULL | now() | | 
+frota_checklist_pdf.enviado_em	timestamp with time zone | null | - | | 
+frota_checklist_pdf.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_checklist_pdf.situacao	text | NOT NULL | 'na_fila'::text | | 
+frota_checklist_pdf.tentado_em	timestamp with time zone | null | - | | 
+frota_checklist_pdf.tentativas	integer | NOT NULL | 0 | | 
+frota_checklist_pdf.ultimo_erro	text | null | - | | 
+frota_checklist_pdf.zoho_file_id	text | null | - | | 
+frota_checklist_respostas.cadencia	text | NOT NULL | - | | 
+frota_checklist_respostas.checklist_id	uuid | NOT NULL | - | | 
+frota_checklist_respostas.estado	text | NOT NULL | - | | 
+frota_checklist_respostas.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_checklist_respostas.item_id	uuid | null | - | | 
+frota_checklist_respostas.item_texto	text | NOT NULL | - | | 
+frota_checklist_respostas.observacao	text | null | - | | 
+frota_checklist_respostas.ordem	integer | NOT NULL | 0 | | 
+frota_manutencoes.criada_em	timestamp with time zone | NOT NULL | now() | | 
+frota_manutencoes.criada_por	uuid | null | - | | 
+frota_manutencoes.feita_em	date | null | - | | 
+frota_manutencoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_manutencoes.km	integer | NOT NULL | - | | 
+frota_manutencoes.observacao	text | null | - | | 
+frota_manutencoes.oficina	text | null | - | | 
+frota_manutencoes.total_centavos	bigint | null | - | | 
+frota_manutencoes.veiculo_id	uuid | NOT NULL | - | | 
+frota_plano_revisao.a_cada_km	integer | NOT NULL | - | | 
+frota_plano_revisao.ativo	boolean | NOT NULL | true | | 
+frota_plano_revisao.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_plano_revisao.item	text | NOT NULL | - | | 
+frota_plano_revisao.observacao	text | null | - | | 
+frota_plano_revisao.ordem	integer | NOT NULL | 0 | | 
+frota_requisicoes.arquivada_em	timestamp with time zone | null | - | | 
+frota_requisicoes.arquivada_por	uuid | null | - | | 
+frota_requisicoes.criada_em	timestamp with time zone | NOT NULL | now() | | 
+frota_requisicoes.criada_por	uuid | null | - | | 
+frota_requisicoes.decidida_em	timestamp with time zone | null | - | | 
+frota_requisicoes.decidida_por	uuid | null | - | | 
+frota_requisicoes.departamento	text | null | - | | 
+frota_requisicoes.destino	text | null | - | | 
+frota_requisicoes.devolucao_prevista	timestamp with time zone | null | - | | 
+frota_requisicoes.encerrada_em	timestamp with time zone | null | - | | 
+frota_requisicoes.encerrada_motivo	text | null | - | | 
+frota_requisicoes.encerrada_por	uuid | null | - | | 
+frota_requisicoes.finalidade	text | null | - | | 
+frota_requisicoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_requisicoes.motivo_decisao	text | null | - | | 
+frota_requisicoes.observacao	text | null | - | | 
+frota_requisicoes.pessoa_id	uuid | null | - | | 
+frota_requisicoes.pessoa_nome	text | null | - | | 
+frota_requisicoes.retirada_prevista	timestamp with time zone | NOT NULL | - | | 
+frota_requisicoes.situacao	text | NOT NULL | 'pendente'::text | | 
+frota_requisicoes.uso_id	uuid | null | - | | 
+frota_requisicoes.veiculo_id	uuid | NOT NULL | - | | 
+frota_requisicoes_historico.campo	text | NOT NULL | - | | 
+frota_requisicoes_historico.de	text | null | - | | 
+frota_requisicoes_historico.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_requisicoes_historico.motivo	text | null | - | | 
+frota_requisicoes_historico.para	text | null | - | | 
+frota_requisicoes_historico.quando	timestamp with time zone | NOT NULL | now() | | 
+frota_requisicoes_historico.quem	uuid | null | - | | 
+frota_requisicoes_historico.requisicao_id	uuid | NOT NULL | - | | 
+frota_revisoes.criada_em	timestamp with time zone | NOT NULL | now() | | 
+frota_revisoes.criada_por	uuid | null | - | | 
+frota_revisoes.custo_centavos	bigint | null | - | | 
+frota_revisoes.feita_em	date | null | - | | 
+frota_revisoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_revisoes.item	text | NOT NULL | - | | 
+frota_revisoes.km	integer | null | - | | 
+frota_revisoes.manutencao_id	uuid | null | - | | 
+frota_revisoes.observacao	text | null | - | | 
+frota_revisoes.oficina	text | null | - | | 
+frota_revisoes.veiculo_id	uuid | NOT NULL | - | | 
+frota_uso.aceite_checklist_hash	text | null | - | | 
+frota_uso.aceite_checklist_id	uuid | null | - | | 
+frota_uso.aceite_em	timestamp with time zone | null | - | | 
+frota_uso.aceite_nome	text | null | - | | 
+frota_uso.aceite_por	uuid | null | - | | 
+frota_uso.aceite_rabisco	jsonb | null | - | | 
+frota_uso.criado_em	timestamp with time zone | NOT NULL | now() | | 
+frota_uso.destino	text | null | - | | 
+frota_uso.finalidade	text | null | - | | 
+frota_uso.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_uso.km_saida	integer | null | - | | 
+frota_uso.km_volta	integer | null | - | | 
+frota_uso.observacao	text | null | - | | 
+frota_uso.pessoa_id	uuid | null | - | | 
+frota_uso.pessoa_nome	text | null | - | | 
+frota_uso.saida_em	timestamp with time zone | NOT NULL | now() | | 
+frota_uso.tanque_quartos	integer | null | - | | 
+frota_uso.tipo	text | NOT NULL | 'viagem'::text | | 
+frota_uso.veiculo_id	uuid | NOT NULL | - | | 
+frota_uso.volta_em	timestamp with time zone | null | - | | 
+frota_uso_pdf.criado_em	timestamp with time zone | NOT NULL | now() | | 
+frota_uso_pdf.enviado_em	timestamp with time zone | null | - | | 
+frota_uso_pdf.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_uso_pdf.situacao	text | NOT NULL | 'na_fila'::text | | 
+frota_uso_pdf.tentado_em	timestamp with time zone | null | - | | 
+frota_uso_pdf.tentativas	integer | NOT NULL | 0 | | 
+frota_uso_pdf.ultimo_erro	text | null | - | | 
+frota_uso_pdf.uso_id	uuid | NOT NULL | - | | 
+frota_uso_pdf.zoho_file_id	text | null | - | | 
+frota_veiculos.aluguel_centavos	bigint | null | - | | 
+frota_veiculos.ano	integer | null | - | | 
+frota_veiculos.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+frota_veiculos.bem_id	uuid | null | - | | 
+frota_veiculos.blindado	boolean | NOT NULL | false | | 
+frota_veiculos.categoria_comercial	text | null | - | | 
+frota_veiculos.chassi	text | null | - | | 
+frota_veiculos.codigo_patrimonial	text | null | - | | 
+frota_veiculos.combustivel	text | null | - | | 
+frota_veiculos.comodo_id	uuid | null | - | | 
+frota_veiculos.contato_nome	text | null | - | | 
+frota_veiculos.contato_papel	text | null | - | | 
+frota_veiculos.contato_telefone	text | null | - | | 
+frota_veiculos.contrato	text | null | - | | 
+frota_veiculos.cor	text | null | - | | 
+frota_veiculos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+frota_veiculos.empresa_id	uuid | null | - | | 
+frota_veiculos.fipe_centavos	bigint | null | - | | 
+frota_veiculos.id	uuid | NOT NULL | gen_random_uuid() | | 
+frota_veiculos.local_id	uuid | null | - | | 
+frota_veiculos.local_texto	text | null | - | | 
+frota_veiculos.marca	text | null | - | | 
+frota_veiculos.nome	text | NOT NULL | - | | 
+frota_veiculos.observacao	text | null | - | | 
+frota_veiculos.oficina_nome	text | null | - | | 
+frota_veiculos.oficina_telefone	text | null | - | | 
+frota_veiculos.pessoa_id	uuid | null | - | | 
+frota_veiculos.placa	text | NOT NULL | - | | 
+frota_veiculos.rastreador	text | null | - | | 
+frota_veiculos.renavam	text | null | - | | 
+frota_veiculos.seguro_apolice	text | null | - | | 
+frota_veiculos.seguro_seguradora	text | null | - | | 
+frota_veiculos.seguro_valor_centavos	bigint | null | - | | 
+frota_veiculos.seguro_vence_em	date | null | - | | 
+frota_veiculos.situacao	text | NOT NULL | 'ativo'::text | | 
+frota_veiculos.tag_pedagio	text | null | - | | 
+frota_veiculos.tipo_oleo	text | null | - | | 
+gc_estoque_item.atualizado_em	timestamp with time zone | null | now() | | 
+gc_estoque_item.categoria	text | null | - | | 
+gc_estoque_item.deposito_id	bigint | NOT NULL | - | | 
+gc_estoque_item.produto	text | null | - | | 
+gc_estoque_item.saldo	integer | NOT NULL | 0 | | 
+gc_estoque_item.sku	text | NOT NULL | - | | 
+gc_vendas_item.atualizado_em	timestamp with time zone | null | now() | | 
+gc_vendas_item.canal_loja_id	bigint | NOT NULL | - | | 
+gc_vendas_item.categoria	text | null | - | | 
+gc_vendas_item.faturamento	numeric | NOT NULL | 0 | | 
+gc_vendas_item.mes	date | NOT NULL | - | | 
+gc_vendas_item.produto	text | null | - | | 
+gc_vendas_item.sku	text | NOT NULL | - | | 
+gc_vendas_item.unidades	integer | NOT NULL | 0 | | 
+gestao_comercial_briefings.conteudo	text | NOT NULL | - | | 
+gestao_comercial_briefings.created_at	timestamp with time zone | NOT NULL | now() | | 
+gestao_comercial_briefings.dados_json	jsonb | null | - | | 
+gestao_comercial_briefings.id	uuid | NOT NULL | gen_random_uuid() | | 
+gestao_comercial_briefings.periodo	text | null | - | | 
+gestao_comercial_briefings.resumo	text | null | - | | 
+gestao_comercial_briefings.rodada	date | NOT NULL | CURRENT_DATE | | 
+gestor_log.detalhe	text | null | - | | 
+gestor_log.erro	text | null | - | | 
+gestor_log.fase	text | null | - | | 
+gestor_log.id	uuid | NOT NULL | gen_random_uuid() | | 
+gestor_log.run_at	timestamp with time zone | NOT NULL | now() | | 
+gt_ad_analises.account_id	text | null | - | | 
+gt_ad_analises.ad_id	text | NOT NULL | - | | 
+gt_ad_analises.campaign_id	text | null | - | | 
+gt_ad_analises.gerado_em	timestamp with time zone | NOT NULL | now() | | 
+gt_ad_analises.justificativa	text | null | - | | 
+gt_ad_analises.modelo	text | NOT NULL | 'claude-opus-4-8'::text | | 
+gt_ad_analises.valida_ate	timestamp with time zone | null | - | | 
+gt_ad_analises.veredito	text | null | - | | 
+gt_budget_analises.account_id	text | NOT NULL | - | | 
+gt_budget_analises.budget_atual_centavos	integer | null | - | | 
+gt_budget_analises.budget_sugerido_centavos	integer | null | - | | 
+gt_budget_analises.campaign_id	text | NOT NULL | - | | 
+gt_budget_analises.effective_status	text | null | - | | 
+gt_budget_analises.gerado_em	timestamp with time zone | NOT NULL | now() | | 
+gt_budget_analises.impacto_estimado	text | null | - | | 
+gt_budget_analises.impactos	jsonb | null | - | | 
+gt_budget_analises.justificativa	text | null | - | | 
+gt_budget_analises.modelo	text | NOT NULL | 'claude-opus-4-8'::text | | 
+gt_budget_analises.objetivo	text | null | - | | 
+gt_budget_analises.valida_ate	timestamp with time zone | null | - | | 
+gt_budget_analises.veredito	text | null | - | | 
+gt_campanhas_rascunho.account_id	text | NOT NULL | - | | 
+gt_campanhas_rascunho.created_at	timestamp with time zone | NOT NULL | now() | | 
+gt_campanhas_rascunho.criado_por	uuid | NOT NULL | auth.uid() | | 
+gt_campanhas_rascunho.estado	jsonb | NOT NULL | '{}'::jsonb | | 
+gt_campanhas_rascunho.id	uuid | NOT NULL | gen_random_uuid() | | 
+gt_campanhas_rascunho.nome	text | NOT NULL | ''::text | | 
+gt_campanhas_rascunho.passo	integer | NOT NULL | 0 | | 
+gt_campanhas_rascunho.resultado	jsonb | null | - | | 
+gt_campanhas_rascunho.status	text | NOT NULL | 'rascunho'::text | | 
+gt_campanhas_rascunho.tipo	text | NOT NULL | ''::text | | 
+gt_campanhas_rascunho.updated_at	timestamp with time zone | NOT NULL | now() | | 
+gt_config_metricas.balde	text | NOT NULL | - | | 
+gt_config_metricas.metricas	jsonb | NOT NULL | '[]'::jsonb | | 
+gt_config_metricas.updated_at	timestamp with time zone | NOT NULL | now() | | 
+gt_fila_decisoes.account_id	text | null | - | | 
+gt_fila_decisoes.analise_gerada_em	timestamp with time zone | null | - | | 
+gt_fila_decisoes.aplicado	jsonb | NOT NULL | '[]'::jsonb | | 
+gt_fila_decisoes.budget_atual_centavos	integer | null | - | | 
+gt_fila_decisoes.budget_sugerido_centavos	integer | null | - | | 
+gt_fila_decisoes.campaign_id	text | NOT NULL | - | | 
+gt_fila_decisoes.decidido_em	timestamp with time zone | NOT NULL | now() | | 
+gt_fila_decisoes.decidido_por	uuid | null | - | | 
+gt_fila_decisoes.decisao	text | NOT NULL | - | | 
+gt_fila_decisoes.erro	text | null | - | | 
+gt_fila_decisoes.escopo	text | NOT NULL | 'orcamento'::text | | 
+gt_fila_decisoes.id	bigint | NOT NULL | nextval('gt_fila_decisoes_id_seq'::regclass) | | 
+gt_fila_decisoes.silenciar_ate	timestamp with time zone | null | - | | 
+gt_fila_decisoes.veredito	text | NOT NULL | - | | 
+gt_objetivo_interacao.alvo_id	text | NOT NULL | - | | 
+gt_objetivo_interacao.conta_id	uuid | null | - | | 
+gt_objetivo_interacao.interacao	text | NOT NULL | - | | 
+gt_objetivo_interacao.nivel	text | NOT NULL | - | | 
+gt_objetivo_interacao.updated_at	timestamp with time zone | NOT NULL | now() | | 
+gt_objetivo_interacao.updated_by	uuid | null | - | | 
+gt_ponderada_config.id	integer | NOT NULL | 1 | | 
+gt_ponderada_config.limiares	jsonb | NOT NULL | '{"manter": 1.3, "dentroMeta": 1.0, "escalarForte": 0.8}'::jsonb | | 
+gt_ponderada_config.limiares_resultado	jsonb | NOT NULL | '{"manter": 1.3, "dentroMeta": 1.0, "escalarForte": 0.8}'::jsonb | | 
+gt_ponderada_config.metas	jsonb | NOT NULL | '{"leads": 0.20, "padrao": 0.20, "vendas": 0.20, "trafego": 0.20, "mensagens": 0.20, "engajamento": 0.20, "reconhecimento": 0.20}'::jsonb | | 
+gt_ponderada_config.metas_por_conta	jsonb | NOT NULL | '{}'::jsonb | | 
+gt_ponderada_config.pesos	jsonb | NOT NULL | '{"curtidas": 1, "comentarios": 10, "salvamentos": 30, "compartilhamentos": 20}'::jsonb | | 
+gt_ponderada_config.updated_at	timestamp with time zone | NOT NULL | now() | | 
+gt_ponderada_config.updated_by	uuid | null | - | | 
+gt_ponderada_config_log.antes	jsonb | null | - | | 
+gt_ponderada_config_log.depois	jsonb | null | - | | 
+gt_ponderada_config_log.id	bigint | NOT NULL | nextval('gt_ponderada_config_log_id_seq'::regclass) | | 
+gt_ponderada_config_log.mudou_em	timestamp with time zone | NOT NULL | now() | | 
+gt_ponderada_config_log.mudou_quem	uuid | null | - | | 
+gt_problemas_meta.account_id	text | null | - | | 
+gt_problemas_meta.ad_id	text | NOT NULL | - | | 
+gt_problemas_meta.ad_nome	text | null | - | | 
+gt_problemas_meta.campaign_id	text | null | - | | 
+gt_problemas_meta.campanha_nome	text | null | - | | 
+gt_problemas_meta.codigo	integer | NOT NULL | - | | 
+gt_problemas_meta.conta_nome	text | null | - | | 
+gt_problemas_meta.detalhe	text | null | - | | 
+gt_problemas_meta.grave	boolean | NOT NULL | false | | 
+gt_problemas_meta.nivel	text | null | - | | 
+gt_problemas_meta.primeira_vez	timestamp with time zone | NOT NULL | now() | | 
+gt_problemas_meta.resolvido_em	timestamp with time zone | null | - | | 
+gt_problemas_meta.titulo	text | null | - | | 
+gt_problemas_meta.ultima_vez	timestamp with time zone | NOT NULL | now() | | 
+ia_execucoes.acao	text | NOT NULL | - | | 
+ia_execucoes.chamadas	integer | NOT NULL | 0 | | 
+ia_execucoes.created_at	timestamp with time zone | NOT NULL | now() | | 
+ia_execucoes.detalhe	text | null | - | | 
+ia_execucoes.duracao_ms	bigint | null | - | | 
+ia_execucoes.github_run_id	text | null | - | | 
+ia_execucoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+ia_execucoes.input_tokens	bigint | NOT NULL | 0 | | 
+ia_execucoes.itens	integer | null | - | | 
+ia_execucoes.modelo	text | null | - | | 
+ia_execucoes.output_tokens	bigint | NOT NULL | 0 | | 
+ia_execucoes.robo	text | NOT NULL | - | | 
+ia_execucoes.run_at	timestamp with time zone | NOT NULL | now() | | 
+ia_execucoes.status	text | NOT NULL | 'ok'::text | | 
+ia_execucoes.unidade	text | null | - | | 
+ia_execucoes.usd	numeric(10,4) | null | - | | 
+interesses_sugeridos.gerado_em	timestamp with time zone | NOT NULL | now() | | 
+interesses_sugeridos.id	uuid | NOT NULL | gen_random_uuid() | | 
+interesses_sugeridos.itens	jsonb | NOT NULL | '[]'::jsonb | | 
+interesses_sugeridos.marca_id	uuid | NOT NULL | - | | 
+interesses_sugeridos.modelo	text | null | - | | 
+interesses_sugeridos.objetivo	text | NOT NULL | - | | 
+interesses_sugeridos.propostos	integer | NOT NULL | 0 | | 
+interesses_sugeridos.validos	integer | NOT NULL | 0 | | 
+mensagem_fila.chatwoot_conversation_id	bigint | null | - | | 
+mensagem_fila.chave	text | NOT NULL | - | | 
+mensagem_fila.conversa_origem	bigint | null | - | | 
+mensagem_fila.criado_em	timestamp with time zone | NOT NULL | now() | | 
+mensagem_fila.mensagem_enviada_em	timestamp with time zone | null | - | | 
+mensagem_fila.mensagem_motivo	text | null | - | | 
+mensagem_fila.mensagem_reservada_em	timestamp with time zone | null | - | | 
+mensagem_fila.mensagem_status	text | null | - | | 
+mensagem_fila.mensagem_tentativas	integer | NOT NULL | 0 | | 
+mensagem_fila.nome	text | null | - | | 
+mensagem_fila.numero	text | null | - | | 
+mensagem_fila.telefone	text | null | - | | 
+mensagem_fila.tipo	text | NOT NULL | - | | 
+mensagem_fila.url_de_recuperacao	text | null | - | | 
+noticias_concorrentes.categoria	text | null | - | | 
+noticias_concorrentes.created_at	timestamp with time zone | NOT NULL | now() | | 
+noticias_concorrentes.data_publicacao	date | null | - | | 
+noticias_concorrentes.destaque	boolean | NOT NULL | false | | 
+noticias_concorrentes.fonte	text | null | - | | 
+noticias_concorrentes.id	uuid | NOT NULL | gen_random_uuid() | | 
+noticias_concorrentes.imagem_url	text | null | - | | 
+noticias_concorrentes.marca	text | NOT NULL | - | | 
+noticias_concorrentes.produtos	jsonb | null | - | | 
+noticias_concorrentes.resumo	text | null | - | | 
+noticias_concorrentes.rodada	date | NOT NULL | CURRENT_DATE | | 
+noticias_concorrentes.titulo	text | NOT NULL | - | | 
+noticias_concorrentes.url	text | null | - | | 
+noticias_panorama.conteudo_md	text | NOT NULL | - | | 
+noticias_panorama.created_at	timestamp with time zone | NOT NULL | now() | | 
+noticias_panorama.modelo	text | null | - | | 
+noticias_panorama.rodada	date | NOT NULL | - | | 
+noticias_panorama.uso	text | null | - | | 
+patrimonio_bens.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_bens.categoria_id	uuid | null | - | | 
+patrimonio_bens.comodo_id	uuid | null | - | | 
+patrimonio_bens.criado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_bens.data_compra	date | null | - | | 
+patrimonio_bens.detalhes	jsonb | NOT NULL | '{}'::jsonb | | 
+patrimonio_bens.dono_texto	text | null | - | | 
+patrimonio_bens.empresa_id	uuid | null | - | | 
+patrimonio_bens.etiquetado	boolean | NOT NULL | false | | 
+patrimonio_bens.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_bens.local_id	uuid | null | - | | 
+patrimonio_bens.marca	text | null | - | | 
+patrimonio_bens.nome	text | NOT NULL | - | | 
+patrimonio_bens.numero	integer | null | - | | 
+patrimonio_bens.numero_serie	text | null | - | | 
+patrimonio_bens.observacao	text | null | - | | 
+patrimonio_bens.pessoa_id	uuid | null | - | | 
+patrimonio_bens.situacao	text | NOT NULL | 'em_estoque'::text | | 
+patrimonio_bens.tipo_id	uuid | null | - | | 
+patrimonio_bens.valor_centavos	bigint | null | - | | 
+patrimonio_categorias.criado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_categorias.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_categorias.nome	text | NOT NULL | - | | 
+patrimonio_categorias.ordem	integer | NOT NULL | 0 | | 
+patrimonio_categorias.vida_util_anos	integer | null | - | | 
+patrimonio_comodos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_comodos.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_comodos.local_id	uuid | NOT NULL | - | | 
+patrimonio_comodos.nome	text | NOT NULL | - | | 
+patrimonio_comodos.ordem	integer | NOT NULL | 0 | | 
+patrimonio_config.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_config.chave	text | NOT NULL | - | | 
+patrimonio_config.valor	text | NOT NULL | - | | 
+patrimonio_empresas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_empresas.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_empresas.nome	text | NOT NULL | - | | 
+patrimonio_empresas.ordem	integer | NOT NULL | 0 | | 
+patrimonio_locais.criado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_locais.empresa_id	uuid | NOT NULL | - | | 
+patrimonio_locais.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_locais.nome	text | NOT NULL | - | | 
+patrimonio_locais.ordem	integer | NOT NULL | 0 | | 
+patrimonio_log.acao	text | NOT NULL | - | | 
+patrimonio_log.alvo	text | null | - | | 
+patrimonio_log.detalhe	text | null | - | | 
+patrimonio_log.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_log.quando	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_log.quem	uuid | null | - | | 
+patrimonio_log.resultado	text | null | - | | 
+patrimonio_posse.ate	date | null | - | | 
+patrimonio_posse.bem_id	uuid | NOT NULL | - | | 
+patrimonio_posse.criado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_posse.de	date | NOT NULL | - | | 
+patrimonio_posse.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_posse.motivo	text | null | - | | 
+patrimonio_posse.pessoa_id	uuid | null | - | | 
+patrimonio_posse.pessoa_nome	text | null | - | | 
+patrimonio_tipos.categoria_id	uuid | NOT NULL | - | | 
+patrimonio_tipos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+patrimonio_tipos.id	uuid | NOT NULL | gen_random_uuid() | | 
+patrimonio_tipos.nome	text | NOT NULL | - | | 
+patrimonio_tipos.ordem	integer | NOT NULL | 0 | | 
+perfil_visitas_hora.account_id	uuid | NOT NULL | - | | 
+perfil_visitas_hora.coletado_em	timestamp with time zone | NOT NULL | now() | | 
+perfil_visitas_hora.dia	date | NOT NULL | - | | 
+perfil_visitas_hora.hora	smallint | NOT NULL | - | | 
+perfil_visitas_hora.visitas_acumuladas	integer | NOT NULL | 0 | | 
+perfil_visitas_hora.visitas_hora	integer | NOT NULL | 0 | | 
+platform_settings.key	text | NOT NULL | - | | 
+platform_settings.updated_at	timestamp with time zone | null | now() | | 
+platform_settings.value	text | NOT NULL | - | | 
+profiles.allowed_accounts	uuid[] | null | - | | 
+profiles.avatar_url	text | null | - | | 
+profiles.created_at	timestamp with time zone | null | now() | | 
+profiles.disabled	boolean | null | false | | 
+profiles.email	text | NOT NULL | - | | 
+profiles.escopo_por_equipe	boolean | NOT NULL | true | | 
+profiles.features	text[] | null | ARRAY['banco'::text] | | 
+profiles.id	uuid | NOT NULL | - | | 
+profiles.is_superadmin	boolean | NOT NULL | false | | 
+profiles.name	text | null | - | | 
+profiles.perfil_id	uuid | null | - | | 
+profiles.permissions	jsonb | NOT NULL | '{}'::jsonb | | 
+profiles.permissions_excecao	jsonb | NOT NULL | '{}'::jsonb | | 
+profiles.precisa_trocar_senha	boolean | NOT NULL | false | | 
+profiles.role	text | NOT NULL | 'viewer'::text | | 
+projetos_status.arquivado	boolean | NOT NULL | false | | 
+projetos_status.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+projetos_status.checkboxes_feitos	integer | null | - | | 
+projetos_status.checkboxes_total	integer | null | - | | 
+projetos_status.descricao	text | null | - | | 
+projetos_status.etapa	text | null | - | | 
+projetos_status.id	uuid | NOT NULL | gen_random_uuid() | | 
+projetos_status.manual	boolean | NOT NULL | false | | 
+projetos_status.ordem	integer | NOT NULL | 0 | | 
+projetos_status.plano_arquivo	text | null | - | | 
+projetos_status.progresso	integer | NOT NULL | 0 | | 
+projetos_status.projeto	text | NOT NULL | - | | 
+projetos_status.situacao	text | NOT NULL | 'planejado'::text | | 
+projetos_status.titulo	text | NOT NULL | - | | 
+push_preferencias.alterado_em	timestamp with time zone | NOT NULL | now() | | 
+push_preferencias.alterado_por	uuid | null | - | | 
+push_preferencias.ativo	boolean | NOT NULL | - | | 
+push_preferencias.tipo	text | NOT NULL | - | | 
+push_preferencias.user_id	uuid | NOT NULL | - | | 
+push_subs.auth	text | NOT NULL | - | | 
+push_subs.created_at	timestamp with time zone | NOT NULL | now() | | 
+push_subs.endpoint	text | NOT NULL | - | | 
+push_subs.id	uuid | NOT NULL | gen_random_uuid() | | 
+push_subs.p256dh	text | NOT NULL | - | | 
+push_subs.user_id	uuid | null | - | | 
+robos_esperados.critico	boolean | NOT NULL | false | | 
+robos_esperados.horas_sem_sucesso_ate	integer | NOT NULL | - | | 
+robos_esperados.porque	text | null | - | | 
+robos_esperados.robo	text | NOT NULL | - | | 
+robos_execucoes.conferido_em	timestamp with time zone | null | - | | 
+robos_execucoes.disparado_em	timestamp with time zone | NOT NULL | now() | | 
+robos_execucoes.id	bigint | NOT NULL | nextval('robos_execucoes_id_seq'::regclass) | | 
+robos_execucoes.ok	boolean | null | - | | 
+robos_execucoes.request_id	bigint | null | - | | 
+robos_execucoes.resposta	text | null | - | | 
+robos_execucoes.robo	text | NOT NULL | - | | 
+robos_execucoes.status_code	integer | null | - | | 
+robos_saude.critico	boolean | null | - | | 
+robos_saude.disparos_24h	bigint | null | - | | 
+robos_saude.falhas_24h	bigint | null | - | | 
+robos_saude.horas_sem_sucesso_ate	integer | null | - | | 
+robos_saude.porque	text | null | - | | 
+robos_saude.quem_falhou	text[] | null | - | | 
+robos_saude.robo	text | null | - | | 
+robos_saude.situacao	text | null | - | | 
+robos_saude.ultimo_disparo	timestamp with time zone | null | - | | 
+robos_saude.ultimo_sucesso	timestamp with time zone | null | - | | 
+robos_saude.variantes_vivas	bigint | null | - | | 
+robos_travas.expira_em	timestamp with time zone | NOT NULL | now() | | 
+robos_travas.robo	text | NOT NULL | - | | 
+robos_travas.tomada_em	timestamp with time zone | null | - | | 
+schema_migrations.applied_at	timestamp with time zone | NOT NULL | now() | | 
+schema_migrations.name	text | NOT NULL | - | | 
+schema_migrations.observacao	text | null | - | | 
+segredos_de_cron.criado_em	timestamp with time zone | NOT NULL | now() | | 
+segredos_de_cron.nome	text | NOT NULL | - | | 
+segredos_de_cron.observacao	text | null | - | | 
+segredos_de_cron.segredo	text | NOT NULL | - | | 
+shopify_pedidos.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+shopify_pedidos.bruto	jsonb | NOT NULL | - | | 
+shopify_pedidos.cliente_email	text | null | - | | 
+shopify_pedidos.cliente_nome	text | null | - | | 
+shopify_pedidos.criado_em_shopify	timestamp with time zone | NOT NULL | - | | 
+shopify_pedidos.id	bigint | NOT NULL | - | | 
+shopify_pedidos.loja_id	bigint | NOT NULL | 205512275 | | 
+shopify_pedidos.moeda	text | NOT NULL | 'BRL'::text | | 
+shopify_pedidos.numero	text | null | - | | 
+shopify_pedidos.status_financeiro	text | NOT NULL | - | | 
+shopify_pedidos.total	numeric(12,2) | NOT NULL | - | | 
+social_metas.account_id	text | NOT NULL | - | | 
+social_metas.indicador	text | NOT NULL | - | | 
+social_metas.periodo	text | NOT NULL | - | | 
+social_metas.updated_at	timestamp with time zone | NOT NULL | now() | | 
+social_metas.updated_by	uuid | null | auth.uid() | | 
+social_metas.valor	numeric | NOT NULL | - | | 
+user_permissions.granted	boolean | NOT NULL | false | | 
+user_permissions.granted_at	timestamp with time zone | null | now() | | 
+user_permissions.granted_by	uuid | null | - | | 
+user_permissions.resource_key	text | NOT NULL | - | | 
+user_permissions.user_id	uuid | NOT NULL | - | | 
+vessel_agenda_da_loja.ao_mesmo_tempo	integer | NOT NULL | 1 | | 
+vessel_agenda_da_loja.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_agenda_da_loja.loja	text | NOT NULL | - | | 
+vessel_agenda_da_loja.minutos_por_visita	integer | NOT NULL | 60 | | 
+vessel_atendimentos.atelier_ferragem	text | null | - | | 
+vessel_atendimentos.atelier_tecido	text | null | - | | 
+vessel_atendimentos.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_atendimentos.chave_convite	text | null | - | | 
+vessel_atendimentos.client_advisor	text | null | - | | 
+vessel_atendimentos.convidada_em	timestamp with time zone | null | - | | 
+vessel_atendimentos.convite_aberto_em	timestamp with time zone | null | - | | 
+vessel_atendimentos.convite_aberturas	integer | NOT NULL | 0 | | 
+vessel_atendimentos.convite_codigo	text | null | - | | 
+vessel_atendimentos.convite_enviado_em	timestamp with time zone | null | - | | 
+vessel_atendimentos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_atendimentos.evento_codigo	text | null | - | | 
+vessel_atendimentos.id	bigint | NOT NULL | nextval('vessel_atendimentos_id_seq'::regclass) | | 
+vessel_atendimentos.interesse	text | null | - | | 
+vessel_atendimentos.ip_hash	text | null | - | | 
+vessel_atendimentos.loja	text | NOT NULL | - | | 
+vessel_atendimentos.modelo_de_interesse	text | null | - | | 
+vessel_atendimentos.momento_de_uso	text | null | - | | 
+vessel_atendimentos.origem_registro	text | NOT NULL | - | | 
+vessel_atendimentos.periodo_preferido	text | null | - | | 
+vessel_atendimentos.pessoa_id	bigint | NOT NULL | - | | 
+vessel_atendimentos.presenca_em	timestamp with time zone | null | - | | 
+vessel_atendimentos.quando	timestamp with time zone | null | - | | 
+vessel_atendimentos.recado	text | null | - | | 
+vessel_atendimentos.rsvp	text | null | - | | 
+vessel_atendimentos.status	text | NOT NULL | 'solicitado'::text | | 
+vessel_atendimentos.teste	boolean | NOT NULL | false | | 
+vessel_baixas.baixada_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_baixas.baixada_por	uuid | null | - | | 
+vessel_baixas.codigo	text | NOT NULL | - | | 
+vessel_baixas.desfeita_em	timestamp with time zone | null | - | | 
+vessel_baixas.desfeita_por	uuid | null | - | | 
+vessel_baixas.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_baixas.motivo	text | NOT NULL | - | | 
+vessel_beauty_session_cadastros.atendimento_id	bigint | null | - | | 
+vessel_beauty_session_cadastros.cadastrado_por	uuid | null | - | | 
+vessel_beauty_session_cadastros.cadastrado_por_nome	text | null | - | | 
+vessel_beauty_session_cadastros.codigo	text | NOT NULL | - | | 
+vessel_beauty_session_cadastros.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_beauty_session_cadastros.id	bigint | NOT NULL | nextval('vessel_beauty_session_cadastros_id_seq'::regclass) | | 
+vessel_beauty_session_cadastros.pessoa_id	bigint | NOT NULL | - | | 
+vessel_beauty_sessions.arquivada	boolean | NOT NULL | false | | 
+vessel_beauty_sessions.ativa	boolean | NOT NULL | true | | 
+vessel_beauty_sessions.codigo	text | NOT NULL | - | | 
+vessel_beauty_sessions.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_beauty_sessions.loja	text | NOT NULL | - | | 
+vessel_beauty_sessions.parceiro	text | null | - | | 
+vessel_beauty_sessions.praca	text | null | - | | 
+vessel_beauty_sessions.quando	date | null | - | | 
+vessel_candidaturas.cidade	text | NOT NULL | - | | 
+vessel_candidaturas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_candidaturas.curriculo	text | null | - | | 
+vessel_candidaturas.experiencia	text | NOT NULL | - | | 
+vessel_candidaturas.fim_de_semana	boolean | NOT NULL | - | | 
+vessel_candidaturas.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_candidaturas.ip_hash	text | null | - | | 
+vessel_candidaturas.na_planilha_em	timestamp with time zone | null | - | | 
+vessel_candidaturas.nome	text | NOT NULL | - | | 
+vessel_candidaturas.origem	jsonb | NOT NULL | '{}'::jsonb | | 
+vessel_candidaturas.teste	boolean | NOT NULL | false | | 
+vessel_candidaturas.vaga	text | NOT NULL | - | | 
+vessel_candidaturas.whatsapp	text | NOT NULL | - | | 
+vessel_card_consultas.id	bigint | NOT NULL | nextval('vessel_card_consultas_id_seq'::regclass) | | 
+vessel_card_consultas.ip_hash	text | NOT NULL | - | | 
+vessel_card_consultas.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_cartao_arquivos.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_cartao_arquivos.codigo	text | NOT NULL | - | | 
+vessel_cartao_arquivos.nome	text | NOT NULL | - | | 
+vessel_cartao_arquivos.pasta_id	text | null | - | | 
+vessel_cartao_arquivos.zoho_id	text | NOT NULL | - | | 
+vessel_cartao_pedidos.comecou_em	timestamp with time zone | null | - | | 
+vessel_cartao_pedidos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_cartao_pedidos.criado_por	uuid | null | - | | 
+vessel_cartao_pedidos.erro	text | null | - | | 
+vessel_cartao_pedidos.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_cartao_pedidos.pasta	text | null | - | | 
+vessel_cartao_pedidos.pecas	text[] | NOT NULL | - | | 
+vessel_cartao_pedidos.situacao	text | NOT NULL | 'na_fila'::text | | 
+vessel_cartao_pedidos.terminou_em	timestamp with time zone | null | - | | 
+vessel_client_advisors.bling_vendedor_id	bigint | null | - | | 
+vessel_client_advisors.chave	text | NOT NULL | - | | 
+vessel_client_advisors.codigo	text | NOT NULL | - | | 
+vessel_client_advisors.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_client_advisors.id	bigint | NOT NULL | nextval('vessel_client_advisors_id_seq'::regclass) | | 
+vessel_client_advisors.loja	text | null | - | | 
+vessel_client_advisors.nome	text | NOT NULL | - | | 
+vessel_client_advisors.teste	boolean | NOT NULL | false | | 
+vessel_client_advisors.vendedor_dispensado_em	timestamp with time zone | null | - | | 
+vessel_client_advisors.vendedor_ligado_em	timestamp with time zone | null | - | | 
+vessel_clientes.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_clientes.bling_contato_id	bigint | null | - | | 
+vessel_clientes.cidade	text | null | - | | 
+vessel_clientes.cpf	text | NOT NULL | - | | 
+vessel_clientes.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_clientes.email	text | NOT NULL | - | | 
+vessel_clientes.email_confirmado_em	timestamp with time zone | null | - | | 
+vessel_clientes.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_clientes.nascimento	date | null | - | | 
+vessel_clientes.nome	text | NOT NULL | - | | 
+vessel_clientes.pessoa_id	bigint | null | - | | 
+vessel_clientes.senha_hash	text | NOT NULL | - | | 
+vessel_clientes.senha_trocada_em	timestamp with time zone | null | - | | 
+vessel_clientes.teste	boolean | NOT NULL | false | | 
+vessel_clientes.whatsapp	text | null | - | | 
+vessel_consentimentos.canal	text | null | - | | 
+vessel_consentimentos.finalidade	text | NOT NULL | - | | 
+vessel_consentimentos.fonte	text | null | - | | 
+vessel_consentimentos.id	bigint | NOT NULL | nextval('vessel_consentimentos_id_seq'::regclass) | | 
+vessel_consentimentos.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_consentimentos.pessoa_id	bigint | null | - | | 
+vessel_consentimentos.revogado_em	timestamp with time zone | null | - | | 
+vessel_consentimentos.situacao	text | NOT NULL | 'ativo'::text | | 
+vessel_consentimentos.stylist_id	bigint | null | - | | 
+vessel_consentimentos.teste	boolean | NOT NULL | false | | 
+vessel_consentimentos.versao	text | null | - | | 
+vessel_convite_aberturas.client_advisor	text | null | - | | 
+vessel_convite_aberturas.convite_codigo	text | null | - | | 
+vessel_convite_aberturas.id	bigint | NOT NULL | nextval('vessel_convite_aberturas_id_seq'::regclass) | | 
+vessel_convite_aberturas.ip_hash	text | null | - | | 
+vessel_convite_aberturas.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_convite_aberturas.praca	text | null | - | | 
+vessel_convite_aberturas.teste	boolean | NOT NULL | false | | 
+vessel_convite_aberturas.via	text | null | - | | 
+vessel_edicoes.acao	text | NOT NULL | - | | 
+vessel_edicoes.codigo	text | NOT NULL | - | | 
+vessel_edicoes.detalhes	jsonb | NOT NULL | '{}'::jsonb | | 
+vessel_edicoes.feito_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_edicoes.feito_por	uuid | null | - | | 
+vessel_edicoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_edicoes.motivo	text | null | - | | 
+vessel_envios_ao_meta.enviado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_envios_ao_meta.event_id	text | NOT NULL | - | | 
+vessel_envios_ao_meta.evento	text | NOT NULL | - | | 
+vessel_envios_ao_meta.id	bigint | NOT NULL | nextval('vessel_envios_ao_meta_id_seq'::regclass) | | 
+vessel_envios_ao_meta.pedido_id	bigint | NOT NULL | - | | 
+vessel_envios_ao_meta.resposta	text | null | - | | 
+vessel_garantias_baixadas.baixada_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_garantias_baixadas.baixada_por	uuid | null | - | | 
+vessel_garantias_baixadas.bling_contato_id	text | null | - | | 
+vessel_garantias_baixadas.bling_pedido	text | null | - | | 
+vessel_garantias_baixadas.codigo	text | NOT NULL | - | | 
+vessel_garantias_baixadas.comprado_em	date | null | - | | 
+vessel_garantias_baixadas.cpf	text | null | - | | 
+vessel_garantias_baixadas.garantia_ate	date | null | - | | 
+vessel_garantias_baixadas.id	bigint | NOT NULL | - | | identity a
+vessel_garantias_baixadas.motivo	text | NOT NULL | - | | 
+vessel_garantias_baixadas.nome	text | null | - | | 
+vessel_garantias_baixadas.onde_comprou	text | null | - | | 
+vessel_garantias_baixadas.registrado_em	timestamp with time zone | null | - | | 
+vessel_garantias_baixadas.whatsapp	text | null | - | | 
+vessel_leituras.achou	boolean | NOT NULL | - | | 
+vessel_leituras.agente	text | null | - | | 
+vessel_leituras.codigo	text | NOT NULL | - | | 
+vessel_leituras.id	bigint | NOT NULL | nextval('vessel_leituras_id_seq'::regclass) | | 
+vessel_leituras.ip_hash	text | null | - | | 
+vessel_leituras.lido_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_lembretes.cancelado_em	timestamp with time zone | null | - | | 
+vessel_lembretes.cancelado_por	text | null | - | | 
+vessel_lembretes.cliente_id	uuid | null | - | | 
+vessel_lembretes.consentimento_em	timestamp with time zone | NOT NULL | - | | 
+vessel_lembretes.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_lembretes.email	text | NOT NULL | - | | 
+vessel_lembretes.enviado_30_em	timestamp with time zone | null | - | | 
+vessel_lembretes.enviado_7_em	timestamp with time zone | null | - | | 
+vessel_lembretes.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_lembretes.peca_codigo	text | NOT NULL | - | | 
+vessel_lembretes.token_hash	text | null | - | | 
+vessel_lista_espera.aceite_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_lista_espera.aceite_versao	text | NOT NULL | - | | 
+vessel_lista_espera.bling_em	timestamp with time zone | null | - | | 
+vessel_lista_espera.bling_id	text | null | - | | 
+vessel_lista_espera.clique_meta	text | null | - | | 
+vessel_lista_espera.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_lista_espera.email	text | NOT NULL | - | | 
+vessel_lista_espera.id	bigint | NOT NULL | nextval('vessel_lista_espera_id_seq'::regclass) | | 
+vessel_lista_espera.ip_hash	text | null | - | | 
+vessel_lista_espera.loja	text | null | - | | 
+vessel_lista_espera.nome	text | NOT NULL | - | | 
+vessel_lista_espera.objetivo	text | null | - | | 
+vessel_lista_espera.objetivo_motivo	text | null | - | | 
+vessel_lista_espera.origem	text | NOT NULL | 'lp-vesselbrasil'::text | | 
+vessel_lista_espera.planilha_em	timestamp with time zone | null | - | | 
+vessel_lista_espera.senha_em	timestamp with time zone | null | - | | 
+vessel_lista_espera.senha_hash	text | null | - | | 
+vessel_lista_espera.ultimo_erro	text | null | - | | 
+vessel_lista_espera.utm_campaign	text | null | - | | 
+vessel_lista_espera.utm_content	text | null | - | | 
+vessel_lista_espera.utm_medium	text | null | - | | 
+vessel_lista_espera.utm_source	text | null | - | | 
+vessel_lista_espera.utm_term	text | null | - | | 
+vessel_lista_espera.visita_acompanhantes	integer | null | - | | 
+vessel_lista_espera.visita_atelier	boolean | null | - | | 
+vessel_lista_espera.visita_bolsa	text | null | - | | 
+vessel_lista_espera.visita_data	date | null | - | | 
+vessel_lista_espera.visita_detalhes_em	timestamp with time zone | null | - | | 
+vessel_lista_espera.visita_hora	text | null | - | | 
+vessel_lista_espera.visita_ocasiao	text | null | - | | 
+vessel_lista_espera.visita_pedido	text | null | - | | 
+vessel_lista_espera.whatsapp	text | NOT NULL | - | | 
+vessel_lotes.cor	text | null | - | | 
+vessel_lotes.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_lotes.criado_por	uuid | null | - | | 
+vessel_lotes.fabricado_em	date | NOT NULL | CURRENT_DATE | | 
+vessel_lotes.fotos	text[] | null | - | | 
+vessel_lotes.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_lotes.material	text | null | - | | 
+vessel_lotes.material_fonte	text | null | - | | 
+vessel_lotes.modelo	text | NOT NULL | - | | 
+vessel_lotes.os	text | null | - | | 
+vessel_lotes.quantidade	integer | NOT NULL | - | | 
+vessel_lotes.sku	text | null | - | | 
+vessel_lotes.teste	boolean | NOT NULL | false | | 
+vessel_origens.campanha_id	text | null | - | | 
+vessel_origens.canal	text | NOT NULL | - | | 
+vessel_origens.clique_meta	text | null | - | | 
+vessel_origens.criativo_id	text | null | - | | 
+vessel_origens.evento_id	text | null | - | | 
+vessel_origens.id	bigint | NOT NULL | nextval('vessel_origens_id_seq'::regclass) | | 
+vessel_origens.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_origens.navegador_meta	text | null | - | | 
+vessel_origens.parceiro_id	text | null | - | | 
+vessel_origens.pessoa_id	bigint | NOT NULL | - | | 
+vessel_origens.stylist_id	text | null | - | | 
+vessel_origens.utm_campaign	text | null | - | | 
+vessel_origens.utm_content	text | null | - | | 
+vessel_origens.utm_medium	text | null | - | | 
+vessel_origens.utm_source	text | null | - | | 
+vessel_origens.utm_term	text | null | - | | 
+vessel_pecas.cartao_gerado_em	timestamp with time zone | null | - | | 
+vessel_pecas.codigo	text | NOT NULL | - | | 
+vessel_pecas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_pecas.gravada_em	timestamp with time zone | null | - | | 
+vessel_pecas.lote_id	uuid | null | - | | 
+vessel_pecas.numero_na_serie	integer | NOT NULL | - | | 
+vessel_pedido_itens.desconto_percentual	numeric(12,2) | null | - | | 
+vessel_pedido_itens.descricao	text | null | - | | 
+vessel_pedido_itens.id	bigint | NOT NULL | nextval('vessel_pedido_itens_id_seq'::regclass) | | 
+vessel_pedido_itens.pedido_id	bigint | NOT NULL | - | | 
+vessel_pedido_itens.preco_de_tabela	numeric | null | - | | 
+vessel_pedido_itens.quantidade	numeric(12,3) | null | - | | 
+vessel_pedido_itens.sku	text | null | - | | 
+vessel_pedido_itens.total_do_item	numeric(12,2) | null | - | | 
+vessel_pedido_itens.valor_unitario	numeric(12,2) | null | - | | 
+vessel_pedidos.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_pedidos.bling_contato_id	bigint | null | - | | 
+vessel_pedidos.bling_pedido_id	bigint | NOT NULL | - | | 
+vessel_pedidos.casou_lead_por	text | null | - | | 
+vessel_pedidos.casou_por	text | null | - | | 
+vessel_pedidos.conferido_no_bling_em	timestamp with time zone | null | - | | 
+vessel_pedidos.contato_nome	text | null | - | | 
+vessel_pedidos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_pedidos.data_da_nota	date | null | - | | 
+vessel_pedidos.data_da_venda	date | null | - | | 
+vessel_pedidos.data_do_pedido	date | NOT NULL | - | | 
+vessel_pedidos.desconto	numeric(12,2) | null | - | | 
+vessel_pedidos.id	bigint | NOT NULL | nextval('vessel_pedidos_id_seq'::regclass) | | 
+vessel_pedidos.lead_id	bigint | null | - | | 
+vessel_pedidos.loja_id	bigint | null | - | | 
+vessel_pedidos.numero	text | null | - | | 
+vessel_pedidos.observacoes	text | null | - | | 
+vessel_pedidos.observacoes_internas	text | null | - | | 
+vessel_pedidos.origem_da_data	text | null | - | | 
+vessel_pedidos.outras_despesas	numeric(12,2) | null | - | | 
+vessel_pedidos.pessoa_id	bigint | null | - | | 
+vessel_pedidos.receita_liquida	numeric(12,2) | null | - | | 
+vessel_pedidos.situacao_id	integer | null | - | | 
+vessel_pedidos.total_corrigido	numeric(12,2) | null | - | | 
+vessel_pedidos.total_do_bling	numeric(12,2) | null | - | | 
+vessel_pedidos.total_produtos	numeric(12,2) | null | - | | 
+vessel_pedidos.vendedor_id	bigint | null | - | | 
+vessel_pedidos_de_registro.cliente_id	uuid | null | - | | 
+vessel_pedidos_de_registro.codigo	text | NOT NULL | - | | 
+vessel_pedidos_de_registro.comprado_em	date | null | - | | 
+vessel_pedidos_de_registro.conferencia	jsonb | null | - | | 
+vessel_pedidos_de_registro.cpf	text | NOT NULL | - | | 
+vessel_pedidos_de_registro.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_pedidos_de_registro.decidido_em	timestamp with time zone | null | - | | 
+vessel_pedidos_de_registro.decidido_por_que	text | null | - | | 
+vessel_pedidos_de_registro.decidido_quem	uuid | null | - | | 
+vessel_pedidos_de_registro.estado	text | NOT NULL | 'pendente'::text | | 
+vessel_pedidos_de_registro.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_pedidos_de_registro.motivo	text | null | - | | 
+vessel_pedidos_de_registro.nascimento	date | null | - | | 
+vessel_pedidos_de_registro.nome	text | NOT NULL | - | | 
+vessel_pedidos_de_registro.onde_comprou	text | null | - | | 
+vessel_pedidos_de_registro.presente_de_nome	text | null | - | | 
+vessel_pedidos_de_registro.whatsapp	text | NOT NULL | - | | 
+vessel_permissoes.canal	text | NOT NULL | - | | 
+vessel_permissoes.finalidade	text | NOT NULL | - | | 
+vessel_permissoes.fonte	text | NOT NULL | - | | 
+vessel_permissoes.id	bigint | NOT NULL | nextval('vessel_permissoes_id_seq'::regclass) | | 
+vessel_permissoes.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_permissoes.pessoa_id	bigint | NOT NULL | - | | 
+vessel_permissoes.situacao	text | NOT NULL | 'concedida'::text | | 
+vessel_permissoes.texto_versao	text | NOT NULL | - | | 
+vessel_pessoas.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_pessoas.bling_contato_id	bigint | null | - | | 
+vessel_pessoas.cidade	text | null | - | | 
+vessel_pessoas.consultora	text | null | - | | 
+vessel_pessoas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_pessoas.email	text | null | - | | 
+vessel_pessoas.id	bigint | NOT NULL | nextval('vessel_pessoas_id_seq'::regclass) | | 
+vessel_pessoas.instagram	text | null | - | | 
+vessel_pessoas.nome	text | NOT NULL | - | | 
+vessel_pessoas.telefone	text | NOT NULL | - | | 
+vessel_pessoas.teste	boolean | NOT NULL | false | | 
+vessel_praca_cidades.cidade	text | NOT NULL | - | | 
+vessel_praca_cidades.cidade_chave	text | NOT NULL | - | | 
+vessel_praca_cidades.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_praca_cidades.id	bigint | NOT NULL | nextval('vessel_praca_cidades_id_seq'::regclass) | | 
+vessel_praca_cidades.praca_id	bigint | NOT NULL | - | | 
+vessel_pracas.ativa	boolean | NOT NULL | true | | 
+vessel_pracas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_pracas.id	bigint | NOT NULL | nextval('vessel_pracas_id_seq'::regclass) | | 
+vessel_pracas.loja_destino	text | null | - | | 
+vessel_pracas.nome	text | NOT NULL | - | | 
+vessel_pracas.ordem	integer | NOT NULL | 0 | | 
+vessel_pracas.sigla	text | NOT NULL | - | | 
+vessel_private_edit_card_leituras.id	bigint | NOT NULL | nextval('vessel_private_edit_card_leituras_id_seq'::regclass) | | 
+vessel_private_edit_card_leituras.ip_hash	text | NOT NULL | - | | 
+vessel_private_edit_card_leituras.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_private_edit_card_leituras.private_edit_id	bigint | NOT NULL | - | | 
+vessel_private_edits.arquivada	boolean | NOT NULL | false | | 
+vessel_private_edits.ativa	boolean | NOT NULL | true | | 
+vessel_private_edits.chave	text | NOT NULL | - | | 
+vessel_private_edits.codigo	text | NOT NULL | - | | 
+vessel_private_edits.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_private_edits.id	bigint | NOT NULL | nextval('vessel_private_edits_id_seq'::regclass) | | 
+vessel_private_edits.local	text | null | - | | 
+vessel_private_edits.loja	text | null | - | | 
+vessel_private_edits.motivo	text | null | - | | 
+vessel_private_edits.observacoes	text | null | - | | 
+vessel_private_edits.praca	text | null | - | | 
+vessel_private_edits.praca_id	bigint | null | - | | 
+vessel_private_edits.quando	timestamp with time zone | NOT NULL | - | | 
+vessel_private_edits.realizado_em	date | null | - | | 
+vessel_private_edits.status	text | NOT NULL | 'agendado'::text | | 
+vessel_private_edits.stylist_id	bigint | NOT NULL | - | | 
+vessel_private_edits.teste	boolean | NOT NULL | false | | 
+vessel_private_edits.vagas	integer | null | - | | 
+vessel_rd_envios.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_rd_envios.codigo	text | null | - | | 
+vessel_rd_envios.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_rd_envios.http_status	integer | null | - | | 
+vessel_rd_envios.id	bigint | NOT NULL | - | | identity a
+vessel_rd_envios.origem_id	bigint | NOT NULL | - | | 
+vessel_rd_envios.pessoa_id	bigint | NOT NULL | - | | 
+vessel_rd_envios.request_id	bigint | null | - | | 
+vessel_rd_envios.resposta	text | null | - | | 
+vessel_rd_envios.status	text | NOT NULL | 'pendente'::text | | 
+vessel_rd_envios.tentativas	integer | NOT NULL | 0 | | 
+vessel_registros.bling_atualizado_em	timestamp with time zone | null | - | | 
+vessel_registros.bling_contato_id	text | null | - | | 
+vessel_registros.bling_pedido	text | null | - | | 
+vessel_registros.cliente_id	uuid | null | - | | 
+vessel_registros.codigo	text | NOT NULL | - | | 
+vessel_registros.comprado_em	date | null | - | | 
+vessel_registros.cpf	text | null | - | | 
+vessel_registros.garantia_ate	date | null | - | | 
+vessel_registros.nascimento	date | null | - | | 
+vessel_registros.nome	text | NOT NULL | - | | 
+vessel_registros.onde_comprou	text | null | - | | 
+vessel_registros.pedido_id	uuid | null | - | | 
+vessel_registros.registrado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_registros.whatsapp	text | NOT NULL | - | | 
+vessel_rsvp_tentativas.atendimento_id	bigint | NOT NULL | - | | 
+vessel_rsvp_tentativas.id	bigint | NOT NULL | nextval('vessel_rsvp_tentativas_id_seq'::regclass) | | 
+vessel_rsvp_tentativas.ip_hash	text | null | - | | 
+vessel_rsvp_tentativas.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_rsvp_tentativas.teste	boolean | NOT NULL | false | | 
+vessel_sessao_aberturas.codigo	text | NOT NULL | - | | 
+vessel_sessao_aberturas.id	bigint | NOT NULL | nextval('vessel_sessao_aberturas_id_seq'::regclass) | | 
+vessel_sessao_aberturas.ip_hash	text | null | - | | 
+vessel_sessao_aberturas.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_sessao_aberturas.peca	text | null | - | | 
+vessel_sessao_aberturas.via	text | null | - | | 
+vessel_sessoes.agente	text | null | - | | 
+vessel_sessoes.cliente_id	uuid | NOT NULL | - | | 
+vessel_sessoes.criada_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_sessoes.encerrada_em	timestamp with time zone | null | - | | 
+vessel_sessoes.expira_em	timestamp with time zone | NOT NULL | - | | 
+vessel_sessoes.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_sessoes.ip_hash	text | null | - | | 
+vessel_sessoes.token_hash	text | NOT NULL | - | | 
+vessel_sessoes.ultimo_uso_em	timestamp with time zone | null | - | | 
+vessel_stylist_aberturas.codigo	text | NOT NULL | - | | 
+vessel_stylist_aberturas.id	bigint | NOT NULL | nextval('vessel_stylist_aberturas_id_seq'::regclass) | | 
+vessel_stylist_aberturas.ip_hash	text | null | - | | 
+vessel_stylist_aberturas.momento	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_aberturas.via	text | null | - | | 
+vessel_stylist_circle_edicoes.comeca_em	date | NOT NULL | - | | 
+vessel_stylist_circle_edicoes.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_circle_edicoes.id	bigint | NOT NULL | nextval('vessel_stylist_circle_edicoes_id_seq'::regclass) | | 
+vessel_stylist_circle_edicoes.nome	text | null | - | | 
+vessel_stylist_circle_edicoes.numero	integer | NOT NULL | - | | 
+vessel_stylist_circle_edicoes.praca_id	bigint | NOT NULL | - | | 
+vessel_stylist_circle_edicoes.situacao	text | NOT NULL | 'planejada'::text | | 
+vessel_stylist_circle_edicoes.termina_em	date | null | - | | 
+vessel_stylist_contatos.canal	text | NOT NULL | - | | 
+vessel_stylist_contatos.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_contatos.criado_por	uuid | null | - | | 
+vessel_stylist_contatos.criado_por_nome	text | null | - | | 
+vessel_stylist_contatos.id	bigint | NOT NULL | nextval('vessel_stylist_contatos_id_seq'::regclass) | | 
+vessel_stylist_contatos.nota	text | null | - | | 
+vessel_stylist_contatos.resultado	text | NOT NULL | - | | 
+vessel_stylist_contatos.stylist_id	bigint | NOT NULL | - | | 
+vessel_stylist_contatos.teste	boolean | NOT NULL | false | | 
+vessel_stylist_etapas.alterado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_etapas.alterado_por	uuid | null | - | | 
+vessel_stylist_etapas.alterado_por_nome	text | null | - | | 
+vessel_stylist_etapas.ativa	boolean | NOT NULL | true | | 
+vessel_stylist_etapas.conta_como_prospectada	boolean | NOT NULL | false | | 
+vessel_stylist_etapas.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_etapas.criado_por	uuid | null | - | | 
+vessel_stylist_etapas.criado_por_nome	text | null | - | | 
+vessel_stylist_etapas.excluida_em	timestamp with time zone | null | - | | 
+vessel_stylist_etapas.id	bigint | NOT NULL | nextval('vessel_stylist_etapas_id_seq'::regclass) | | 
+vessel_stylist_etapas.libera_private_edit	boolean | NOT NULL | false | | 
+vessel_stylist_etapas.nome	text | NOT NULL | - | | 
+vessel_stylist_etapas.ordem	integer | NOT NULL | - | | 
+vessel_stylist_etapas.tipo	text | NOT NULL | 'funil'::text | | 
+vessel_stylist_etapas_historico.de_etapa_id	bigint | null | - | | 
+vessel_stylist_etapas_historico.em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_etapas_historico.id	bigint | NOT NULL | nextval('vessel_stylist_etapas_historico_id_seq'::regclass) | | 
+vessel_stylist_etapas_historico.liberava_private_edit	boolean | NOT NULL | false | | 
+vessel_stylist_etapas_historico.motivo	text | NOT NULL | - | | 
+vessel_stylist_etapas_historico.motivo_id	bigint | null | - | | 
+vessel_stylist_etapas_historico.nota	text | null | - | | 
+vessel_stylist_etapas_historico.para_etapa_id	bigint | NOT NULL | - | | 
+vessel_stylist_etapas_historico.por	uuid | null | - | | 
+vessel_stylist_etapas_historico.por_nome	text | null | - | | 
+vessel_stylist_etapas_historico.stylist_id	bigint | NOT NULL | - | | 
+vessel_stylist_etapas_historico.teste	boolean | NOT NULL | false | | 
+vessel_stylist_etapas_trilha.acao	text | NOT NULL | - | | 
+vessel_stylist_etapas_trilha.antes	jsonb | null | - | | 
+vessel_stylist_etapas_trilha.depois	jsonb | null | - | | 
+vessel_stylist_etapas_trilha.em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_etapas_trilha.etapa_id	bigint | NOT NULL | - | | 
+vessel_stylist_etapas_trilha.id	bigint | NOT NULL | nextval('vessel_stylist_etapas_trilha_id_seq'::regclass) | | 
+vessel_stylist_etapas_trilha.por	uuid | null | - | | 
+vessel_stylist_etapas_trilha.por_nome	text | null | - | | 
+vessel_stylist_motivos_de_saida.alterado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_motivos_de_saida.alterado_por	uuid | null | - | | 
+vessel_stylist_motivos_de_saida.alterado_por_nome	text | null | - | | 
+vessel_stylist_motivos_de_saida.ativo	boolean | NOT NULL | true | | 
+vessel_stylist_motivos_de_saida.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_motivos_de_saida.criado_por	uuid | null | - | | 
+vessel_stylist_motivos_de_saida.criado_por_nome	text | null | - | | 
+vessel_stylist_motivos_de_saida.etapa_id	bigint | NOT NULL | - | | 
+vessel_stylist_motivos_de_saida.exige_nota	boolean | NOT NULL | false | | 
+vessel_stylist_motivos_de_saida.id	bigint | NOT NULL | nextval('vessel_stylist_motivos_de_saida_id_seq'::regclass) | | 
+vessel_stylist_motivos_de_saida.nome	text | NOT NULL | - | | 
+vessel_stylist_motivos_de_saida.ordem	integer | NOT NULL | - | | 
+vessel_stylist_motivos_de_saida.volta_na_proxima_edicao	boolean | NOT NULL | false | | 
+vessel_stylist_na_edicao.confirmou_em	timestamp with time zone | null | - | | 
+vessel_stylist_na_edicao.convidada_em	timestamp with time zone | null | - | | 
+vessel_stylist_na_edicao.edicao_id	bigint | NOT NULL | - | | 
+vessel_stylist_na_edicao.entrou_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_na_edicao.etapa_ao_sair	bigint | null | - | | 
+vessel_stylist_na_edicao.id	bigint | NOT NULL | nextval('vessel_stylist_na_edicao_id_seq'::regclass) | | 
+vessel_stylist_na_edicao.indisponivel_em	timestamp with time zone | null | - | | 
+vessel_stylist_na_edicao.presente_em	timestamp with time zone | null | - | | 
+vessel_stylist_na_edicao.saiu_em	timestamp with time zone | null | - | | 
+vessel_stylist_na_edicao.stylist_id	bigint | NOT NULL | - | | 
+vessel_stylist_qualificacoes.acesso	smallint | NOT NULL | - | | 
+vessel_stylist_qualificacoes.avaliado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylist_qualificacoes.avaliado_por	uuid | null | - | | 
+vessel_stylist_qualificacoes.avaliado_por_nome	text | null | - | | 
+vessel_stylist_qualificacoes.carteira	smallint | NOT NULL | - | | 
+vessel_stylist_qualificacoes.confiabilidade	smallint | NOT NULL | - | | 
+vessel_stylist_qualificacoes.faixa	text | null | vessel_faixa_da_nota((((((6 * carteira) + (5 * portfolio)) + (4 * mobilizacao)) + (3 * acesso)) + (2 * confiabilidade))) | gerada | 
+vessel_stylist_qualificacoes.id	bigint | NOT NULL | nextval('vessel_stylist_qualificacoes_id_seq'::regclass) | | 
+vessel_stylist_qualificacoes.mobilizacao	smallint | NOT NULL | - | | 
+vessel_stylist_qualificacoes.nota	smallint | null | (((((6 * carteira) + (5 * portfolio)) + (4 * mobilizacao)) + (3 * acesso)) + (2 * confiabilidade)) | gerada | 
+vessel_stylist_qualificacoes.observacao	text | null | - | | 
+vessel_stylist_qualificacoes.portfolio	smallint | NOT NULL | - | | 
+vessel_stylist_qualificacoes.stylist_id	bigint | NOT NULL | - | | 
+vessel_stylist_qualificacoes.teste	boolean | NOT NULL | false | | 
+vessel_stylists.ativa	boolean | NOT NULL | true | | 
+vessel_stylists.ativada_em	timestamp with time zone | null | - | | 
+vessel_stylists.atuacao	text | null | - | | 
+vessel_stylists.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylists.cidade	text | null | - | | 
+vessel_stylists.codigo	text | NOT NULL | - | | 
+vessel_stylists.convidadas	text | null | - | | 
+vessel_stylists.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_stylists.etapa_id	bigint | NOT NULL | - | | 
+vessel_stylists.id	bigint | NOT NULL | nextval('vessel_stylists_id_seq'::regclass) | | 
+vessel_stylists.instagram	text | null | - | | 
+vessel_stylists.loja	text | null | - | | 
+vessel_stylists.nome	text | NOT NULL | - | | 
+vessel_stylists.observacoes	text | null | - | | 
+vessel_stylists.origem_campanha	text | null | - | | 
+vessel_stylists.origem_canal	text | null | - | | 
+vessel_stylists.origem_contato	text | NOT NULL | 'inbound'::text | | 
+vessel_stylists.origem_utm	jsonb | null | - | | 
+vessel_stylists.praca_id	bigint | null | - | | 
+vessel_stylists.praca_preview	text | null | - | | 
+vessel_stylists.prospectado_em	date | null | - | | 
+vessel_stylists.proxima_acao	text | null | - | | 
+vessel_stylists.proxima_acao_em	date | null | - | | 
+vessel_stylists.quer_sessao	text | null | - | | 
+vessel_stylists.responsavel	text | null | - | | 
+vessel_stylists.sem_contato	boolean | NOT NULL | false | | 
+vessel_stylists.teste	boolean | NOT NULL | false | | 
+vessel_stylists.whatsapp	text | null | - | | 
+vessel_tentativas_de_login.acertou	boolean | NOT NULL | - | | 
+vessel_tentativas_de_login.chave	text | NOT NULL | - | | 
+vessel_tentativas_de_login.id	bigint | NOT NULL | nextval('vessel_tentativas_de_login_id_seq'::regclass) | | 
+vessel_tentativas_de_login.quando	timestamp with time zone | NOT NULL | now() | | 
+vessel_tentativas_de_presente.codigo	text | NOT NULL | - | | 
+vessel_tentativas_de_presente.quando	timestamp with time zone | NOT NULL | now() | | 
+vessel_tentativas_de_revelar.acertou	boolean | NOT NULL | - | | 
+vessel_tentativas_de_revelar.codigo	text | NOT NULL | - | | 
+vessel_tentativas_de_revelar.quando	timestamp with time zone | NOT NULL | now() | | 
+vessel_tentativas_de_transferencia.codigo	text | NOT NULL | - | | 
+vessel_tentativas_de_transferencia.quando	timestamp with time zone | NOT NULL | now() | | 
+vessel_transferencias.cancelado_em	timestamp with time zone | null | - | | 
+vessel_transferencias.cliente_de	uuid | NOT NULL | - | | 
+vessel_transferencias.cliente_para	uuid | null | - | | 
+vessel_transferencias.codigo_hash	text | NOT NULL | - | | 
+vessel_transferencias.criado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_transferencias.id	uuid | NOT NULL | gen_random_uuid() | | 
+vessel_transferencias.peca_codigo	text | NOT NULL | - | | 
+vessel_transferencias.usado_em	timestamp with time zone | null | - | | 
+vessel_transferencias.vale_ate	timestamp with time zone | NOT NULL | - | | 
+vessel_vendedores_bling.atualizado_em	timestamp with time zone | NOT NULL | now() | | 
+vessel_vendedores_bling.bling_vendedor_id	bigint | NOT NULL | - | | 
+vessel_vendedores_bling.chave	text | NOT NULL | - | | 
+vessel_vendedores_bling.loja_id	bigint | null | - | | 
+vessel_vendedores_bling.nome	text | NOT NULL | - | | 
+vessel_vendedores_bling.situacao	text | null | - | | 
+visitas_perfil_dia.account_id	uuid | NOT NULL | - | | 
+visitas_perfil_dia.calculado_em	timestamp with time zone | NOT NULL | now() | | 
+visitas_perfil_dia.dia	date | NOT NULL | - | | 
+visitas_perfil_dia.visitas	integer | NOT NULL | - | | 

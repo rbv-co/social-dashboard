@@ -92,6 +92,7 @@ insert into access_requests (id, name, email, message, created_at)
 insert into push_subs (endpoint, p256dh, auth, user_id) values
   ('https://push.exemplo/viewer', 'kv', 'av', '` + idViewer + `'), ('https://push.exemplo/admin', 'ka', 'aa', '` + idAdmin + `');
 insert into push_preferencias (user_id, tipo, ativo) values ('` + idViewer + `', 'vendas', true), ('` + idAdmin + `', 'vendas', false);
+insert into accounts (id, name, username, instagram_id) values ('` + A1 + `', 'Conta A1', 'conta-a1', '1'), ('` + A2 + `', 'Conta A2', 'conta-a2', '2');
 insert into data_integrity_checks (checked_date, account_id, check_name, status, detail) values
   ('2026-10-11', '` + A1 + `', 'coleta_zerada', 'fail', 'conta A1'),
   ('2026-10-11', '` + A2 + `', 'coleta_zerada', 'fail', 'conta A2'),

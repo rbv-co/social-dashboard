@@ -146,8 +146,17 @@ export async function rpcNaArea(area, sbClient, nome, args, fraseDo403 = 'Você 
   if (!areaNaApi(area)) return sbClient.rpc(nome, args)
   const r = await rpc(nome, args)
   if (!r.error) return { data: r.data, error: null }
+  return { data: null, error: erroDeRpc(r, fraseDo403) }
+}
+
+/**
+ * O erro de uma RPC recusada, no formato do supabase-js (`{ message, code, status }`). O 403 leva `code: '42501'`
+ * (o SQLSTATE de "sem permissão" que o PostgREST dava): telas leem `e.code === '42501'` para dizer qual permissão
+ * falta (comercial-vessel/tela-de-edicoes.vue); o resto leva o status HTTP.
+ */
+export function erroDeRpc(r, fraseDo403) {
   const message = r.status === 403 ? (r.data?.mensagem || fraseDo403) : (r.data?.mensagem || r.error.message)
-  return { data: null, error: { message, code: String(r.status), status: r.status } }
+  return { message, code: r.status === 403 ? '42501' : String(r.status), status: r.status }
 }
 
 /**

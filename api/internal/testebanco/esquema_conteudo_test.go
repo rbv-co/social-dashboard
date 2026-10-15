@@ -43,7 +43,7 @@ func TestFatiaDoConteudo(t *testing.T) {
 		insert into usuarios (id, email) values ('`+editor+`', 'editor@x.com'), ('`+aprova+`', 'aprova@x.com');
 		insert into profiles (id, email, role, features) values ('`+editor+`', 'editor@x.com', 'viewer', '{conteudo}'),
 		  ('`+aprova+`', 'aprova@x.com', 'viewer', '{conteudo,conteudo.aprovar}');
-		insert into accounts (id, name) values ('`+conta+`', 'Vessel');
+		insert into accounts (id, name, username, instagram_id) values ('`+conta+`', 'Vessel', 'vessel', '1784');
 		insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em) values
 		  ('`+pecaEm+`', '`+conta+`', 'Em aprovação', 'feed', 'em_aprovacao', '2026-10-20T15:00:00Z'),
 		  ('`+pecaRasc+`', '`+conta+`', 'Rascunho', 'reels', 'rascunho', null);`); err != nil {

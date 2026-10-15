@@ -1,0 +1,528 @@
+access_requests	c CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text])))
+access_requests	i CREATE UNIQUE INDEX USING btree (lower(email)) WHERE (status = 'pending'::text)
+access_requests	p PRIMARY KEY (id)
+account_insights	f FOREIGN KEY (account_id) REFERENCES accounts(id)
+account_insights	p PRIMARY KEY (id)
+account_insights	u UNIQUE (account_id, captured_at, period_days)
+accounts	p PRIMARY KEY (id)
+accounts	u UNIQUE (instagram_id)
+acessos_conexoes	p PRIMARY KEY (provedor)
+acessos_config	c CHECK ((id = 1))
+acessos_config	p PRIMARY KEY (id)
+acessos_dispositivos	c CHECK ((categoria = ANY (ARRAY['dispositivo'::text, 'veiculo'::text])))
+acessos_dispositivos	c CHECK ((status = ANY (ARRAY['em_uso'::text, 'a_devolver'::text, 'devolvido'::text, 'perdido'::text])))
+acessos_dispositivos	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE CASCADE
+acessos_dispositivos	p PRIMARY KEY (id)
+acessos_drive_marcas	p PRIMARY KEY (id)
+acessos_drive_marcas	u UNIQUE (external_id)
+acessos_drive_overrides	p PRIMARY KEY (external_id)
+acessos_drive_setores	p PRIMARY KEY (id)
+acessos_drive_setores	u UNIQUE (chave)
+acessos_log	c CHECK ((resultado = ANY (ARRAY['ok'::text, 'erro'::text])))
+acessos_log	p PRIMARY KEY (id)
+acessos_organizacoes	p PRIMARY KEY (id)
+acessos_organizacoes	u UNIQUE (nome)
+acessos_patrimonio_historico	f FOREIGN KEY (dispositivo_id) REFERENCES acessos_dispositivos(id) ON DELETE CASCADE
+acessos_patrimonio_historico	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+acessos_patrimonio_historico	p PRIMARY KEY (id)
+acessos_perfis	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+acessos_perfis	p PRIMARY KEY (id)
+acessos_perfis	u UNIQUE (nome)
+acessos_pessoas	c CHECK ((status = ANY (ARRAY['ativo'::text, 'desligado'::text])))
+acessos_pessoas	f FOREIGN KEY (marca_id) REFERENCES patrimonio_empresas(id)
+acessos_pessoas	f FOREIGN KEY (organizacao_id) REFERENCES acessos_organizacoes(id) ON DELETE SET NULL
+acessos_pessoas	f FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL
+acessos_pessoas	f FOREIGN KEY (setor_id) REFERENCES acessos_setores(id) ON DELETE SET NULL
+acessos_pessoas	i CREATE UNIQUE INDEX USING btree (profile_id) WHERE (profile_id IS NOT NULL)
+acessos_pessoas	p PRIMARY KEY (id)
+acessos_recursos	c CHECK ((tipo = ANY (ARRAY['onedrive'::text, 'icloud'::text, 'workdrive'::text])))
+acessos_recursos	i CREATE UNIQUE INDEX USING btree (external_id) WHERE ((tipo = 'workdrive'::text) AND (external_id IS NOT NULL))
+acessos_recursos	p PRIMARY KEY (id)
+acessos_setores	f FOREIGN KEY (organizacao_id) REFERENCES acessos_organizacoes(id) ON DELETE SET NULL
+acessos_setores	i CREATE UNIQUE INDEX USING btree (organizacao_id, nome)
+acessos_setores	p PRIMARY KEY (id)
+acessos_termos	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE CASCADE
+acessos_termos	p PRIMARY KEY (id)
+acessos_vinculos	c CHECK ((estado = ANY (ARRAY['pendente'::text, 'feito'::text])))
+acessos_vinculos	c CHECK ((papel = ANY (ARRAY['leitura'::text, 'edicao'::text])))
+acessos_vinculos	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE CASCADE
+acessos_vinculos	f FOREIGN KEY (recurso_id) REFERENCES acessos_recursos(id) ON DELETE CASCADE
+acessos_vinculos	p PRIMARY KEY (id)
+ad_insights_hora	c CHECK (((hora >= 0) AND (hora <= 23)))
+ad_insights_hora	u UNIQUE (ad_id, account_id, dia, hora)
+ads	p PRIMARY KEY (ad_id)
+ads_snapshots	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+ads_snapshots	p PRIMARY KEY (id)
+ads_snapshots	u UNIQUE (account_id, captured_at, period_days)
+audit_log	p PRIMARY KEY (id)
+bling_depositos	p PRIMARY KEY (deposito_id)
+bling_lojas	f FOREIGN KEY (grupo_id) REFERENCES canais_grupos(id) ON DELETE SET NULL
+bling_lojas	p PRIMARY KEY (loja_id)
+bling_metas	p PRIMARY KEY (id)
+bling_metas	u UNIQUE (loja_id, year, month)
+bling_pedido_ajuste_valor	c CHECK ((length(btrim(motivo)) >= 10))
+bling_pedido_ajuste_valor	c CHECK ((total_corrigido >= (0)::numeric))
+bling_pedido_ajuste_valor	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+bling_pedido_ajuste_valor	p PRIMARY KEY (pedido_id)
+bling_pedido_ajuste_vendedor	c CHECK ((length(btrim(motivo)) >= 10))
+bling_pedido_ajuste_vendedor	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+bling_pedido_ajuste_vendedor	p PRIMARY KEY (pedido_id)
+bling_pedido_forma_pagamento	p PRIMARY KEY (parcela_id)
+bling_pedido_nota	c CHECK ((modelo = ANY (ARRAY['nfe'::text, 'nfce'::text])))
+bling_pedido_nota	p PRIMARY KEY (pedido_id)
+bling_pedido_vendedor	p PRIMARY KEY (pedido_id)
+bling_tokens	p PRIMARY KEY (id)
+bling_vendedor_metas	p PRIMARY KEY (id)
+bling_vendedor_metas	u UNIQUE (vendor_id, year, month)
+bling_vendedores	p PRIMARY KEY (vendor_id)
+campaign_adsets	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+campaign_adsets	p PRIMARY KEY (adset_id)
+campaign_filters	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+campaign_filters	p PRIMARY KEY (account_id)
+campaign_insights	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+campaign_insights	p PRIMARY KEY (id)
+campaign_insights	u UNIQUE (campaign_id, account_id, captured_at, period_days)
+campaign_insights_hora	c CHECK (((hora >= 0) AND (hora <= 23)))
+campaign_insights_hora	u UNIQUE (campaign_id, account_id, dia, hora)
+campaigns	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+campaigns	p PRIMARY KEY (campaign_id)
+canais_grupos	i CREATE UNIQUE INDEX USING btree (lower(btrim(nome)))
+canais_grupos	p PRIMARY KEY (id)
+canais_grupos_membros	c CHECK ((papel = 'supervisora'::text))
+canais_grupos_membros	f FOREIGN KEY (concedido_por) REFERENCES profiles(id)
+canais_grupos_membros	f FOREIGN KEY (grupo_id) REFERENCES canais_grupos(id) ON DELETE CASCADE
+canais_grupos_membros	f FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+canais_grupos_membros	p PRIMARY KEY (id)
+canais_grupos_membros	u UNIQUE (grupo_id, profile_id)
+carrinho_eventos	c CHECK ((tipo = ANY (ARRAY['produto_adicionado'::text, 'produto_removido'::text, 'checkout_iniciado'::text, 'sessao_iniciada'::text])))
+carrinho_eventos	i CREATE UNIQUE INDEX USING btree (evento_shopify_id) WHERE (evento_shopify_id IS NOT NULL)
+carrinho_eventos	p PRIMARY KEY (id)
+chatwoot_eventos	c CHECK ((tipo = ANY (ARRAY['lead_novo'::text, 'lead_quente'::text, 'qualified_lead'::text])))
+chatwoot_eventos	p PRIMARY KEY (id)
+chatwoot_eventos	u UNIQUE (conversation_id, tipo)
+checkout_abandono	c CHECK (((mensagem_status IS NULL) OR (mensagem_status = ANY (ARRAY['enviando'::text, 'enviada'::text, 'falhou'::text, 'ignorada'::text]))))
+checkout_abandono	c CHECK ((status = ANY (ARRAY['aguardando'::text, 'fila_envio'::text, 'pagamento_pendente'::text, 'comprou'::text])))
+checkout_abandono	p PRIMARY KEY (token)
+coletor_log	p PRIMARY KEY (id)
+contatos_sem_mensagem	p PRIMARY KEY (telefone)
+content_snapshots	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+content_snapshots	p PRIMARY KEY (id)
+content_snapshots	u UNIQUE (account_id, captured_at, period_days)
+conteudo_arquivos	c CHECK ((tipo = ANY (ARRAY['imagem'::text, 'video'::text])))
+conteudo_arquivos	f FOREIGN KEY (peca_id) REFERENCES conteudo_pecas(id) ON DELETE CASCADE
+conteudo_arquivos	p PRIMARY KEY (id)
+conteudo_arquivos	u UNIQUE (peca_id, ordem)
+conteudo_blocos	c CHECK ((tipo = ANY (ARRAY['legenda'::text, 'hashtags'::text, 'cta'::text, 'assinatura'::text])))
+conteudo_blocos	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+conteudo_blocos	p PRIMARY KEY (id)
+conteudo_casamentos	c CHECK ((situacao = ANY (ARRAY['sugerido'::text, 'confirmado'::text, 'recusado'::text, 'automatico'::text])))
+conteudo_casamentos	f FOREIGN KEY (peca_id) REFERENCES conteudo_pecas(id) ON DELETE CASCADE
+conteudo_casamentos	p PRIMARY KEY (id)
+conteudo_casamentos	u UNIQUE (peca_id, ig_media_id)
+conteudo_concorrentes	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+conteudo_concorrentes	p PRIMARY KEY (id)
+conteudo_concorrentes	u UNIQUE (account_id, handle)
+conteudo_eventos	f FOREIGN KEY (peca_id) REFERENCES conteudo_pecas(id) ON DELETE CASCADE
+conteudo_eventos	p PRIMARY KEY (id)
+conteudo_ideias	c CHECK ((formato = ANY (ARRAY['feed'::text, 'reels'::text, 'stories'::text, 'carrossel'::text])))
+conteudo_ideias	c CHECK ((origem = ANY (ARRAY['manual'::text, 'ia'::text])))
+conteudo_ideias	c CHECK ((situacao = ANY (ARRAY['nova'::text, 'favorita'::text, 'usada'::text, 'descartada'::text])))
+conteudo_ideias	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+conteudo_ideias	f FOREIGN KEY (peca_id) REFERENCES conteudo_pecas(id) ON DELETE SET NULL
+conteudo_ideias	p PRIMARY KEY (id)
+conteudo_jobs	c CHECK ((status = ANY (ARRAY['enfileirado'::text, 'rodando'::text, 'concluido'::text, 'erro'::text])))
+conteudo_jobs	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+conteudo_jobs	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+conteudo_jobs	p PRIMARY KEY (id)
+conteudo_metricas	f FOREIGN KEY (peca_id) REFERENCES conteudo_pecas(id) ON DELETE CASCADE
+conteudo_metricas	p PRIMARY KEY (peca_id, capturado_em)
+conteudo_pecas	c CHECK (((status <> 'agendada'::text) OR (publicar_em IS NOT NULL)))
+conteudo_pecas	c CHECK (((status <> 'publicada'::text) OR (publicado_em IS NOT NULL)))
+conteudo_pecas	c CHECK ((formato = ANY (ARRAY['feed'::text, 'reels'::text, 'stories'::text, 'carrossel'::text])))
+conteudo_pecas	c CHECK ((status = ANY (ARRAY['rascunho'::text, 'em_aprovacao'::text, 'aprovada'::text, 'reprovada'::text, 'agendada'::text, 'publicada'::text, 'arquivada'::text])))
+conteudo_pecas	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+conteudo_pecas	f FOREIGN KEY (aprovado_por) REFERENCES auth.users(id)
+conteudo_pecas	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+conteudo_pecas	f FOREIGN KEY (responsavel) REFERENCES profiles(id) ON DELETE SET NULL
+conteudo_pecas	i CREATE UNIQUE INDEX USING btree (ig_media_id) WHERE (ig_media_id IS NOT NULL)
+conteudo_pecas	p PRIMARY KEY (id)
+daily_snapshots	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+daily_snapshots	p PRIMARY KEY (id)
+daily_snapshots	u UNIQUE (account_id, captured_at)
+data_integrity_checks	f FOREIGN KEY (account_id) REFERENCES accounts(id)
+data_integrity_checks	p PRIMARY KEY (id)
+engagement_snapshots	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+engagement_snapshots	p PRIMARY KEY (id)
+engagement_snapshots	u UNIQUE (account_id, captured_at, period_days)
+entradas_como_outro_usuario	f FOREIGN KEY (admin_id) REFERENCES profiles(id)
+entradas_como_outro_usuario	f FOREIGN KEY (alvo_id) REFERENCES profiles(id)
+entradas_como_outro_usuario	p PRIMARY KEY (id)
+equipes	c CHECK ((tipo = ANY (ARRAY['loja'::text, 'canal'::text, 'setor'::text])))
+equipes	f FOREIGN KEY (canal_loja_id) REFERENCES bling_lojas(loja_id) ON DELETE SET NULL
+equipes	f FOREIGN KEY (empresa_id) REFERENCES patrimonio_empresas(id) ON DELETE SET NULL
+equipes	f FOREIGN KEY (local_id) REFERENCES patrimonio_locais(id) ON DELETE SET NULL
+equipes	f FOREIGN KEY (setor_id) REFERENCES acessos_setores(id) ON DELETE SET NULL
+equipes	i CREATE UNIQUE INDEX USING btree (canal_loja_id) WHERE (canal_loja_id IS NOT NULL)
+equipes	i CREATE UNIQUE INDEX USING btree (deposito_id) WHERE (deposito_id IS NOT NULL)
+equipes	p PRIMARY KEY (id)
+equipes_membros	c CHECK ((papel = ANY (ARRAY['vendedora'::text, 'supervisora'::text, 'gestor'::text])))
+equipes_membros	f FOREIGN KEY (criado_por) REFERENCES profiles(id)
+equipes_membros	f FOREIGN KEY (equipe_id) REFERENCES equipes(id) ON DELETE CASCADE
+equipes_membros	f FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+equipes_membros	i CREATE UNIQUE INDEX USING btree (equipe_id, profile_id)
+equipes_membros	p PRIMARY KEY (id)
+equipes_permissoes	c CHECK ((chave = 'estoque'::text))
+equipes_permissoes	f FOREIGN KEY (concedido_por) REFERENCES profiles(id)
+equipes_permissoes	f FOREIGN KEY (equipe_id) REFERENCES equipes(id) ON DELETE CASCADE
+equipes_permissoes	f FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+equipes_permissoes	i CREATE UNIQUE INDEX USING btree (equipe_id, profile_id, chave)
+equipes_permissoes	p PRIMARY KEY (id)
+estoque_do_site_estado	p PRIMARY KEY (chave)
+fabrica_campanhas	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+fabrica_campanhas	p PRIMARY KEY (id)
+fabrica_criativos	f FOREIGN KEY (campanha_id) REFERENCES fabrica_campanhas(id) ON DELETE CASCADE
+fabrica_criativos	p PRIMARY KEY (id)
+fabrica_jobs	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+fabrica_jobs	p PRIMARY KEY (id)
+fabrica_lojas	f FOREIGN KEY (marca_id) REFERENCES fabrica_marcas(id)
+fabrica_lojas	p PRIMARY KEY (deposito_id)
+fabrica_looks	p PRIMARY KEY (chave)
+fabrica_marcas	p PRIMARY KEY (id)
+fabrica_meta_jobs	p PRIMARY KEY (id)
+fabrica_objetivos	p PRIMARY KEY (chave)
+fabrica_publicos	f FOREIGN KEY (marca_id) REFERENCES fabrica_marcas(id) ON DELETE SET NULL
+fabrica_publicos	p PRIMARY KEY (id)
+followers_leituras	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+followers_leituras	p PRIMARY KEY (id)
+frota_abastecimentos	c CHECK (((tanque_depois >= 0) AND (tanque_depois <= 4)))
+frota_abastecimentos	c CHECK ((km > 0))
+frota_abastecimentos	c CHECK ((litros > (0)::numeric))
+frota_abastecimentos	c CHECK ((total_centavos > 0))
+frota_abastecimentos	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+frota_abastecimentos	f FOREIGN KEY (veiculo_id) REFERENCES frota_veiculos(id) ON DELETE CASCADE
+frota_abastecimentos	p PRIMARY KEY (id)
+frota_checklist	c CHECK ((hodometro > 0))
+frota_checklist	c CHECK ((resultado = ANY (ARRAY['liberado'::text, 'com_ressalvas'::text, 'nao_liberado'::text])))
+frota_checklist	f FOREIGN KEY (assinada_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_checklist	f FOREIGN KEY (criada_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_checklist	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+frota_checklist	f FOREIGN KEY (veiculo_id) REFERENCES frota_veiculos(id) ON DELETE CASCADE
+frota_checklist	p PRIMARY KEY (id)
+frota_checklist	u UNIQUE (veiculo_id, feita_em)
+frota_checklist_config	c CHECK (((dia_mensal >= 1) AND (dia_mensal <= 5)))
+frota_checklist_config	c CHECK (((dia_semanal >= 1) AND (dia_semanal <= 5)))
+frota_checklist_config	c CHECK (((semana_mensal >= 1) AND (semana_mensal <= 4)))
+frota_checklist_config	c CHECK (id)
+frota_checklist_config	p PRIMARY KEY (id)
+frota_checklist_itens	c CHECK ((cadencia = ANY (ARRAY['diario'::text, 'semanal'::text, 'mensal'::text])))
+frota_checklist_itens	p PRIMARY KEY (id)
+frota_checklist_itens	u UNIQUE (item)
+frota_checklist_pdf	c CHECK ((situacao = ANY (ARRAY['na_fila'::text, 'enviando'::text, 'enviado'::text, 'falhou'::text])))
+frota_checklist_pdf	f FOREIGN KEY (checklist_id) REFERENCES frota_checklist(id) ON DELETE CASCADE
+frota_checklist_pdf	p PRIMARY KEY (id)
+frota_checklist_pdf	u UNIQUE (checklist_id)
+frota_checklist_respostas	c CHECK ((estado = ANY (ARRAY['ok'::text, 'nao_ok'::text, 'na'::text])))
+frota_checklist_respostas	f FOREIGN KEY (checklist_id) REFERENCES frota_checklist(id) ON DELETE CASCADE
+frota_checklist_respostas	f FOREIGN KEY (item_id) REFERENCES frota_checklist_itens(id) ON DELETE SET NULL
+frota_checklist_respostas	i CREATE UNIQUE INDEX USING btree (checklist_id, ordem)
+frota_checklist_respostas	p PRIMARY KEY (id)
+frota_manutencoes	c CHECK ((km >= 0))
+frota_manutencoes	f FOREIGN KEY (criada_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_manutencoes	f FOREIGN KEY (veiculo_id) REFERENCES frota_veiculos(id) ON DELETE CASCADE
+frota_manutencoes	p PRIMARY KEY (id)
+frota_plano_revisao	c CHECK ((a_cada_km > 0))
+frota_plano_revisao	p PRIMARY KEY (id)
+frota_plano_revisao	u UNIQUE (item)
+frota_requisicoes	c CHECK (((devolucao_prevista IS NULL) OR (devolucao_prevista > retirada_prevista)))
+frota_requisicoes	c CHECK ((situacao = ANY (ARRAY['pendente'::text, 'aprovada'::text, 'recusada'::text, 'cancelada'::text, 'revogada'::text, 'usada'::text])))
+frota_requisicoes	f FOREIGN KEY (arquivada_por) REFERENCES auth.users(id)
+frota_requisicoes	f FOREIGN KEY (criada_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_requisicoes	f FOREIGN KEY (decidida_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_requisicoes	f FOREIGN KEY (encerrada_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_requisicoes	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+frota_requisicoes	f FOREIGN KEY (uso_id) REFERENCES frota_uso(id) ON DELETE SET NULL
+frota_requisicoes	f FOREIGN KEY (veiculo_id) REFERENCES frota_veiculos(id) ON DELETE CASCADE
+frota_requisicoes	p PRIMARY KEY (id)
+frota_requisicoes_historico	f FOREIGN KEY (quem) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_requisicoes_historico	f FOREIGN KEY (requisicao_id) REFERENCES frota_requisicoes(id) ON DELETE CASCADE
+frota_requisicoes_historico	p PRIMARY KEY (id)
+frota_revisoes	c CHECK ((km >= 0))
+frota_revisoes	f FOREIGN KEY (criada_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_revisoes	f FOREIGN KEY (manutencao_id) REFERENCES frota_manutencoes(id) ON DELETE CASCADE
+frota_revisoes	f FOREIGN KEY (veiculo_id) REFERENCES frota_veiculos(id) ON DELETE CASCADE
+frota_revisoes	p PRIMARY KEY (id)
+frota_uso	c CHECK (((km_volta IS NULL) OR (km_saida IS NULL) OR (km_volta >= km_saida)))
+frota_uso	c CHECK (((tanque_quartos >= 0) AND (tanque_quartos <= 4)))
+frota_uso	c CHECK (((volta_em IS NULL) OR (volta_em >= saida_em)))
+frota_uso	c CHECK ((tipo = ANY (ARRAY['viagem'::text, 'posse'::text])))
+frota_uso	f FOREIGN KEY (aceite_checklist_id) REFERENCES frota_checklist(id) ON DELETE SET NULL
+frota_uso	f FOREIGN KEY (aceite_por) REFERENCES auth.users(id) ON DELETE SET NULL
+frota_uso	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+frota_uso	f FOREIGN KEY (veiculo_id) REFERENCES frota_veiculos(id) ON DELETE CASCADE
+frota_uso	i CREATE UNIQUE INDEX USING btree (veiculo_id) WHERE (volta_em IS NULL)
+frota_uso	p PRIMARY KEY (id)
+frota_uso_pdf	c CHECK ((situacao = ANY (ARRAY['na_fila'::text, 'enviando'::text, 'enviado'::text, 'falhou'::text])))
+frota_uso_pdf	f FOREIGN KEY (uso_id) REFERENCES frota_uso(id) ON DELETE CASCADE
+frota_uso_pdf	p PRIMARY KEY (id)
+frota_uso_pdf	u UNIQUE (uso_id)
+frota_veiculos	c CHECK ((situacao = ANY (ARRAY['ativo'::text, 'em_manutencao'::text, 'alienado'::text, 'inativo'::text])))
+frota_veiculos	f FOREIGN KEY (bem_id) REFERENCES patrimonio_bens(id) ON DELETE SET NULL
+frota_veiculos	f FOREIGN KEY (comodo_id) REFERENCES patrimonio_comodos(id) ON DELETE SET NULL
+frota_veiculos	f FOREIGN KEY (empresa_id) REFERENCES patrimonio_empresas(id) ON DELETE SET NULL
+frota_veiculos	f FOREIGN KEY (local_id) REFERENCES patrimonio_locais(id) ON DELETE SET NULL
+frota_veiculos	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+frota_veiculos	i CREATE UNIQUE INDEX USING btree (bem_id) WHERE (bem_id IS NOT NULL)
+frota_veiculos	p PRIMARY KEY (id)
+frota_veiculos	u UNIQUE (placa)
+gc_estoque_item	p PRIMARY KEY (deposito_id, sku)
+gc_vendas_item	p PRIMARY KEY (mes, canal_loja_id, sku)
+gestao_comercial_briefings	p PRIMARY KEY (id)
+gestor_log	p PRIMARY KEY (id)
+gt_ad_analises	p PRIMARY KEY (ad_id)
+gt_budget_analises	p PRIMARY KEY (campaign_id)
+gt_campanhas_rascunho	c CHECK ((status = ANY (ARRAY['rascunho'::text, 'criada'::text, 'falhou'::text])))
+gt_campanhas_rascunho	f FOREIGN KEY (criado_por) REFERENCES auth.users(id)
+gt_campanhas_rascunho	p PRIMARY KEY (id)
+gt_config_metricas	p PRIMARY KEY (balde)
+gt_fila_decisoes	c CHECK ((decisao = ANY (ARRAY['aprovada'::text, 'recusada'::text])))
+gt_fila_decisoes	c CHECK ((escopo = ANY (ARRAY['orcamento'::text, 'criativos'::text, 'saude'::text])))
+gt_fila_decisoes	p PRIMARY KEY (id)
+gt_objetivo_interacao	c CHECK ((interacao = ANY (ARRAY['curtidas'::text, 'comentarios'::text, 'salvamentos'::text, 'compartilhamentos'::text])))
+gt_objetivo_interacao	c CHECK ((nivel = ANY (ARRAY['campanha'::text, 'anuncio'::text])))
+gt_objetivo_interacao	p PRIMARY KEY (alvo_id)
+gt_ponderada_config	c CHECK ((id = 1))
+gt_ponderada_config	p PRIMARY KEY (id)
+gt_ponderada_config_log	p PRIMARY KEY (id)
+gt_problemas_meta	p PRIMARY KEY (ad_id, codigo)
+ia_execucoes	p PRIMARY KEY (id)
+interesses_sugeridos	f FOREIGN KEY (marca_id) REFERENCES fabrica_marcas(id) ON DELETE CASCADE
+interesses_sugeridos	p PRIMARY KEY (id)
+interesses_sugeridos	u UNIQUE (marca_id, objetivo)
+mensagem_fila	c CHECK (((mensagem_status IS NULL) OR (mensagem_status = ANY (ARRAY['enviando'::text, 'enviada'::text, 'falhou'::text, 'ignorada'::text]))))
+mensagem_fila	c CHECK ((tipo = ANY (ARRAY['pedido'::text, 'followup'::text, 'inicio'::text])))
+mensagem_fila	p PRIMARY KEY (tipo, chave)
+noticias_concorrentes	i CREATE UNIQUE INDEX USING btree (marca, titulo, rodada)
+noticias_concorrentes	p PRIMARY KEY (id)
+noticias_panorama	p PRIMARY KEY (rodada)
+patrimonio_bens	c CHECK ((situacao = ANY (ARRAY['em_uso'::text, 'em_estoque'::text, 'em_manutencao'::text, 'baixado'::text])))
+patrimonio_bens	f FOREIGN KEY (categoria_id) REFERENCES patrimonio_categorias(id) ON DELETE SET NULL
+patrimonio_bens	f FOREIGN KEY (comodo_id) REFERENCES patrimonio_comodos(id) ON DELETE SET NULL
+patrimonio_bens	f FOREIGN KEY (empresa_id) REFERENCES patrimonio_empresas(id) ON DELETE SET NULL
+patrimonio_bens	f FOREIGN KEY (local_id) REFERENCES patrimonio_locais(id) ON DELETE SET NULL
+patrimonio_bens	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+patrimonio_bens	f FOREIGN KEY (tipo_id) REFERENCES patrimonio_tipos(id) ON DELETE SET NULL
+patrimonio_bens	p PRIMARY KEY (id)
+patrimonio_bens	u UNIQUE (numero)
+patrimonio_categorias	p PRIMARY KEY (id)
+patrimonio_categorias	u UNIQUE (nome)
+patrimonio_comodos	f FOREIGN KEY (local_id) REFERENCES patrimonio_locais(id) ON DELETE CASCADE
+patrimonio_comodos	i CREATE UNIQUE INDEX USING btree (local_id, nome)
+patrimonio_comodos	p PRIMARY KEY (id)
+patrimonio_config	p PRIMARY KEY (chave)
+patrimonio_empresas	p PRIMARY KEY (id)
+patrimonio_empresas	u UNIQUE (nome)
+patrimonio_locais	f FOREIGN KEY (empresa_id) REFERENCES patrimonio_empresas(id) ON DELETE CASCADE
+patrimonio_locais	i CREATE UNIQUE INDEX USING btree (empresa_id, nome)
+patrimonio_locais	p PRIMARY KEY (id)
+patrimonio_log	p PRIMARY KEY (id)
+patrimonio_posse	f FOREIGN KEY (bem_id) REFERENCES patrimonio_bens(id) ON DELETE CASCADE
+patrimonio_posse	f FOREIGN KEY (pessoa_id) REFERENCES acessos_pessoas(id) ON DELETE SET NULL
+patrimonio_posse	p PRIMARY KEY (id)
+patrimonio_tipos	f FOREIGN KEY (categoria_id) REFERENCES patrimonio_categorias(id) ON DELETE CASCADE
+patrimonio_tipos	p PRIMARY KEY (id)
+patrimonio_tipos	u UNIQUE (categoria_id, nome)
+perfil_visitas_hora	c CHECK (((hora >= 0) AND (hora <= 23)))
+perfil_visitas_hora	u UNIQUE (account_id, dia, hora)
+platform_settings	p PRIMARY KEY (key)
+profiles	c CHECK ((role = ANY (ARRAY['admin'::text, 'viewer'::text])))
+profiles	f FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
+profiles	f FOREIGN KEY (perfil_id) REFERENCES acessos_perfis(id) ON DELETE SET NULL
+profiles	p PRIMARY KEY (id)
+projetos_status	p PRIMARY KEY (id)
+projetos_status	u UNIQUE (projeto)
+push_preferencias	c CHECK ((tipo = ANY (ARRAY['vendas'::text, 'saldo'::text, 'conteudo'::text, 'frota'::text, 'frota_reserva'::text])))
+push_preferencias	f FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+push_preferencias	p PRIMARY KEY (user_id, tipo)
+push_subs	f FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+push_subs	p PRIMARY KEY (id)
+push_subs	u UNIQUE (endpoint)
+robos_esperados	p PRIMARY KEY (robo)
+robos_execucoes	p PRIMARY KEY (id)
+robos_travas	p PRIMARY KEY (robo)
+schema_migrations	p PRIMARY KEY (name)
+segredos_de_cron	p PRIMARY KEY (nome)
+shopify_pedidos	p PRIMARY KEY (id)
+social_metas	p PRIMARY KEY (account_id, periodo, indicador)
+user_permissions	f FOREIGN KEY (granted_by) REFERENCES profiles(id)
+user_permissions	f FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+user_permissions	p PRIMARY KEY (user_id, resource_key)
+vessel_agenda_da_loja	p PRIMARY KEY (loja)
+vessel_atendimentos	c CHECK ((loja = ANY (ARRAY['iguatemi'::text, 'tivoli'::text, 'parkshopping'::text])))
+vessel_atendimentos	c CHECK ((status = ANY (ARRAY['solicitado'::text, 'confirmado'::text, 'realizado'::text, 'remarcado'::text, 'cancelado'::text, 'no_show'::text])))
+vessel_atendimentos	f FOREIGN KEY (pessoa_id) REFERENCES vessel_pessoas(id) ON DELETE CASCADE
+vessel_atendimentos	i CREATE UNIQUE INDEX USING btree (chave_convite) WHERE (chave_convite IS NOT NULL)
+vessel_atendimentos	i CREATE UNIQUE INDEX USING btree (convite_codigo) WHERE (convite_codigo IS NOT NULL)
+vessel_atendimentos	p PRIMARY KEY (id)
+vessel_baixas	c CHECK ((motivo = ANY (ARRAY['extraviada'::text, 'defeito'::text, 'devolvida'::text, 'etiqueta_perdida'::text, 'teste'::text])))
+vessel_baixas	f FOREIGN KEY (codigo) REFERENCES vessel_pecas(codigo) ON DELETE CASCADE
+vessel_baixas	i CREATE UNIQUE INDEX USING btree (codigo) WHERE (desfeita_em IS NULL)
+vessel_baixas	p PRIMARY KEY (id)
+vessel_beauty_session_cadastros	f FOREIGN KEY (atendimento_id) REFERENCES vessel_atendimentos(id) ON DELETE SET NULL
+vessel_beauty_session_cadastros	f FOREIGN KEY (codigo) REFERENCES vessel_beauty_sessions(codigo)
+vessel_beauty_session_cadastros	f FOREIGN KEY (pessoa_id) REFERENCES vessel_pessoas(id) ON DELETE CASCADE
+vessel_beauty_session_cadastros	p PRIMARY KEY (id)
+vessel_beauty_session_cadastros	u UNIQUE (codigo, pessoa_id)
+vessel_beauty_sessions	p PRIMARY KEY (codigo)
+vessel_candidaturas	c CHECK ((experiencia = ANY (ARRAY['luxo'::text, 'varejo'::text, 'nao'::text])))
+vessel_candidaturas	p PRIMARY KEY (id)
+vessel_card_consultas	p PRIMARY KEY (id)
+vessel_cartao_arquivos	p PRIMARY KEY (codigo, nome)
+vessel_cartao_pedidos	c CHECK ((situacao = ANY (ARRAY['na_fila'::text, 'rodando'::text, 'pronto'::text, 'falhou'::text])))
+vessel_cartao_pedidos	p PRIMARY KEY (id)
+vessel_client_advisors	i CREATE UNIQUE INDEX USING btree (bling_vendedor_id) WHERE (bling_vendedor_id IS NOT NULL)
+vessel_client_advisors	i CREATE UNIQUE INDEX USING btree (chave)
+vessel_client_advisors	i CREATE UNIQUE INDEX USING btree (codigo)
+vessel_client_advisors	p PRIMARY KEY (id)
+vessel_clientes	p PRIMARY KEY (id)
+vessel_clientes	u UNIQUE (cpf)
+vessel_clientes	u UNIQUE (email)
+vessel_consentimentos	c CHECK ((((pessoa_id IS NOT NULL) AND (stylist_id IS NULL)) OR ((pessoa_id IS NULL) AND (stylist_id IS NOT NULL))))
+vessel_consentimentos	f FOREIGN KEY (pessoa_id) REFERENCES vessel_pessoas(id) ON DELETE CASCADE
+vessel_consentimentos	f FOREIGN KEY (stylist_id) REFERENCES vessel_stylists(id) ON DELETE CASCADE
+vessel_consentimentos	p PRIMARY KEY (id)
+vessel_convite_aberturas	p PRIMARY KEY (id)
+vessel_edicoes	c CHECK ((acao = ANY (ARRAY['desmarcar_gravada'::text, 'sobrescrever_para_fila'::text, 'sobrescrever_para_baixa'::text, 'registro_aprovado'::text, 'registro_recusado'::text, 'dono_trocado'::text, 'baixar_garantia'::text, 'lote_excluido'::text, 'peca_excluida'::text, 'etiqueta_adotada'::text, 'numero_trocado'::text, 'transferida_pela_dona'::text, 'material_do_lote'::text, 'conta_ligada_pelo_cpf'::text])))
+vessel_edicoes	p PRIMARY KEY (id)
+vessel_envios_ao_meta	f FOREIGN KEY (pedido_id) REFERENCES vessel_pedidos(id) ON DELETE CASCADE
+vessel_envios_ao_meta	i CREATE UNIQUE INDEX USING btree (event_id, evento)
+vessel_envios_ao_meta	p PRIMARY KEY (id)
+vessel_garantias_baixadas	p PRIMARY KEY (id)
+vessel_leituras	p PRIMARY KEY (id)
+vessel_lembretes	c CHECK (((cancelado_em IS NULL) = (cancelado_por IS NULL)))
+vessel_lembretes	c CHECK (((cancelado_por IS NULL) OR (cancelado_por = ANY (ARRAY['cliente'::text, 'registro'::text]))))
+vessel_lembretes	c CHECK (((email = lower(btrim(email))) AND (email <> ''::text)))
+vessel_lembretes	c CHECK ((peca_codigo = upper(regexp_replace(peca_codigo, '[\s.\-_]'::text, ''::text, 'g'::text))))
+vessel_lembretes	f FOREIGN KEY (cliente_id) REFERENCES vessel_clientes(id)
+vessel_lembretes	i CREATE UNIQUE INDEX USING btree (peca_codigo) WHERE ((cancelado_em IS NULL) AND (enviado_30_em IS NULL))
+vessel_lembretes	p PRIMARY KEY (id)
+vessel_lista_espera	i CREATE UNIQUE INDEX USING btree (lower(email))
+vessel_lista_espera	p PRIMARY KEY (id)
+vessel_lotes	c CHECK (((material IS NOT NULL) OR (material_fonte IS NULL)))
+vessel_lotes	c CHECK (((material IS NULL) OR (material = ANY (ARRAY['canvas'::text, 'couro'::text]))))
+vessel_lotes	c CHECK (((material_fonte IS NULL) OR (material_fonte = ANY (ARRAY['dono'::text, 'bling_estrutura'::text, 'painel'::text, 'herdado'::text]))))
+vessel_lotes	p PRIMARY KEY (id)
+vessel_origens	f FOREIGN KEY (pessoa_id) REFERENCES vessel_pessoas(id) ON DELETE CASCADE
+vessel_origens	p PRIMARY KEY (id)
+vessel_pecas	f FOREIGN KEY (lote_id) REFERENCES vessel_lotes(id) ON DELETE CASCADE
+vessel_pecas	p PRIMARY KEY (codigo)
+vessel_pedido_itens	f FOREIGN KEY (pedido_id) REFERENCES vessel_pedidos(id) ON DELETE CASCADE
+vessel_pedido_itens	p PRIMARY KEY (id)
+vessel_pedidos	c CHECK (((casou_lead_por IS NULL) OR (casou_lead_por = ANY (ARRAY['ficha'::text, 'email'::text, 'telefone'::text]))))
+vessel_pedidos	c CHECK (((casou_por IS NULL) OR (casou_por = ANY (ARRAY['bling_contato'::text, 'telefone'::text]))))
+vessel_pedidos	f FOREIGN KEY (lead_id) REFERENCES vessel_lista_espera(id) ON DELETE SET NULL
+vessel_pedidos	f FOREIGN KEY (pessoa_id) REFERENCES vessel_pessoas(id) ON DELETE SET NULL
+vessel_pedidos	i CREATE UNIQUE INDEX USING btree (bling_pedido_id)
+vessel_pedidos	p PRIMARY KEY (id)
+vessel_pedidos_de_registro	c CHECK ((decidido_por_que = ANY (ARRAY['bling'::text, 'na_mao'::text])))
+vessel_pedidos_de_registro	c CHECK ((estado = ANY (ARRAY['pendente'::text, 'aprovado'::text, 'recusado'::text])))
+vessel_pedidos_de_registro	f FOREIGN KEY (cliente_id) REFERENCES vessel_clientes(id)
+vessel_pedidos_de_registro	f FOREIGN KEY (codigo) REFERENCES vessel_pecas(codigo) ON DELETE CASCADE
+vessel_pedidos_de_registro	p PRIMARY KEY (id)
+vessel_permissoes	c CHECK ((finalidade = ANY (ARRAY['atendimento'::text, 'marketing'::text, 'imagem'::text])))
+vessel_permissoes	c CHECK ((situacao = ANY (ARRAY['concedida'::text, 'revogada'::text])))
+vessel_permissoes	f FOREIGN KEY (pessoa_id) REFERENCES vessel_pessoas(id) ON DELETE CASCADE
+vessel_permissoes	p PRIMARY KEY (id)
+vessel_pessoas	i CREATE UNIQUE INDEX USING btree (bling_contato_id) WHERE (bling_contato_id IS NOT NULL)
+vessel_pessoas	i CREATE UNIQUE INDEX USING btree (telefone)
+vessel_pessoas	p PRIMARY KEY (id)
+vessel_praca_cidades	f FOREIGN KEY (praca_id) REFERENCES vessel_pracas(id) ON DELETE CASCADE
+vessel_praca_cidades	p PRIMARY KEY (id)
+vessel_praca_cidades	u UNIQUE (cidade_chave)
+vessel_pracas	p PRIMARY KEY (id)
+vessel_pracas	u UNIQUE (sigla)
+vessel_private_edit_card_leituras	f FOREIGN KEY (private_edit_id) REFERENCES vessel_private_edits(id) ON DELETE CASCADE
+vessel_private_edit_card_leituras	p PRIMARY KEY (id)
+vessel_private_edits	c CHECK (((status <> 'realizado'::text) OR (realizado_em IS NOT NULL)))
+vessel_private_edits	c CHECK (((status <> ALL (ARRAY['cancelado'::text, 'nao_realizado'::text])) OR (NULLIF(TRIM(BOTH FROM COALESCE(motivo, ''::text)), ''::text) IS NOT NULL)))
+vessel_private_edits	c CHECK ((status = ANY (ARRAY['em_planejamento'::text, 'agendado'::text, 'confirmado'::text, 'realizado'::text, 'reagendado'::text, 'cancelado'::text, 'nao_realizado'::text])))
+vessel_private_edits	f FOREIGN KEY (praca_id) REFERENCES vessel_pracas(id)
+vessel_private_edits	f FOREIGN KEY (stylist_id) REFERENCES vessel_stylists(id) ON DELETE RESTRICT
+vessel_private_edits	i CREATE UNIQUE INDEX USING btree (chave)
+vessel_private_edits	i CREATE UNIQUE INDEX USING btree (codigo)
+vessel_private_edits	p PRIMARY KEY (id)
+vessel_rd_envios	c CHECK ((status = ANY (ARRAY['pendente'::text, 'enviado'::text, 'ok'::text, 'falhou'::text, 'sem_email'::text])))
+vessel_rd_envios	f FOREIGN KEY (origem_id) REFERENCES vessel_origens(id) ON DELETE CASCADE
+vessel_rd_envios	p PRIMARY KEY (id)
+vessel_rd_envios	u UNIQUE (origem_id)
+vessel_registros	f FOREIGN KEY (cliente_id) REFERENCES vessel_clientes(id)
+vessel_registros	f FOREIGN KEY (codigo) REFERENCES vessel_pecas(codigo) ON DELETE CASCADE
+vessel_registros	f FOREIGN KEY (pedido_id) REFERENCES vessel_pedidos_de_registro(id)
+vessel_registros	p PRIMARY KEY (codigo)
+vessel_rsvp_tentativas	f FOREIGN KEY (atendimento_id) REFERENCES vessel_atendimentos(id) ON DELETE CASCADE
+vessel_rsvp_tentativas	p PRIMARY KEY (id)
+vessel_sessao_aberturas	p PRIMARY KEY (id)
+vessel_sessoes	f FOREIGN KEY (cliente_id) REFERENCES vessel_clientes(id) ON DELETE CASCADE
+vessel_sessoes	p PRIMARY KEY (id)
+vessel_sessoes	u UNIQUE (token_hash)
+vessel_stylist_aberturas	p PRIMARY KEY (id)
+vessel_stylist_circle_edicoes	c CHECK (((termina_em IS NULL) OR (termina_em >= comeca_em)))
+vessel_stylist_circle_edicoes	c CHECK ((situacao = ANY (ARRAY['planejada'::text, 'aberta'::text, 'encerrada'::text])))
+vessel_stylist_circle_edicoes	f FOREIGN KEY (praca_id) REFERENCES vessel_pracas(id)
+vessel_stylist_circle_edicoes	p PRIMARY KEY (id)
+vessel_stylist_circle_edicoes	u UNIQUE (praca_id, numero)
+vessel_stylist_contatos	c CHECK (((nota IS NULL) OR (length(nota) <= 500)))
+vessel_stylist_contatos	c CHECK ((canal = ANY (ARRAY['whatsapp'::text, 'ligacao'::text, 'instagram'::text, 'email'::text, 'presencial'::text])))
+vessel_stylist_contatos	c CHECK ((resultado = ANY (ARRAY['sem_resposta'::text, 'conversou'::text, 'interesse'::text, 'proposta'::text, 'marcou_encontro'::text, 'recusou'::text])))
+vessel_stylist_contatos	f FOREIGN KEY (stylist_id) REFERENCES vessel_stylists(id) ON DELETE CASCADE
+vessel_stylist_contatos	p PRIMARY KEY (id)
+vessel_stylist_etapas	c CHECK (((NOT conta_como_prospectada) OR ((tipo = 'funil'::text) AND ativa)))
+vessel_stylist_etapas	c CHECK (((length(btrim(nome)) >= 1) AND (length(btrim(nome)) <= 60)))
+vessel_stylist_etapas	c CHECK ((tipo = ANY (ARRAY['funil'::text, 'saida'::text])))
+vessel_stylist_etapas	i CREATE UNIQUE INDEX USING btree (conta_como_prospectada) WHERE conta_como_prospectada
+vessel_stylist_etapas	i CREATE UNIQUE INDEX USING btree (lower(btrim(nome))) WHERE ativa
+vessel_stylist_etapas	p PRIMARY KEY (id)
+vessel_stylist_etapas_historico	c CHECK (((nota IS NULL) OR (length(nota) <= 500)))
+vessel_stylist_etapas_historico	c CHECK ((motivo = ANY (ARRAY['cadastro'::text, 'mudanca'::text, 'etapa_excluida'::text, 'troca_de_motivo'::text])))
+vessel_stylist_etapas_historico	f FOREIGN KEY (de_etapa_id) REFERENCES vessel_stylist_etapas(id)
+vessel_stylist_etapas_historico	f FOREIGN KEY (motivo_id) REFERENCES vessel_stylist_motivos_de_saida(id)
+vessel_stylist_etapas_historico	f FOREIGN KEY (para_etapa_id) REFERENCES vessel_stylist_etapas(id)
+vessel_stylist_etapas_historico	f FOREIGN KEY (stylist_id) REFERENCES vessel_stylists(id)
+vessel_stylist_etapas_historico	p PRIMARY KEY (id)
+vessel_stylist_etapas_trilha	c CHECK ((acao = ANY (ARRAY['criar'::text, 'renomear'::text, 'reordenar'::text, 'tipo'::text, 'marcar_prospectada'::text, 'excluir'::text, 'libera_private_edit'::text, 'motivo_criar'::text, 'motivo_renomear'::text, 'motivo_reordenar'::text, 'motivo_ativar'::text, 'motivo_exige_nota'::text])))
+vessel_stylist_etapas_trilha	f FOREIGN KEY (etapa_id) REFERENCES vessel_stylist_etapas(id)
+vessel_stylist_etapas_trilha	p PRIMARY KEY (id)
+vessel_stylist_motivos_de_saida	c CHECK (((length(btrim(nome)) >= 1) AND (length(btrim(nome)) <= 80)))
+vessel_stylist_motivos_de_saida	f FOREIGN KEY (etapa_id) REFERENCES vessel_stylist_etapas(id)
+vessel_stylist_motivos_de_saida	i CREATE UNIQUE INDEX USING btree (etapa_id, lower(btrim(nome))) WHERE ativo
+vessel_stylist_motivos_de_saida	p PRIMARY KEY (id)
+vessel_stylist_na_edicao	f FOREIGN KEY (edicao_id) REFERENCES vessel_stylist_circle_edicoes(id) ON DELETE CASCADE
+vessel_stylist_na_edicao	f FOREIGN KEY (etapa_ao_sair) REFERENCES vessel_stylist_etapas(id)
+vessel_stylist_na_edicao	f FOREIGN KEY (stylist_id) REFERENCES vessel_stylists(id) ON DELETE CASCADE
+vessel_stylist_na_edicao	p PRIMARY KEY (id)
+vessel_stylist_na_edicao	u UNIQUE (stylist_id, edicao_id)
+vessel_stylist_qualificacoes	c CHECK ((((carteira >= 1) AND (carteira <= 5)) AND ((portfolio >= 1) AND (portfolio <= 5)) AND ((mobilizacao >= 1) AND (mobilizacao <= 5)) AND ((acesso >= 1) AND (acesso <= 5)) AND ((confiabilidade >= 1) AND (confiabilidade <= 5))))
+vessel_stylist_qualificacoes	c CHECK (((observacao IS NULL) OR (length(observacao) <= 280)))
+vessel_stylist_qualificacoes	f FOREIGN KEY (stylist_id) REFERENCES vessel_stylists(id) ON DELETE RESTRICT
+vessel_stylist_qualificacoes	p PRIMARY KEY (id)
+vessel_stylists	c CHECK (((loja IS NULL) OR (loja = ANY (ARRAY['iguatemi'::text, 'tivoli'::text, 'parkshopping'::text]))))
+vessel_stylists	c CHECK (((observacoes IS NULL) OR (length(observacoes) <= 2000)))
+vessel_stylists	c CHECK (((whatsapp IS NOT NULL) OR (NULLIF(btrim(COALESCE(instagram, ''::text)), ''::text) IS NOT NULL) OR sem_contato))
+vessel_stylists	c CHECK ((origem_contato = ANY (ARRAY['indicacao'::text, 'pesquisa'::text, 'evento'::text, 'inbound'::text])))
+vessel_stylists	f FOREIGN KEY (etapa_id) REFERENCES vessel_stylist_etapas(id)
+vessel_stylists	f FOREIGN KEY (praca_id) REFERENCES vessel_pracas(id)
+vessel_stylists	i CREATE UNIQUE INDEX USING btree (codigo)
+vessel_stylists	i CREATE UNIQUE INDEX USING btree (whatsapp)
+vessel_stylists	p PRIMARY KEY (id)
+vessel_tentativas_de_login	p PRIMARY KEY (id)
+vessel_transferencias	c CHECK (((cliente_para IS NULL) OR (cliente_para <> cliente_de)))
+vessel_transferencias	c CHECK (((usado_em IS NULL) = (cliente_para IS NULL)))
+vessel_transferencias	c CHECK (((usado_em IS NULL) OR (cancelado_em IS NULL)))
+vessel_transferencias	c CHECK ((peca_codigo = upper(regexp_replace(peca_codigo, '[\s.\-_]'::text, ''::text, 'g'::text))))
+vessel_transferencias	c CHECK ((vale_ate > criado_em))
+vessel_transferencias	f FOREIGN KEY (cliente_de) REFERENCES vessel_clientes(id)
+vessel_transferencias	f FOREIGN KEY (cliente_para) REFERENCES vessel_clientes(id)
+vessel_transferencias	i CREATE UNIQUE INDEX USING btree (peca_codigo) WHERE ((usado_em IS NULL) AND (cancelado_em IS NULL))
+vessel_transferencias	p PRIMARY KEY (id)
+vessel_vendedores_bling	p PRIMARY KEY (bling_vendedor_id)
+visitas_perfil_dia	f FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+visitas_perfil_dia	p PRIMARY KEY (account_id, dia)

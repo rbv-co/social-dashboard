@@ -505,7 +505,7 @@ func criarExecucao(p *pgxpool.Pool) http.HandlerFunc {
 		}
 		for _, c := range []string{"input_tokens", "output_tokens", "chamadas", "usd", "status"} {
 			if v, tem := campos[c]; tem && nulo(v.(json.RawMessage)) {
-				delete(campos, c) // null nas colunas com padrão (not null default): vale o padrão do banco
+				delete(campos, c) // null: vale o padrão do banco (input_tokens, output_tokens, chamadas, status: not null default); usd não tem padrão em produção, fica NULL ("custo desconhecido" para a tela de status)
 			}
 		}
 		ctx := r.Context()

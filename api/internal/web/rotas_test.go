@@ -509,7 +509,7 @@ func TestRedesPelaMontagemReal(t *testing.T) {
 	exec(`insert into profiles (id, email, role, features, escopo_por_equipe, allowed_accounts) values
 		($1::uuid, 'limitada@x.com', 'viewer', '{social}', false, array[$3::uuid]),
 		($2::uuid, 'admin@x.com', 'admin', '{social}', false, null)`, limitada, admin, a1)
-	exec(`insert into accounts (id, name) values ($1::uuid, 'Vessel'), ($2::uuid, 'Mantova')`, a1, a2)
+	exec(`insert into accounts (id, name, username, instagram_id) values ($1::uuid, 'Vessel', 'vessel', '1784'), ($2::uuid, 'Mantova', 'mantova', '1785')`, a1, a2)
 	exec(`insert into engagement_snapshots (account_id, captured_at, period_days, likes) values
 		($1::uuid, '2026-10-11', 7, 10), ($2::uuid, '2026-10-11', 7, 30)`, a1, a2)
 	tokL, _ := s.Criar(ctx, limitada, "painel", nil)
@@ -1257,7 +1257,7 @@ func TestConteudoPelaMontagemReal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := p.Exec(ctx, `insert into accounts (id, name) values ($1::uuid, 'Vessel'), ($2::uuid, 'Mantova')`, a1, a2); err != nil {
+	if _, err := p.Exec(ctx, `insert into accounts (id, name, username, instagram_id) values ($1::uuid, 'Vessel', 'vessel', '1784'), ($2::uuid, 'Mantova', 'mantova', '1785')`, a1, a2); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.Exec(ctx, `insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em) values

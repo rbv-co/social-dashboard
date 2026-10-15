@@ -80,7 +80,7 @@ var pessoas = []mundoteste.Pessoa{
 // Sem identidade. Toda linha de A2 carrega o uuid de A2 (na conta da linha, da peça-mãe ou no caminho).
 const linhasDoConteudo = `
 update profiles set permissions = '{"conteudo": ["ver"]}' where id = '` + idChaveConteudo + `';
-insert into accounts (id, name, username) values ('` + A1 + `', 'Vessel', 'vessel'), ('` + A2 + `', 'Mantova', 'mantova');
+insert into accounts (id, name, username, instagram_id) values ('` + A1 + `', 'Vessel', 'vessel', '1784'), ('` + A2 + `', 'Mantova', 'mantova', '1785');
 insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em, publicado_em, avisado_em, ig_media_id, criado_por, created_at) values
   ('` + P1 + `', '` + A1 + `', 'Bastidor da loja', 'reels', 'rascunho', null, null, null, null, '` + idConteudista + `', '2026-10-01T10:00:00Z'),
   ('` + P2 + `', '` + A1 + `', 'Lançamento', 'feed', 'em_aprovacao', '2026-10-20T15:00:00Z', null, null, null, '` + idConteudista + `', '2026-10-02T10:00:00Z'),

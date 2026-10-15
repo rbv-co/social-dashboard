@@ -62,8 +62,8 @@ func TestAnuncios(t *testing.T) {
 	casos = append(casos,
 		// gasto exato: numeric sai do Postgres como número JSON, sem passar por float64
 		mundoteste.Caso{Nome: "gasto da campanha", Quem: "soA1", Metodo: "GET", Caminho: "/redes/insights-de-campanha?account_id=" + A1 + "&period_days=0&captured_at=2026-10-11", Status: 200, Tem: `"spend":1234.56`, NaoTem: `"spend":100.1`},
-		// o zero final só o numeric do Postgres preserva: float64 em Go daria 100.1
-		mundoteste.Caso{Nome: "gasto 100.10 com o zero final", Quem: "todas", Metodo: "GET", Caminho: "/redes/insights-de-campanha?account_id=" + A1 + "&captured_at=2026-10-10", Status: 200, Tem: `"spend":100.10,`},
+		// a escala de produção (campaign_insights.spend é numeric(14,4)) só o numeric do Postgres preserva: float64 em Go daria 100.1
+		mundoteste.Caso{Nome: "gasto 100.1000 com os zeros finais da produção", Quem: "todas", Metodo: "GET", Caminho: "/redes/insights-de-campanha?account_id=" + A1 + "&captured_at=2026-10-10", Status: 200, Tem: `"spend":100.1000,`},
 		mundoteste.Caso{Nome: "filtro campaign_id direto", Quem: "todas", Metodo: "GET", Caminho: "/redes/insights-de-campanha?campaign_id=9001", Status: 200, Tem: `"campaign_id":"9001"`, NaoTem: `"campaign_id":"9002"`},
 		mundoteste.Caso{Nome: "gasto e frequência da conta", Quem: "soA1", Metodo: "GET", Caminho: "/redes/insights-da-conta?account_id=" + A1 + "&period_days=7&ordem=captured_at.desc&limite=1", Status: 200, Tem: `"spend":1334.66,`},
 		mundoteste.Caso{Nome: "frequência da conta", Quem: "soA1", Metodo: "GET", Caminho: "/redes/insights-da-conta?account_id=" + A1 + "&period_days=7&ordem=captured_at.desc&limite=1", Status: 200, Tem: `"frequency":3.33`},
