@@ -42,7 +42,6 @@ var pessoasDasLeituras = []mundoteste.Pessoa{
 // Valores que NUNCA podem sair: colunas que as telas não leem.
 const (
 	segredoIP      = "HASH-DE-IP-SECRETO"
-	segredoSenha   = "HASH-DE-SENHA-SECRETA"
 	segredoOrigem  = "ORIGEM-INTERNA-DO-REGISTRO"
 	segredoIPCrua  = "10.99.88.77"
 	segredoUrl     = "https://loja.exemplo/recuperar/SEGREDO-DA-URL"
@@ -149,7 +148,7 @@ func TestLeiturasSemColunaEscondida(t *testing.T) {
 	m := novoMundoDasLeituras(t)
 	for rota := range leituras {
 		_, corpo := m.Pedir(t, "super", "GET", rota, "")
-		for _, s := range []string{segredoIP, segredoSenha, segredoOrigem, segredoIPCrua, segredoUrl, segredoChatwoo, "NAVEGADOR-META-INTERNO", "origem_registro", "ip_hash", "url_de_recuperacao", "chatwoot", `"ip"`} {
+		for _, s := range []string{segredoIP, segredoOrigem, segredoIPCrua, segredoUrl, segredoChatwoo, "NAVEGADOR-META-INTERNO", "origem_registro", "ip_hash", "url_de_recuperacao", "chatwoot", `"ip"`} {
 			if strings.Contains(corpo, s) {
 				t.Errorf("GET %s devolveu %q: %s", rota, s, corpo)
 			}
@@ -172,6 +171,14 @@ func TestLeiturasFiltrosEOrdem(t *testing.T) {
 			Status: 200, Tem: `"loja":"iguatemi"`, NaoTem: `"status":"solicitado"`},
 		{Nome: "criado_desde", Quem: "leads", Metodo: "GET", Caminho: "/vessel/atendimentos?criado_desde=2026-10-02T00:00:00Z",
 			Status: 200, Tem: `"status":"solicitado"`, NaoTem: `"confirmado"`},
+		{Nome: "só janela_ate: o dia marcado e a criação do sem dia mandam (A1 e A2 saem, A3 fica)", Quem: "atend", Metodo: "GET", Caminho: "/vessel/atendimentos?janela_ate=2026-10-05T00:00:00Z",
+			Status: 200, Tem: `"loja":"tivoli"`, NaoTem: `"solicitado"`},
+		{Nome: "borda exata: o dia marcado às 15:00Z entra em janela_ate=15:00Z e sai em 14:59:59Z", Quem: "atend", Metodo: "GET", Caminho: "/vessel/atendimentos?janela_de=2026-10-10T00:00:00Z&janela_ate=2026-10-10T15:00:00Z",
+			Status: 200, Tem: `"convite_codigo":"CV-1"`},
+		{Nome: "borda exata: fora por 1 s", Quem: "atend", Metodo: "GET", Caminho: "/vessel/atendimentos?janela_de=2026-10-10T00:00:00Z&janela_ate=2026-10-10T14:59:59Z",
+			Status: 200, NaoTem: `"convite_codigo":"CV-1"`},
+		{Nome: "quando fora da janela com criado_em dentro: fica de fora (o dia marcado manda)", Quem: "atend", Metodo: "GET", Caminho: "/vessel/atendimentos?janela_de=2026-10-20T00:00:00Z&janela_ate=2026-10-31T00:00:00Z",
+			Status: 200, Tem: `[]`},
 		{Nome: "janela inválida", Quem: "atend", Metodo: "GET", Caminho: "/vessel/atendimentos?janela_de=ontem", Status: 400},
 		// Pedidos: só o atendido (9), das pessoas pedidas, na janela de datas
 		{Nome: "pedido atendido da pessoa", Quem: "atend", Metodo: "GET", Caminho: "/vessel/pedidos?situacao_id=9&pessoa_id=101,102&pedido_de=2026-10-01&pedido_ate=2026-10-31",

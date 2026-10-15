@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -88,10 +89,14 @@ func (c corpoPessoa) Validar() error {
 	return urlDeFoto(c.AvatarURL)
 }
 
-var errFoto = errors.New("A foto precisa ser uma URL http(s) de até 2048 caracteres.")
+var errFoto = errors.New("A foto precisa ser uma URL http(s) do bucket acessos-avatars, de até 2048 caracteres.")
+
+// caminhoDaFoto: onde a tela publica a foto (SUPABASE_URL ou o host da API + este caminho do Storage, Plano 6).
+const caminhoDaFoto = "/storage/v1/object/public/acessos-avatars/"
 
 // urlDeFoto: ausente ou null passam (null remove a foto); o resto é texto de até 2048 bytes, URL http(s)
-// absoluta com host. A tela põe a URL num <img src>: "javascript:", "data:" e caminho relativo ficam de fora.
+// absoluta com host e caminho do bucket de fotos: a URL vai num <img src> da ficha de todos, então nada de
+// "javascript:", "data:", caminho relativo nem pixel de rastreio em host qualquer.
 func urlDeFoto(v json.RawMessage) error {
 	if v == nil || string(v) == "null" {
 		return nil
@@ -101,7 +106,7 @@ func urlDeFoto(v json.RawMessage) error {
 		return errFoto
 	}
 	u, err := url.Parse(s)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || !strings.HasPrefix(u.Path, caminhoDaFoto) {
 		return errFoto
 	}
 	return nil

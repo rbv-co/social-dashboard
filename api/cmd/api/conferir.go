@@ -89,7 +89,7 @@ var colunasDoWorker = map[string]string{
 	"contatos_sem_mensagem":        "telefone,motivo",
 	"chatwoot_eventos":             "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
 	"shopify_pedidos":              "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
-	"carrinho_eventos":             "tipo,cart_token,evento_shopify_id,criado_em,session_id,utm_source,utm_medium,utm_campaign,gclid,referrer,fbp,fbc", // as 8 últimas: GET /vessel/carrinho-eventos (Plano 12)
+	"carrinho_eventos":             "id,tipo,cart_token,evento_shopify_id,criado_em,session_id,utm_source,utm_medium,utm_campaign,gclid,referrer,fbp,fbc", // as 8 últimas: GET /vessel/carrinho-eventos (Plano 12)
 	"vessel_pessoas":               "id,email,nome,telefone",
 	// Plano 12 (GET /vessel/*): as colunas que as leituras de Atendimentos, Base de Leads e Abandono selecionam
 	"vessel_atendimentos": "id,pessoa_id,loja,client_advisor,quando,status,convite_codigo,presenca_em,teste,criado_em",

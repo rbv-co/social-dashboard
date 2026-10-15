@@ -93,6 +93,9 @@ func caminhoValido(c string) bool {
 	return true
 }
 
+// CaminhoValido: a regra de caminho do Storage, para quem grava a linha que aponta para um arquivo (termo de colaborador).
+func CaminhoValido(c string) bool { return caminhoValido(c) }
+
 // raiz abre a pasta do bucket como os.Root: nenhum caminho, nem link simbólico, sai dela.
 func (s *Servico) raiz(b *bucket) (*os.Root, error) {
 	dir := filepath.Join(s.Raiz, b.Nome)

@@ -176,6 +176,8 @@ func TestPessoasEditar(t *testing.T) {
 		intacta("nome em branco", "acessos", P1, `{"nome":" "}`, 400, "Nome é obrigatório"),
 		intacta("o elo com o login é do POST …/ligar", "acessos", P3, `{"profile_id":"`+idViewer+`"}`, 400, "corpo_invalido"),
 		intacta("foto: javascript: não entra no <img>", "acessos", P1, `{"avatar_url":"javascript:alert(1)"}`, 400, "http(s)"),
+		intacta("foto: host qualquer com outro caminho (pixel de rastreio)", "acessos", P1, `{"avatar_url":"https://rastreador.exemplo/pixel.png"}`, 400, "http(s)"),
+		intacta("foto: caminho do bucket de termos, não o de fotos", "acessos", P1, `{"avatar_url":"https://x.com/storage/v1/object/public/acessos-termos/a.png"}`, 400, "http(s)"),
 		intacta("foto: caminho relativo", "acessos", P1, `{"avatar_url":"/storage/a.png"}`, 400, "http(s)"),
 		intacta("foto: data:", "acessos", P1, `{"avatar_url":"data:image/png;base64,AAAA"}`, 400, "http(s)"),
 		intacta("foto: não é texto", "acessos", P1, `{"avatar_url":123}`, 400, "http(s)"),

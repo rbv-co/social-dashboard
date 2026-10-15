@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/rbv-co/social-dashboard/api/internal/arquivos"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
 )
@@ -57,8 +58,9 @@ const colunasTermo = `t.id, t.pessoa_id, t.titulo, t.arquivo_path, t.enviado_em,
 // GET /acessos/termos (1821: ?pessoa_id=&contar=1&limite=1; 2173: ?pessoa_id=). O arquivo vai e volta pelo
 // Storage (bucket acessos-termos, Plano 6); estas rotas só mexem na LINHA (Plano 12).
 var consultaTermos = dados.Consulta{Tabela: "acessos_termos", Alias: "t",
-	SQL:         `select ` + colunasTermo + ` from acessos_termos t`,
-	Filtros:     []dados.Filtro{{Param: "pessoa_id", SQL: "t.pessoa_id = @pessoa_id::uuid", Tipo: "uuid"}},
+	SQL: `select ` + colunasTermo + ` from acessos_termos t`,
+	Filtros: []dados.Filtro{{Param: "pessoa_id", SQL: "t.pessoa_id = @pessoa_id::uuid", Tipo: "uuid"},
+		{Param: "id", SQL: "t.id = @id::uuid", Tipo: "uuid"}}, // baixar/excluir leem o arquivo_path pelo id do termo (Plano 12)
 	OrdemPadrao: "t.enviado_em desc", Desempate: "t.id"}
 
 // POST /acessos/termos (tela-de-acessos.vue:2061: {pessoa_id, titulo, arquivo_path} depois do upload) e
@@ -79,8 +81,9 @@ func (c corpoTermo) Validar() error {
 	if json.Unmarshal(c.PessoaID, &pessoa) != nil || json.Unmarshal(c.ArquivoPath, &caminho) != nil || pessoa == "" {
 		return errTermo
 	}
-	resto, ok := strings.CutPrefix(strings.ToLower(caminho), strings.ToLower(pessoa)+"/")
-	if !ok || strings.TrimSpace(resto) == "" || len(caminho) > 500 || strings.Contains(resto, "..") || strings.ContainsAny(caminho, "\\\x00") {
+	// a regra do Storage (sem "..", "." nem segmento vazio, controle ou barra invertida) e a pasta da pessoa;
+	// "..", dentro do nome ("termo...pdf" que o saneador da tela deixa passar), é nome comum.
+	if !arquivos.CaminhoValido(caminho) || !strings.HasPrefix(strings.ToLower(caminho), strings.ToLower(pessoa)+"/") {
 		return errTermo
 	}
 	return nil
