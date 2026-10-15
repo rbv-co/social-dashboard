@@ -205,11 +205,12 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			patrimonio.Montar(r, p)
 			// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
 			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
-			conteudo.Montar(r, p) // Plano 5.9
-			acessos.Montar(r, p)  // Plano 5.4: colaboradores e acessos (cadastro)
-			vessel.Montar(r, p)   // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
-			vendas.Montar(r, p)   // Plano 5.5: Comercial (Bling e Shopify)
-			frota.Montar(r, p)    // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
+			conteudo.Montar(r, p)     // Plano 5.9
+			acessos.Montar(r, p)      // Plano 5.4: colaboradores e acessos (cadastro)
+			vessel.Montar(r, p)       // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
+			vendas.Montar(r, p)       // Plano 5.5: Comercial (Bling e Shopify)
+			atendimentos.Montar(r, p) // Plano 12: as 7 leituras de Atendimentos, Base de Leads e Abandono (as 62 RPCs vão por FuncoesRPC)
+			frota.Montar(r, p)        // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {
 				panic(err) // declaração errada: a API não sobe

@@ -324,7 +324,7 @@ var rotas59 = []string{
 	"GET /conteudo/jobs",
 }
 
-// Plano 5.4: as 16 rotas de acessos.Montar (6 leituras, 10 escritas), no grupo de DOMÍNIO. Portão = catálogo,
+// Plano 5.4 (+ Plano 12: POST e DELETE de termo): as 18 rotas de acessos.Montar (6 leituras, 12 escritas), no grupo de DOMÍNIO. Portão = catálogo,
 // provado pela matriz de cada rota em `internal/acessos`; vazamento, impersonado e segredos por
 // `TestNadaVazaParaQuemNaoTemAcessos`, `TestEscritasRecusamImpersonado` e `TestConexoesNuncaSaem`.
 var rotas54 = []string{
@@ -333,6 +333,14 @@ var rotas54 = []string{
 	"GET /acessos/organizacoes", "POST /acessos/organizacoes", "DELETE /acessos/organizacoes/{id}",
 	"GET /acessos/setores", "POST /acessos/setores", "DELETE /acessos/setores/{id}",
 	"GET /acessos/recursos", "GET /acessos/vinculos", "POST /acessos/vinculos", "GET /acessos/termos",
+	"POST /acessos/termos", "DELETE /acessos/termos/{id}",
+}
+
+// Plano 12: as 7 leituras de atendimentos.Montar (Atendimentos, Base de Leads, Abandono de carrinho), no grupo de
+// DOMÍNIO. Portão = catálogo tabela a tabela, provado pela matriz de `internal/atendimentos` (TestLeiturasPorPolicy).
+var rotas512 = []string{
+	"GET /vessel/atendimentos", "GET /vessel/pedidos", "GET /vessel/pessoas", "GET /vessel/origens",
+	"GET /vessel/lista-espera", "GET /vessel/carrinho-eventos", "GET /vessel/checkout-abandono",
 }
 
 // Plano 5.10: as 6 leituras do selo. Portão = catálogo (is_vessel_admin), provado pela matriz de `internal/vessel`
@@ -371,7 +379,7 @@ var rotas55 = []string{
 }
 
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas53, rotas55, rotas510, rotas54) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas58, rotas59, rotas53, rotas55, rotas510, rotas54, rotas512) {
 		soSessao[c] = true
 	}
 }
@@ -554,7 +562,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa,
 		// Plano 5.10: o cartão EAN do Zoho, no grupo de SESSÃO com prazo próprio
 		"POST /vessel-baixar-cartao": PrazoCartao}
-	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, rotas510, rotas54, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3, 5.5, 5.10 e 5.4: no grupo de domínio, com o prazo dele
+	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, rotas510, rotas54, rotas512, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3, 5.5, 5.10, 5.4 e 12: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}
 	vistos := map[string]bool{}
