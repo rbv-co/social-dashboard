@@ -35,6 +35,8 @@ FALHAS=""; TUNEL=""; JANELA=0
 etapa() {
   _n=$1; shift; _c=0; [ "$1" = janela ] && { _c=1; shift; }
   echo "== $_n" >> "$OUT/etapas.log"; _t0=$(date +%s); _st=0
+  # túnel que caiu entre etapas (rede do Mac, suspensão) é reaberto; sem isso o ensaio falha por infraestrutura
+  [ -z "$TUNEL" ] || kill -0 "$TUNEL" 2> /dev/null || tunel >> "$OUT/etapas.log" 2>&1 || true
   "$@" >> "$OUT/etapas.log" 2>&1 || _st=$?
   _d=$(( $(date +%s) - _t0 )); [ $_c = 0 ] || JANELA=$((JANELA + _d))
   if [ $_st = 0 ]; then rel "$(printf '%-44s %5ss  OK' "$_n" "$_d")"; return 0; fi
