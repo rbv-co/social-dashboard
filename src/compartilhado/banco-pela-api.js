@@ -258,8 +258,30 @@ const ROTAS = {
     area: 'acessos', rota: '/acessos/vinculos', filtros: { recurso_id: eq('recurso_id'), pessoa_id: eq('pessoa_id') }, ordens: [],
     embutidosCols: { acessos_recursos: ['nome', 'tipo', 'arquivado_em'] },
   },
-  acessos_termos: { area: 'acessos', rota: '/acessos/termos', filtros: { pessoa_id: eq('pessoa_id') }, ordens: [] },
+  acessos_termos: { area: 'acessos', rota: '/acessos/termos', filtros: { pessoa_id: eq('pessoa_id'), id: eq('id') }, ordens: [] }, // `id`: baixar/excluir leem o caminho pelo id (Plano 12)
   acessos_log: { area: 'acessos', rota: '/acessos/log', filtros: {}, ordens: [], autoria: ['quem'] }, // só escreve; `quem` é da sessão
+  // ── Plano 12 — leituras da Vessel (`/vessel/*`). Sem permissão = 200 [] (a tela decide a frase). Ordem fixa na rota.
+  // `paginaAteOLimite`: a Base de Leads pede 2000 e a rota para em 1000 por pedido; o `.limit(2000)` lê em páginas
+  // (`contar=1`, `X-Total-Count`) e o aviso de corte da tela segue valendo ──
+  vessel_atendimentos: {
+    area: 'vessel', rota: '/vessel/atendimentos', filtros: { criado_em: { gte: 'criado_desde' } }, ordens: [], paginaAteOLimite: true,
+    ordemFixa: [{ col: 'quando', asc: false }],
+  },
+  vessel_pedidos: {
+    area: 'vessel', rota: '/vessel/pedidos', filtros: { situacao_id: eq('situacao_id'), pessoa_id: { eq: 'pessoa_id', in: 'pessoa_id' } }, ordens: [],
+  },
+  vessel_pessoas: { area: 'vessel', rota: '/vessel/pessoas', filtros: { id: { eq: 'id', in: 'id' } }, ordens: [] },
+  vessel_origens: { area: 'vessel', rota: '/vessel/origens', filtros: { pessoa_id: { eq: 'pessoa_id', in: 'pessoa_id' } }, ordens: [] },
+  vessel_lista_espera: {
+    area: 'vessel', rota: '/vessel/lista-espera', filtros: { criado_em: { gte: 'criado_desde' } }, ordens: [], paginaAteOLimite: true,
+  },
+  carrinho_eventos: {
+    area: 'vessel', rota: '/vessel/carrinho-eventos', filtros: { tipo: eq('tipo'), criado_em: { gte: 'criado_desde' } }, ordens: [], paginaAteOLimite: true,
+  },
+  checkout_abandono: {
+    area: 'vessel', rota: '/vessel/checkout-abandono', filtros: { iniciado_em: { gte: 'iniciado_desde' } }, ordens: [],
+    ordemFixa: [{ col: 'ultimo_evento_em', asc: false }],
+  },
   // ── 5.10 — Autenticidade / selo Vessel (`/autenticidade/*`). Ordem fixa na rota (sem `ordem` nem `select`) ──
   vessel_lotes: { area: 'autenticidade', rota: '/autenticidade/lotes', filtros: {}, ordens: [], ordemFixa: [{ col: 'criado_em', asc: false }] },
   vessel_pecas: { area: 'autenticidade', rota: '/autenticidade/pecas', filtros: { codigo: { in: 'codigo', eq: 'codigo' } }, ordens: [] },

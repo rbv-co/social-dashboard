@@ -173,7 +173,7 @@ import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 // Chave `vessel` (Plano 7): a função de presença pela API em Go (5.11).
-import { areaNaApi, fetchRpcDeEscritaNaArea } from '../../compartilhado/api.js'
+import { areaNaApi, pedir, fetchRpcDeEscritaNaArea } from '../../compartilhado/api.js'
 import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import {
   SITUACOES, SELO_DE_ENSAIO, resumoDosAtendimentos, comprasDaVisita, porDia,
@@ -263,9 +263,14 @@ async function carregar() {
     // ⚠️ SEM SESSÃO NÃO SE TENTA LER. Com a chave anônima a resposta é 200 com
     // lista vazia — a tela diria "nenhum atendimento" em vez de "faça login de
     // novo", que é a verdade.
-    // Chave `vessel` ligada: `vessel_atendimentos` e `vessel_pedidos` não têm rota na API (5.11 só tem as 62 funções).
+    // Chave `vessel` ligada: `GET /vessel/atendimentos` e `/vessel/pedidos` (Plano 12). A API devolve 401 sem sessão.
     if (areaNaApi('vessel')) {
-      erro.value = { tipo: 'indisponivel', acao: null, mensagem: 'Esta lista ainda não está disponível nesta versão da Central (a leitura dela não tem rota na nova API). Avise quem administra.' }
+      const { de, ate } = janelaDoPeriodo(periodo.value)
+      // A janela vai como INSTANTE com fuso (a loja é em Brasília), não como `or(...)` do PostgREST.
+      const r = await pedir('GET', '/vessel/atendimentos', { params: { janela_de: `${de}T00:00:00-03:00`, janela_ate: `${ate}T23:59:59-03:00`, limite: 500 } })
+      if (r.error) { erro.value = r.error; return }
+      atendimentos.value = r.data
+      await carregarCompras(r.data, de, ate)
       return
     }
     if (!estado.currentSession?.access_token) {
@@ -305,6 +310,12 @@ async function carregarCompras(lista, de, ate) {
   const [a, m, d] = ate.split('-').map(Number)
   const limite = new Date(a, m - 1, d + 7)
   const ateMais = `${limite.getFullYear()}-${String(limite.getMonth() + 1).padStart(2, '0')}-${String(limite.getDate()).padStart(2, '0')}`
+  if (areaNaApi('vessel')) {
+    // `situacao_id=9` (atendido) e `pessoa_id=1,2,3` (até 1000) são parâmetros da rota; a data do pedido vai `AAAA-MM-DD`.
+    const p = await pedir('GET', '/vessel/pedidos', { params: { situacao_id: 9, pessoa_id: ids.join(','), pedido_de: de, pedido_ate: ateMais, limite: 1000 } })
+    if (!p.error && Array.isArray(p.data)) pedidos.value = p.data // falhar aqui não derruba a lista (abaixo)
+    return
+  }
   const r = await fetch(
     // ⚠️ `situacao_id=eq.9` NÃO É ENFEITE: 9 é "atendido", a única situação que é
     // venda. Sem isto a tela mostra como compra um pedido que a loja CANCELOU —
