@@ -2,6 +2,8 @@ package acessos
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -52,20 +54,50 @@ var tabelaVinculos = dados.Tabela{Nome: "acessos_vinculos", Resposta: colunasVin
 
 const colunasTermo = `t.id, t.pessoa_id, t.titulo, t.arquivo_path, t.enviado_em, t.observacao`
 
-// GET /acessos/termos (1821: ?pessoa_id=&contar=1&limite=1; 2173: ?pessoa_id=). Enviar, baixar e
-// apagar termo mexem no arquivo: Plano 6, com a linha (Ruling 5.4-12).
+// GET /acessos/termos (1821: ?pessoa_id=&contar=1&limite=1; 2173: ?pessoa_id=). O arquivo vai e volta pelo
+// Storage (bucket acessos-termos, Plano 6); estas rotas só mexem na LINHA (Plano 12).
 var consultaTermos = dados.Consulta{Tabela: "acessos_termos", Alias: "t",
 	SQL:         `select ` + colunasTermo + ` from acessos_termos t`,
 	Filtros:     []dados.Filtro{{Param: "pessoa_id", SQL: "t.pessoa_id = @pessoa_id::uuid", Tipo: "uuid"}},
 	OrdemPadrao: "t.enviado_em desc", Desempate: "t.id"}
+
+// POST /acessos/termos (tela-de-acessos.vue:2061: {pessoa_id, titulo, arquivo_path} depois do upload) e
+// DELETE /acessos/termos/{id} (:2079). Regra do catálogo (acessos_termos_rw: is_acessos_admin()). O arquivo
+// do termo mora em <pessoa_id>/<nome> no bucket: caminho fora disso é recusado, para a linha não apontar
+// para o arquivo de outra pessoa nem para fora do bucket.
+type corpoTermo struct {
+	PessoaID    json.RawMessage `json:"pessoa_id,omitempty"`
+	Titulo      json.RawMessage `json:"titulo,omitempty"`
+	ArquivoPath json.RawMessage `json:"arquivo_path,omitempty"`
+	Observacao  json.RawMessage `json:"observacao,omitempty"`
+}
+
+var errTermo = errors.New("O arquivo do termo tem de estar na pasta da pessoa (pessoa_id/nome).")
+
+func (c corpoTermo) Validar() error {
+	var pessoa, caminho string
+	if json.Unmarshal(c.PessoaID, &pessoa) != nil || json.Unmarshal(c.ArquivoPath, &caminho) != nil || pessoa == "" {
+		return errTermo
+	}
+	resto, ok := strings.CutPrefix(strings.ToLower(caminho), strings.ToLower(pessoa)+"/")
+	if !ok || strings.TrimSpace(resto) == "" || len(caminho) > 500 || strings.Contains(resto, "..") || strings.ContainsAny(caminho, "\\\x00") {
+		return errTermo
+	}
+	return nil
+}
+
+var tabelaTermos = dados.Tabela{Nome: "acessos_termos", Resposta: colunasTermo}
 
 func montarPastas(r chi.Router, p *pgxpool.Pool) {
 	deve(consultaRecursos.Validar(autz.Producao))
 	deve(consultaVinculos.Validar(autz.Producao))
 	deve(consultaTermos.Validar(autz.Producao))
 	deve(tabelaVinculos.Validar(autz.Producao))
+	deve(tabelaTermos.Validar(autz.Producao))
 	r.Get("/acessos/recursos", consultaRecursos.Handler(p, autz.Producao))
 	r.Get("/acessos/vinculos", consultaVinculos.Handler(p, autz.Producao))
 	r.Get("/acessos/termos", consultaTermos.Handler(p, autz.Producao))
 	r.With(soSessaoPropria).Post("/acessos/vinculos", dados.RotaCriar[corpoVinculo](p, autz.Producao, tabelaVinculos))
+	r.With(soSessaoPropria).Post("/acessos/termos", dados.RotaCriar[corpoTermo](p, autz.Producao, tabelaTermos))
+	r.With(soSessaoPropria).Delete("/acessos/termos/{id}", dados.RotaApagar(p, autz.Producao, tabelaTermos))
 }

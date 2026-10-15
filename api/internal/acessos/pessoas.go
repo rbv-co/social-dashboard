@@ -3,6 +3,7 @@ package acessos
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -57,8 +58,9 @@ func (c corpoPessoaNova) Validar() error {
 
 // PATCH /acessos/pessoas/{id}: a união das edições (ficha 1618, campo único 1783, desligar 1858,
 // reativar 1891, Zoho 1964, e-mail do OneDrive 1279/2323; Frota 948/1005; lotação do Admin 3166).
-// Fora: profile_id (só por POST …/ligar: decide pode_ver_bem, Ruling 5.4-7), avatar_url (o Plano 6
-// grava junto com o arquivo, Ruling 5.4-12), id, criado_em — mandar = 400.
+// avatar_url (Plano 12): a tela grava a URL da foto depois de enviar o arquivo ao Storage (null remove
+// a foto); só http(s) absoluta. Fora: profile_id (só por POST …/ligar: decide pode_ver_bem, Ruling 5.4-7),
+// id, criado_em — mandar = 400. O POST (cadastro novo) segue sem avatar_url: a foto vem depois.
 type corpoPessoa struct {
 	Nome               json.RawMessage `json:"nome,omitempty"`
 	Cargo              json.RawMessage `json:"cargo,omitempty"`
@@ -75,12 +77,32 @@ type corpoPessoa struct {
 	DataFimContrato    json.RawMessage `json:"data_fim_contrato,omitempty"`
 	MotivoSaida        json.RawMessage `json:"motivo_saida,omitempty"`
 	ZohoAccountID      json.RawMessage `json:"zoho_account_id,omitempty"`
+	AvatarURL          json.RawMessage `json:"avatar_url,omitempty"`
 	AtualizadoEm       json.RawMessage `json:"atualizado_em,omitempty"`
 }
 
 func (c corpoPessoa) Validar() error {
 	if c.Nome != nil && emBranco(c.Nome) {
 		return errors.New("Nome é obrigatório")
+	}
+	return urlDeFoto(c.AvatarURL)
+}
+
+var errFoto = errors.New("A foto precisa ser uma URL http(s) de até 2048 caracteres.")
+
+// urlDeFoto: ausente ou null passam (null remove a foto); o resto é texto de até 2048 bytes, URL http(s)
+// absoluta com host. A tela põe a URL num <img src>: "javascript:", "data:" e caminho relativo ficam de fora.
+func urlDeFoto(v json.RawMessage) error {
+	if v == nil || string(v) == "null" {
+		return nil
+	}
+	var s string
+	if json.Unmarshal(v, &s) != nil || len(s) > 2048 {
+		return errFoto
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return errFoto
 	}
 	return nil
 }

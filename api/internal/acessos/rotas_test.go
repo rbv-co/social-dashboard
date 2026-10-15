@@ -32,6 +32,8 @@ var escritas = map[string]escrita{
 	"POST /acessos/setores":             {"", `{"nome":"Intruso"}`, 403},
 	"DELETE /acessos/setores/{id}":      {S1, ``, 404},
 	"POST /acessos/vinculos":            {"", `{"recurso_id":"` + R1 + `","pessoa_id":"` + P3 + `","papel":"leitura","estado":"pendente"}`, 403},
+	"POST /acessos/termos":              {"", `{"pessoa_id":"` + P3 + `","titulo":"x","arquivo_path":"` + P3 + `/x.pdf"}`, 403},
+	"DELETE /acessos/termos/{id}":       {T1, ``, 404},
 }
 
 // varrer chama `f` para cada rota de Montar, com o caminho já preenchido e o corpo de `escritas`.
@@ -70,8 +72,8 @@ func TestEscritasRecusamImpersonado(t *testing.T) {
 			t.Errorf("%s %s como impersonado = %d %s", metodo, rota, st, b)
 		}
 	})
-	if n != 10 {
-		t.Errorf("escritas = %d, esperava 10 (rota de escrita nova? ponha soSessaoPropria e um caso em `escritas`)", n)
+	if n != 12 {
+		t.Errorf("escritas = %d, esperava 12 (rota de escrita nova? ponha soSessaoPropria e um caso em `escritas`)", n)
 	}
 	if depois := m.Um(t, fotoDosAcessos); depois != antes {
 		t.Error("o impersonado mudou o banco")
@@ -97,8 +99,8 @@ func TestNadaVazaParaQuemNaoTemAcessos(t *testing.T) {
 				t.Errorf("%s %s %s = %d %s; esperava %d", quem, metodo, rota, st, b, quer)
 			}
 		})
-		if l != 6 || g != 10 {
-			t.Errorf("rotas = %d leituras e %d escritas, esperava 6 e 10", l, g)
+		if l != 6 || g != 12 {
+			t.Errorf("rotas = %d leituras e %d escritas, esperava 6 e 12", l, g)
 		}
 	}
 	varrer(t, m, func(metodo, rota, caminho, corpo string) {
