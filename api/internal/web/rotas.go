@@ -21,6 +21,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/conteudo"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/custo"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
 	"github.com/rbv-co/social-dashboard/api/internal/email"
 	"github.com/rbv-co/social-dashboard/api/internal/fabrica"
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
@@ -158,7 +159,8 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)
 		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoCollabs)).Post("/contar-collabs", av.ContarCollabs)
 		// Plano 4: o mesmo portão da edge (superadmin ou permissions['frota.aprovar'] com 'ver').
-		r.With(auth.ExigirPermissao("frota.aprovar", "ver")).Post("/avisar-decisao-de-reserva",
+		// Quem entrou como outra pessoa não dispara o aviso (push em nome do aprovador): dados.SoSessaoPropria.
+		r.With(auth.ExigirPermissao("frota.aprovar", "ver"), dados.SoSessaoPropria(dados.FraseEntrarComo)).Post("/avisar-decisao-de-reserva",
 			(&frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}).ServeHTTP)
 
 		// Plano 5.7: proxies de IA (chave em ANTHROPIC_API_KEY_TRAFEGO) e de mapa (Nominatim). Portões = os das edges.

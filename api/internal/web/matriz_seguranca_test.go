@@ -239,7 +239,7 @@ var matriz = map[string]linha{
 	"POST /auth/esqueci-senha":                                       {gPublica, rwE},
 	"POST /auth/sair":                                                {gSessao, rwL},
 	"POST /auth/trocar-senha":                                        {gSessao, rwE},
-	"POST /avisar-decisao-de-reserva":                                {gModulo, rwL},
+	"POST /avisar-decisao-de-reserva":                                {gModulo, rwE},
 	"POST /avisos/preferencias":                                      {gSessao, rwE},
 	"POST /bling-proxy":                                              {gModulo, rwL},
 	"POST /buscar-lugar":                                             {gModulo, rwL},
