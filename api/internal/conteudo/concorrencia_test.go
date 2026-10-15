@@ -10,7 +10,8 @@ import (
 // ele pede "agendada", outra pessoa devolve a peça a rascunho e ainda não confirmou. A conferência tem
 // de esperar essa transação (for update) e, depois, enxergar o rascunho: 403. Sem a trava ela lê
 // "aprovada" (a foto de antes), o UPDATE espera e grava rascunho → agendada: a peça pula a aprovação,
-// que é o furo que a conferência existe para fechar.
+// que é o furo que a conferência existe para fechar. Há DUAS travas (autz.travar e a da conferência):
+// o teste só reprova se as duas saírem.
 func TestAgendarNaCorridaComODevolverARascunhoNaoPulaAAprovacao(t *testing.T) {
 	m := novoMundo(t, montarPecas)
 	ctx := t.Context()
@@ -30,7 +31,18 @@ func TestAgendarNaCorridaComODevolverARascunhoNaoPulaAAprovacao(t *testing.T) {
 		c, _ := m.Pedir(t, "conteudista", "PATCH", "/conteudo/pecas/"+P1, `{"status":"agendada","publicar_em":"2026-11-01T15:00:00.000Z"}`)
 		st <- c
 	}()
-	time.Sleep(500 * time.Millisecond) // o pedido já leu (ou está esperando a linha); só então a outra transação confirma
+	// só confirma a outra transação quando o pedido está de fato esperando a linha dela
+	esperando := false
+	for range 200 {
+		if m.Um(t, `select count(*)::text from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`) != "0" {
+			esperando = true
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !esperando {
+		t.Fatal("o pedido não chegou a esperar a linha travada: o teste não exerce a trava")
+	}
 	if err := outra.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}

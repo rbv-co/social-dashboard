@@ -92,7 +92,6 @@ func conexoesSoltas(m *mundoteste.Mundo) bool {
 // paralelo, o pool não perdeu conexão e o servidor não tem transação esquecida aberta.
 func TestEnxurradaDePedidosNaoVazaConexao(t *testing.T) {
 	m := novoMundo(t, montarUsos)
-	antes := m.P.Stat().TotalConns()
 	pedidos := []struct{ quem, metodo, caminho, corpo string }{
 		{"motorista", "GET", "/frota/usos", ""},
 		{"motorista", "POST", "/frota/usos", `{"veiculo_id":"` + V1 + `","km_saida":150}`},     // 409: carro fora
@@ -102,24 +101,30 @@ func TestEnxurradaDePedidosNaoVazaConexao(t *testing.T) {
 		{"motorista", "PATCH", "/frota/usos/" + U1, `{"observacao":"x"}`},                      // grava em linha dele
 		{"motorista", "POST", "/frota/usos/trocar", `{"veiculo_id":"` + V1 + `","fechar":{}}`}, // 400
 	}
-	mundoteste.EmParalelo(210, func(i int) {
+	status := make([]int, 210)
+	mundoteste.EmParalelo(len(status), func(i int) {
 		p := pedidos[i%len(pedidos)]
-		m.Resposta(t, p.quem, p.metodo, p.caminho, p.corpo)
+		status[i] = m.Resposta(t, p.quem, p.metodo, p.caminho, p.corpo).Code
 	})
+	vistos := map[int]int{}
+	for _, s := range status {
+		vistos[s]++
+	}
+	// os pedidos chegaram ao banco (nada de 401/5xx) e os dois lados (passa e recusa) foram exercidos
+	if vistos[200] == 0 || vistos[409] == 0 || vistos[403] == 0 || vistos[401]+vistos[500] != 0 {
+		t.Fatalf("status da enxurrada = %v: esperava 200, 403 e 409 e nenhum 401/500", vistos)
+	}
 	if !conexoesSoltas(m) {
 		t.Fatalf("depois da enxurrada: %d conexões em uso ou transação esquecida aberta", m.P.Stat().AcquiredConns())
-	}
-	if total := m.P.Stat().TotalConns(); total > m.P.Config().MaxConns {
-		t.Errorf("pool com %d conexões (antes %d), teto %d", total, antes, m.P.Config().MaxConns)
 	}
 }
 
 // Plano 03-D: isolamento. Enquanto a troca de posse está no meio (a posse velha já fechada, a nova ainda
-// sendo gravada: o gatilho de atraso segura 400 ms), quem lê vê o carro como estava ANTES, inteiro: a
+// sendo gravada: o gatilho de atraso segura 2 s), quem lê vê o carro como estava ANTES, inteiro: a
 // posse velha aberta e nenhuma nova. Nunca o meio-termo (velha fechada sem a nova).
 func TestLeituraDuranteATrocaNaoVeOMeioTermo(t *testing.T) {
 	m := novoMundo(t, montarUsos)
-	m.Atrasar(t, "frota_uso", "insert", 400)
+	m.Atrasar(t, "frota_uso", "insert", 2000)
 	feito := make(chan int, 1)
 	go func() {
 		c, _ := m.Pedir(t, "motorista", "POST", "/frota/usos/trocar",
@@ -129,7 +134,7 @@ func TestLeituraDuranteATrocaNaoVeOMeioTermo(t *testing.T) {
 	}()
 	// espera estar DENTRO da janela: a troca dormindo no gatilho do insert (o fechamento já rodou)
 	dormindo := false
-	for range 40 {
+	for range 200 {
 		if m.Um(t, `select count(*)::text from pg_stat_activity where datname = current_database() and wait_event = 'PgSleep'`) == "1" {
 			dormindo = true
 			break

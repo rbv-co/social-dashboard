@@ -9,8 +9,9 @@ import (
 )
 
 // Plano 03-A: oito cadastros de stylist ao mesmo tempo com o insert alargado em 50 ms: todos 200, todos com
-// código próprio (STY-NNNN sem repetir nem pular). A trava é o pg_advisory_xact_lock que a função toma
-// antes de calcular o próximo número; sem ela os oito calculam o mesmo número e sete batem no único.
+// código próprio (STY-NNNN, sem repetir). A função tem DUAS proteções, o pg_advisory_xact_lock antes de
+// calcular o próximo número e um laço de 3 tentativas que refaz a conta se o único estourar: tirar só a
+// trava não reprova este teste (o laço cobre). É guarda de regressão, não prova de cada proteção.
 func TestOitoCadastrosDeStylistComInsertLentoNaoRepetemCodigo(t *testing.T) {
 	m := novoMundo(t)
 	m.Atrasar(t, "vessel_stylists", "insert", 50)

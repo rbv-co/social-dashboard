@@ -94,8 +94,10 @@ func TestMigracoesSobemDescemESobemDeNovo(t *testing.T) {
 	// a 00009 troca uma função que é do dump e o Down dela não a desfaz (a de produção volta ao restaurar o
 	// dump de novo): é a única que pode sobrar
 	var fns string
-	p.QueryRow(context.Background(), `select coalesce(string_agg(proname, ',' order by proname), '') from pg_proc
-		where pronamespace = current_schema()::regnamespace`).Scan(&fns)
+	if err := p.QueryRow(context.Background(), `select coalesce(string_agg(proname, ',' order by proname), '') from pg_proc
+		where pronamespace = current_schema()::regnamespace`).Scan(&fns); err != nil {
+		t.Fatal(err)
+	}
 	if fns != "vessel_convite_marcar" {
 		t.Fatalf("depois de descer tudo sobraram as funções %q (esperava só vessel_convite_marcar)", fns)
 	}

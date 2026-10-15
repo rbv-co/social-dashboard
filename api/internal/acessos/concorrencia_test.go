@@ -23,6 +23,9 @@ func TestLigarOitoSimultaneasNaoPerdeAtualizacao(t *testing.T) {
 			st[i] = m.Resposta(t, "admin", "POST", "/acessos/pessoas/"+P3+"/ligar", `{"profile_id":"`+logins[i%2]+`"}`).Code
 		})
 		ficou := m.Um(t, acoesElo(P3))
+		if ficou != idViewer && ficou != idFrota {
+			t.Fatalf("rodada %d: a ficha ficou com %s depois de oito pedidos; esperava um dos dois logins (%v)", rodada, ficou, st)
+		}
 		for i, c := range st {
 			quer := http.StatusConflict
 			if logins[i%2] == ficou {
