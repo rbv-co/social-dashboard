@@ -83,6 +83,7 @@ export function travar(documento, janela) {
   const raiz = documento.documentElement.style;
   const corpo = documento.body.style;
   raiz.overflow = 'hidden';
+  documento.body.setAttribute?.('data-modal-aberto', ''); // o CSS esconde o botão flutuante de ajustes (moldura-do-aplicativo.vue)
   if (barra > 0) raiz.paddingRight = `${barra}px`; // item 2: compensa o salto
   // position:fixed no body — item 3, o que resolve o rubber-band do iOS.
   corpo.position = 'fixed';
@@ -98,6 +99,7 @@ export function destravar(documento, janela) {
   const raiz = documento.documentElement.style;
   const corpo = documento.body.style;
   raiz.overflow = '';
+  documento.body.removeAttribute?.('data-modal-aberto');
   raiz.paddingRight = '';
   corpo.position = '';
   corpo.top = '';

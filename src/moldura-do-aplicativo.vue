@@ -640,6 +640,8 @@ router.afterEach(() => fecharTodosOsModaisLegadosAoTrocarDeRota())
   box-shadow: var(--shadow-md); cursor: pointer; opacity: .82;
   transition: opacity .15s ease, color .15s ease, transform .15s ease;
 }
+/* Com modal aberto (fundo travado, ver travar-rolagem-de-fundo.js) o botão some: a 375px ele cobria o rodapé do modal. */
+body[data-modal-aberto] .btn-ajustes { display: none; }
 .btn-ajustes:hover { opacity: 1; color: var(--accent); transform: translateY(-1px); }
 .btn-ajustes:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
 
