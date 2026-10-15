@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { travar, destravar } from './travar-rolagem-de-fundo.js'
+import { travar, destravar, abrirModal, fecharModal, _reiniciarParaTeste } from './travar-rolagem-de-fundo.js'
 
 function documentoFalso() {
   const attrs = new Set()
@@ -18,6 +18,17 @@ test('travar marca o body e destravar tira a marca', () => {
   assert.ok(d.attrs.has('data-modal-aberto'))
   destravar(d, { scrollTo() {} })
   assert.ok(!d.attrs.has('data-modal-aberto'))
+})
+
+test('com dois modais abertos a marca só sai quando o último fecha', () => {
+  _reiniciarParaTeste()
+  const d = documentoFalso(), j = { innerWidth: 400, scrollY: 0, scrollTo() {} }
+  abrirModal(d, j); abrirModal(d, j)
+  fecharModal(d, j)
+  assert.ok(d.attrs.has('data-modal-aberto'), 'um modal ainda aberto: botão continua escondido')
+  fecharModal(d, j)
+  assert.ok(!d.attrs.has('data-modal-aberto'))
+  _reiniciarParaTeste()
 })
 
 test('o CSS da moldura esconde .btn-ajustes com a marca no body', () => {
