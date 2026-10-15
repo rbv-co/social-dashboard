@@ -1,12 +1,14 @@
 package web
 
-// Plano 02 do esforço REVISAO-TESTES-2026-10 (item C): paridade das RPCs. Para cada uma das funções registradas em
-// FuncoesRPC, chama a FUNÇÃO ORIGINAL do banco direto (SQL, numa transação com rollback, com auth.uid() igual ao do
-// pedido) e a ROTA `POST /rpc/{nome}` com os mesmos argumentos, e compara:
+// Plano 02 do esforço REVISAO-TESTES-2026-10 (item C): paridade das RPCs. A rota chama a MESMA função SQL do mesmo banco,
+// então o que se prova aqui é o INVÓLUCRO HTTP (montagem dos argumentos, forma do JSON, mapa de erros), não a lógica da
+// função. Para cada função registrada em FuncoesRPC, chama a função original direto (SQL, transação com rollback,
+// auth.uid() igual ao do pedido) e a rota `POST /rpc/{nome}` com os mesmos argumentos, e compara:
 //   - sucesso: o mesmo JSON (Valor = to_json(f(...)), Conjunto = json_agg das linhas, Nada = 204);
 //   - erro: o status HTTP que o PostgREST dava para aquele SQLSTATE (tabela abaixo, da documentação do PostgREST),
 //     salvo as diferenças de propósito listadas em statusDeProposito.
-// Dois casos por função: `{}` (só onde nenhum parâmetro é obrigatório) e todos os parâmetros `null`.
+// Dois casos por função: `{}` (só onde nenhum parâmetro é obrigatório) e todos os parâmetros `null`. Limite: só entradas
+// vazias/nulas (a forma das linhas de um setof com dados e o teto de 1000 linhas ficam fora) e só o status do erro, não o code.
 //
 // Sem PARIDADE_DATABASE_URL, roda no banco de teste (esquema de produção, sem dados). Com ela, roda sobre um banco
 // RESTAURADO de produção (dados reais; a rota COMMITA: nunca aponte para produção ou para o api-db compartilhado).
@@ -100,7 +102,7 @@ func TestParidadeDasRPCs(t *testing.T) {
 		}
 		t.Cleanup(pool.Close)
 		p = pool
-		if err := p.QueryRow(context.Background(), `select id::text from profiles where is_superadmin order by created_at limit 1`).Scan(&uid); err != nil {
+		if err := p.QueryRow(context.Background(), `select id::text from profiles where is_superadmin and not coalesce(disabled, false) order by created_at limit 1`).Scan(&uid); err != nil {
 			t.Fatalf("o banco restaurado não tem superadmin: %v", err)
 		}
 		st := auth.NovoStore(p)

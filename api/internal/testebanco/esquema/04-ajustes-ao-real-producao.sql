@@ -2,7 +2,8 @@
 -- O DDL de origem destas tabelas não está no repositório (01-tabelas-5-01/5-06/5-07 foram escritos pelo que o
 -- código usa); o information_schema de produção (testdata/producao_colunas.tsv) mostrou tipo, NOT NULL e default
 -- diferentes, colunas faltando e uma coluna a mais. Um ALTER por diferença, para o esquema de teste ser o real.
--- O teste esquema_vs_producao_test.go reprova qualquer divergência nova. Não reordena colunas.
+-- O teste esquema_vs_producao_test.go reprova qualquer divergência nova. Colunas que faltavam entram NO FIM da tabela (a ordem
+-- difere da produção: insert posicional em teste depende da ordem do esquema de teste, não da de produção).
 
 alter table public.access_requests alter column created_at drop not null;
 alter table public.access_requests alter column email set not null;

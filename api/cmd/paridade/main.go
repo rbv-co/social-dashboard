@@ -88,10 +88,10 @@ func rls(ctx context.Context, arq string, maxUsuarios int) error {
 	}
 
 	// os perfis ATIVOS (conta desativada leva 401 na API, de propósito): um de cada combinação (papel, superadmin, módulos,
-	// permissões, escopo por equipe); `viewer` vem antes de `admin` para o corte por -usuarios não deixar os viewers de fora
-	linhas, err := prod.Query(ctx, `select distinct on (role, is_superadmin, coalesce(features::text, ''), coalesce(permissions::text, ''), escopo_por_equipe)
+	// permissões, escopo por equipe); quem tem `allowed_accounts` (restrição por conta) vem primeiro, depois `viewer` antes de `admin`, para o corte por -usuarios não deixar os restritos de fora
+	linhas, err := prod.Query(ctx, `select distinct on (coalesce(allowed_accounts::text, '') <> '{}', role, is_superadmin, coalesce(features::text, ''), coalesce(permissions::text, ''), escopo_por_equipe)
 		id::text, role, is_superadmin from profiles where not coalesce(disabled, false)
-		order by role desc, is_superadmin, coalesce(features::text, ''), coalesce(permissions::text, ''), escopo_por_equipe, created_at`)
+		order by coalesce(allowed_accounts::text, '') <> '{}' desc, role desc, is_superadmin, coalesce(features::text, ''), coalesce(permissions::text, ''), escopo_por_equipe, created_at`)
 	if err != nil {
 		return err
 	}
@@ -206,6 +206,9 @@ func rls(ctx context.Context, arq string, maxUsuarios int) error {
 		}
 	}
 	fmt.Printf("\nperfis=%d tabelas=%d iguais=%d divergentes=%d sem comparação=%d\n", len(pessoas), len(tabelas), iguais, diferentes, semComparacao)
+	if diferentes > 0 {
+		return fmt.Errorf("%d divergência(s): leia as linhas DIVERGE (crescimento depois do dump explica contagem maior na produção)", diferentes)
+	}
 	return nil
 }
 

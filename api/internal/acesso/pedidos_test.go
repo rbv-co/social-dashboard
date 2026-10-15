@@ -225,8 +225,9 @@ func TestPedirAcessoPublicoBordasEUniformidade(t *testing.T) {
 	// status pending) barra a duplicada: a linha do mundo continua sendo a única
 	a := pedidoPublico(h, ip, `{"name":"Rep","email":"fulana@x.com"}`) // é o e-mail do pedido1 do mundo
 	b := pedidoPublico(h, ip, `{"name":"Rep","email":"fulana@x.com"}`)
+	caixaAlta := pedidoPublico(h, ip, `{"name":"Rep","email":"FULANA@X.COM"}`) // outra caixa: o índice é lower(email)
 	novo := pedidoPublico(h, ip, `{"name":"Rep","email":"nunca-vi@x.com"}`)
-	for _, w := range []*httptest.ResponseRecorder{a, b, novo} {
+	for _, w := range []*httptest.ResponseRecorder{a, b, caixaAlta, novo} {
 		if w.Code != 201 || !strings.HasPrefix(w.Body.String(), `{"id":"`) {
 			t.Errorf("e-mail repetido ou novo = %d %s; a resposta tem de ser uniforme", w.Code, w.Body)
 		}
@@ -234,7 +235,7 @@ func TestPedirAcessoPublicoBordasEUniformidade(t *testing.T) {
 	if a.Body.String() == b.Body.String() {
 		t.Error("dois pedidos devolveram o mesmo id")
 	}
-	if v := m.um(t, `select count(*)::text from access_requests where email = 'fulana@x.com'`); v != "1" {
+	if v := m.um(t, `select count(*)::text from access_requests where lower(email) = 'fulana@x.com'`); v != "1" {
 		t.Errorf("linhas do e-mail repetido = %s, esperava 1 (a do mundo; as duas repetidas não gravam)", v)
 	}
 
