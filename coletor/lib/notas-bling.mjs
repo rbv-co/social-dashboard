@@ -28,7 +28,7 @@ import { ajustarPelaDataDaNota } from '../../supabase/functions/_shared/data-da-
 // só reexportamos, para quem lê este arquivo saber onde ela está.
 export { ajustarPelaDataDaNota };
 
-const MODELOS = ['nfe', 'nfce'];
+export const MODELOS = ['nfe', 'nfce'];
 
 // ── Pura: o id da nota de um pedido, ou null quando não há nota ────────────
 //

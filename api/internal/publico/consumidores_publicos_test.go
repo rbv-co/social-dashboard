@@ -42,3 +42,26 @@ func TestSiteVesselBrasilFuncionaNaCentral(t *testing.T) {
 		}
 	}
 }
+
+// O que o CORE (vessel-cor-x/services/core/internal/cadastro/cadastro.go, `acoes`) chama na base, lido em 15/10/2026: as 14
+// funções de escrita em `rest/v1/rpc/<nome>` e a edge `vessel-conta`. A virada troca só a base e a chave no `core.env`
+// (CADASTRO_SUPABASE_URL/_CHAVE); nome que o Core chama e esta API não serve é 404 em produção (o visitante vê erro de
+// cadastro). `{}` basta: o que se prova é que o nome existe (parâmetro faltando é 400, nunca 404).
+var chamadasDoCore = []string{
+	"vessel_entrar_na_lista", "vessel_marcar_objetivo_e_motivo", "vessel_detalhar_visita", "vessel_interesse_da_beauty_session",
+	"vessel_solicitar_atendimento", "vessel_pedido_de_personal_atelier", "vessel_rsvp_da_private_edit", "vessel_rsvp_da_convidada",
+	"vessel_pedido_do_stylist", "vessel_candidatar_vaga", "vessel_registrar_cartao", "vessel_identificar_client_advisor",
+	"vessel_ligar_vendedor", "vessel_marcar_presenca",
+}
+
+func TestCoreChamaSoOQueACentralServe(t *testing.T) {
+	m := novoMundo(t, func(s *Servico) { s.SoCore = true; s.Edges = map[string]Edge{"vessel-conta": s.Conta(&falsoEmail{})} })
+	for _, nome := range chamadasDoCore {
+		if st, resp, _ := m.pedido(t, "/rest/v1/rpc/"+nome, `{}`, comCore, "apikey: "+segredoDoCore); st == 404 {
+			t.Errorf("o Core chama %s e a Central não serve (404 %s)", nome, resp)
+		}
+	}
+	if st, resp, _ := m.pedido(t, "/functions/v1/vessel-conta", `{}`, comCore); st == 404 {
+		t.Errorf("o Core chama a edge vessel-conta e a Central não serve (404 %s)", resp)
+	}
+}

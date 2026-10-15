@@ -1,0 +1,135 @@
+[
+  {
+    "operacao": "proximo lote do gerar",
+    "metodo": "POST",
+    "caminho": "/fabrica/robo/jobs/a5850000-0000-4000-a000-0000000000e1/proximo-lote",
+    "corpo": null
+  },
+  {
+    "operacao": "job começou a rodar",
+    "metodo": "PATCH",
+    "caminho": "/fabrica/robo/jobs/a5850000-0000-4000-a000-0000000000e1",
+    "corpo": {
+      "status": "rodando",
+      "github_run_id": "111"
+    }
+  },
+  {
+    "operacao": "criativo de produto",
+    "metodo": "POST",
+    "caminho": "/fabrica/robo/criativos",
+    "corpo": [
+      {
+        "campanha_id": "a5830000-0000-4000-a000-0000000000c1",
+        "sku": "SS1A.01",
+        "arquetipo": "produto",
+        "template": "produto-solo",
+        "formato": "feed",
+        "variante": "sage",
+        "preco_de": 890,
+        "preco_por": 790,
+        "storage_path": "a5830000-0000-4000-a000-0000000000c1/produto/ss1a-01-sage-feed.png",
+        "url": "https://midia.x/f/a.png",
+        "legenda": "legenda"
+      }
+    ]
+  },
+  {
+    "operacao": "criativo de promo",
+    "metodo": "POST",
+    "caminho": "/fabrica/robo/criativos",
+    "corpo": [
+      {
+        "campanha_id": "a5830000-0000-4000-a000-0000000000c1",
+        "arquetipo": "promo",
+        "template": "promo-sage",
+        "formato": "feed",
+        "variante": "sage",
+        "storage_path": "a5830000-0000-4000-a000-0000000000c1/promo/sage-feed.png",
+        "url": "https://midia.x/f/p.png",
+        "legenda": null
+      }
+    ]
+  },
+  {
+    "operacao": "preview do look",
+    "metodo": "PATCH",
+    "caminho": "/fabrica/robo/looks/promo-sage",
+    "corpo": {
+      "preview_url": "https://midia.x/f/p.png"
+    }
+  },
+  {
+    "operacao": "rastro da subida",
+    "metodo": "POST",
+    "caminho": "/fabrica/robo/meta-jobs",
+    "corpo": {
+      "ad_account_id": "act_123456",
+      "loja": "Tivoli",
+      "tipo": "estudio",
+      "meta_campaign_id": "120200000000001",
+      "adset_ids": [
+        "1202"
+      ],
+      "ad_ids": [
+        "1203"
+      ],
+      "payload": {
+        "campanhaId": "a5830000-0000-4000-a000-0000000000c3",
+        "destino": "feed",
+        "escolhidos": 2,
+        "caption": "x"
+      },
+      "status": "parcial",
+      "erro": "rate limit — 1 pendente(s)"
+    }
+  },
+  {
+    "operacao": "custo da execução",
+    "metodo": "POST",
+    "caminho": "/fabrica/robo/execucoes",
+    "corpo": {
+      "robo": "fabrica-gerar",
+      "acao": "gerar",
+      "modelo": "claude-sonnet-5-5",
+      "input_tokens": 1200,
+      "output_tokens": 300,
+      "chamadas": 2,
+      "usd": 0.0081,
+      "duracao_ms": 4100,
+      "itens": 3,
+      "unidade": "criativos",
+      "status": "ok",
+      "detalhe": null,
+      "github_run_id": null
+    }
+  },
+  {
+    "operacao": "rodada pronta",
+    "metodo": "PATCH",
+    "caminho": "/fabrica/robo/campanhas/a5830000-0000-4000-a000-0000000000c1",
+    "corpo": {
+      "status": "pronta"
+    }
+  },
+  {
+    "operacao": "rodada fechada",
+    "metodo": "PATCH",
+    "caminho": "/fabrica/robo/campanhas/a5830000-0000-4000-a000-0000000000c2",
+    "corpo": {
+      "fechar": true
+    }
+  },
+  {
+    "operacao": "job concluído",
+    "metodo": "PATCH",
+    "caminho": "/fabrica/robo/jobs/a5850000-0000-4000-a000-0000000000e1",
+    "corpo": {
+      "status": "concluido",
+      "resultado": {
+        "criativos": 3
+      },
+      "erro": null
+    }
+  }
+]
