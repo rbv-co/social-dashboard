@@ -223,7 +223,7 @@ func (c *Cliente) Listar(ctx context.Context, con Conexao, pasta string) ([]Item
 		}
 		err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&j)
 		resp.Body.Close()
-		if err != nil {
+		if err != nil || j.Data == nil { // sem `data` (ou null) não é pasta vazia ([] é): é resposta quebrada
 			return nil, errors.New("zoho: listagem ilegível")
 		}
 		for _, d := range j.Data {

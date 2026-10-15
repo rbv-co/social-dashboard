@@ -94,13 +94,16 @@ func (pv *PushVendas) listarPedidos(ctx context.Context, dia string) ([]pedido, 
 	var todos []pedido
 	for pagina := 1; pagina <= 10; pagina++ {
 		var resp struct {
-			Data []pedidoBling `json:"data"`
+			Data *[]pedidoBling `json:"data"` // ponteiro: ausente/null não é "dia sem pedido"
 		}
 		q := map[string]any{"dataInicial": dia, "dataFinal": dia, "idsSituacoes[]": "9", "pagina": strconv.Itoa(pagina), "limite": "100"}
 		if err := pv.blingGET(ctx, "/pedidos/vendas", q, &resp); err != nil {
 			return nil, err
 		}
-		for _, p := range resp.Data {
+		if resp.Data == nil {
+			return nil, fmt.Errorf("bling /pedidos/vendas: resposta sem lista de pedidos")
+		}
+		for _, p := range *resp.Data {
 			np := pedido{ID: int64(p.ID), Data: p.Data, Total: float64(p.Total)}
 			if p.Loja != nil && p.Loja.ID != nil {
 				id := int64(*p.Loja.ID)
@@ -108,7 +111,7 @@ func (pv *PushVendas) listarPedidos(ctx context.Context, dia string) ([]pedido, 
 			}
 			todos = append(todos, np)
 		}
-		if len(resp.Data) < 100 {
+		if len(*resp.Data) < 100 {
 			break
 		}
 	}

@@ -247,7 +247,12 @@ func (c *Chatwoot) AcharOuCriarContato(ctx context.Context, nome *string, telefo
 	if err != nil {
 		return 0, err
 	}
-	lista, _ := campo(achados, "payload").([]any)
+	// "não consegui ler" não é "não existe": sem a lista `payload` (corpo truncado, vazio, tipo trocado) o
+	// próximo passo seria CRIAR um contato que talvez já exista.
+	lista, ok := campo(achados, "payload").([]any)
+	if !ok {
+		return 0, idInesperado("buscar_contato")
+	}
 	for _, x := range lista {
 		ct, _ := x.(map[string]any)
 		if ct["phone_number"] != e164 {
