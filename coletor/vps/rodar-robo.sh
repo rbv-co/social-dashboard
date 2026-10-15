@@ -61,7 +61,10 @@ avisar() {
 if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
   velho=""
   case "${DATABASE_URL:-}" in *supabase.com*|*supabase.co*) velho="DATABASE_URL" ;; esac
-  [ -z "$velho" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ] && velho="SUPABASE_SERVICE_KEY"
+  # a chave de serviço só é "velha" se a URL REST ainda for a do Supabase (sem SUPABASE_URL, os robôs caem no host fixo dele)
+  if [ -z "$velho" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
+    case "${SUPABASE_URL:-supabase.co}" in *supabase.co*|*supabase.com*) velho="SUPABASE_SERVICE_KEY" ;; esac
+  fi
   if [ -n "$velho" ]; then
     log "RECUSADO: SAIU_DO_SUPABASE está ligada e $velho ainda aponta para o Supabase (o banco agora é o novo): ajuste $ENV_ROBOS"
     marca="$LOGS/$nome.falhou"
