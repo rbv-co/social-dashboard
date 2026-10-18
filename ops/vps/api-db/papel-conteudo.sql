@@ -13,14 +13,25 @@
   do $$ begin raise exception 'falta SENHA_CONTEUDO no ambiente'; end $$;
 \endif
 
+-- TRAVA (igual à do papel-pdv.sql): "nenhuma função" só vale com o EXECUTE de PUBLIC já revogado (papel-copia.sql, regra 15).
+select exists (select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+               where p.pronamespace = 'public'::regnamespace and a.grantee = 0 and a.privilege_type = 'EXECUTE') as aberto \gset
+\if :aberto
+  do $$ begin raise exception 'PUBLIC ainda tem EXECUTE em funções do public: aplique antes o papel-copia.sql (revoga) e rode de novo'; end $$;
+\endif
+
 select not exists (select 1 from pg_roles where rolname = 'conteudo_robo') as criar \gset
 \if :criar
   create role conteudo_robo login;
 \endif
-alter role conteudo_robo with login nosuperuser nocreatedb nocreaterole noinherit connection limit 2 password :'senha';
+alter role conteudo_robo with login nosuperuser nocreatedb nocreaterole noinherit nobypassrls connection limit 2 password :'senha';
 
 grant connect on database :"DBNAME" to conteudo_robo;
 grant usage on schema public to conteudo_robo;
+
+-- refaz do zero: reaplicar tira o que saiu deste arquivo
+revoke all on all tables in schema public from conteudo_robo;
+revoke all on all sequences in schema public from conteudo_robo;
 
 -- `accounts` guarda access_token: só as quatro colunas que o prompt usa, por COLUNA.
 grant select (id, name, username, conteudo_usa_portal) on public.accounts to conteudo_robo;

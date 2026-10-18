@@ -43,6 +43,40 @@ while IFS= read -r linha || [ -n "$linha" ]; do
 done < "$ENV_ROBOS"
 export PATH="$NODE_BIN:$PATH"
 
+# PAPEL DO ROBÔ NO BANCO NOVO (plano 02 da virada, ops/vps/api-db/LEIA-ME.md): cada robô tem a PRÓPRIA URL do api-db,
+# ROBO_<NOME>_DATABASE_URL (nome em maiúsculas, `-` vira `_`), que vira o DATABASE_URL só dele. Sem a variável nada muda (cron atual).
+# As URLs dos outros robôs saem do ambiente: papel por robô não vale nada se todo robô enxerga a senha de todos.
+var_url="ROBO_$(printf %s "$nome" | tr 'a-z-' 'A-Z_')_DATABASE_URL"
+[ -n "${!var_url:-}" ] && export DATABASE_URL="${!var_url}"
+for v in $(compgen -e | grep -E '^ROBO_.*_DATABASE_URL$'); do unset "$v"; done
+# O api-db não publica porta e o cron roda no host: `@api-db:` na URL vira o IP atual do contêiner na api_net (como o copia-do-banco.sh).
+# Sem IP a URL fica como está e o robô falha alto na conexão (nunca cai calado no banco velho).
+case "${DATABASE_URL:-}${REPORTAR_DATABASE_URL:-}${VIGIA_DATABASE_URL:-}" in
+  *@api-db:*)
+    ip_api_db=$(docker inspect -f '{{(index .NetworkSettings.Networks "api_net").IPAddress}}' api-db 2>/dev/null)
+    if [ -n "$ip_api_db" ]; then
+      for v in DATABASE_URL REPORTAR_DATABASE_URL VIGIA_DATABASE_URL; do
+        [ -n "${!v:-}" ] && export "$v=${!v//@api-db:/@$ip_api_db:}"
+      done
+    else log "aviso: não achei o IP do api-db (docker inspect)"; fi ;;
+esac
+
+# Robôs que NÃO leem o DATABASE_URL global (copia fala por COPIA_*, vigia por VIGIA_DATABASE_URL, publicar-o-site por banco nenhum):
+# com o corte ligado ele não vale para eles, e a trava abaixo os recusaria por nada (revisão Opus do PR do plano 02).
+# FASE 2 (Storage, plano 02): opr-diario e faxina-storage leem TABELAS por REST no Supabase velho (opr-diario: campaign_insights,
+# followers_leituras...; faxina-storage: fabrica_* para decidir o que apagar do bucket) e o Storage ainda mora lá. Com a chave
+# entregue eles leriam dado congelado (a faxina apagaria arquivo de campanha nova): ficam RECUSADOS (trava abaixo) até o plano 03
+# portar as leituras para o pg e a API ganhar o Storage. A chave segue guardada como STORAGE_SUPABASE_SERVICE_KEY no env, sem
+# ser entregue a ninguém. Sem a flag nada muda.
+fase2=""
+if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
+  case "$nome" in copia-do-banco|vigia-problemas-meta|publicar-o-site) unset DATABASE_URL ;; esac
+  case "$nome" in opr-diario|faxina-storage) fase2="SUPABASE_URL (dados e Storage ainda lidos do Supabase: fase 2)" ;; esac
+fi
+unset STORAGE_SUPABASE_SERVICE_KEY
+# a credencial do vigia é só dele (o REPORTAR_DATABASE_URL, do papel de menor poder, todos usam)
+[ "$nome" = vigia-problemas-meta ] || unset VIGIA_DATABASE_URL
+
 # Canais de aviso (ambos opcionais, em /etc/robos.env): ALERT_COMANDO (programa que recebe o texto como $1; na VPS
 # é o avisar-whatsapp.py, o mesmo grupo do monitor) e ALERT_WEBHOOK_URL (JSON `text`/`content`: Slack e Discord).
 # A mensagem nunca leva segredo: só o nome do robô e o motivo.
@@ -54,11 +88,38 @@ avisar() {
   fi
 }
 
+# A CHAVE DO CORTE (a mesma de copia-do-banco.sh): com SAIU_DO_SUPABASE ligada o banco é o NOVO. Robô cujo DATABASE_URL ainda é o
+# pooler do Supabase gravaria no banco VELHO (o `postgres` do pooler é o dono das tabelas: o congelar não o barra) e robô com
+# SUPABASE_SERVICE_KEY leria o velho por REST. Recusa SEM rodar nada (nem o `git pull`) e avisa o que ajustar em $ENV_ROBOS.
+# Achado 06-1 (REVISAO-TESTES-2026-10): o roteiro da virada só põe CENTRAL_API_* no env dos robôs.
+if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
+  velho="$fase2"
+  case "${DATABASE_URL:-}" in *supabase.com*|*supabase.co*) velho="DATABASE_URL" ;; esac
+  # a chave de serviço só é "velha" se a URL REST ainda for a do Supabase (sem SUPABASE_URL, os robôs caem no host fixo dele)
+  if [ -z "$velho" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
+    case "${SUPABASE_URL:-supabase.co}" in *supabase.co*|*supabase.com*) velho="SUPABASE_SERVICE_KEY" ;; esac
+  fi
+  if [ -n "$velho" ]; then
+    log "RECUSADO: SAIU_DO_SUPABASE está ligada e $velho ainda aponta para o Supabase (o banco agora é o novo): ajuste $ENV_ROBOS"
+    marca="$LOGS/$nome.falhou"
+    if [ ! -e "$marca" ] || [ -n "$(find "$marca" -mmin +360 2>/dev/null)" ]; then
+      touch "$marca"
+      avisar "Robô $nome RECUSADO na VPS: $velho ainda aponta para o Supabase com SAIU_DO_SUPABASE ligada. Ajuste $ENV_ROBOS."
+    fi
+    exit 78
+  fi
+fi
+
 # SEGUNDO CANAL DE AVISO: grava a rodada em `robos_execucoes`, o mesmo termômetro do painel de saúde da central
 # (`robos_saude`, olhado contra `robos_esperados`). O WhatsApp (ALERT_COMANDO) depende de uma sessão da Evolution que
 # cai e só volta lendo QR; sem este canal, robô parado é silêncio. Falha ao gravar NUNCA derruba nem muda o robô.
-# Sem SUPABASE_URL/SUPABASE_SERVICE_KEY em $ENV_ROBOS, não faz nada. $1=status $2=ok(true/false) $3=texto sem aspas.
+# Com REPORTAR_DATABASE_URL (papel `robo_reporte` no api-db) grava por `pg`; senão, por REST no Supabase (SUPABASE_URL +
+# SUPABASE_SERVICE_KEY); sem nenhum dos dois, não faz nada. $1=status $2=ok(true/false) $3=texto sem aspas.
 reportar() {
+  if [ -n "${REPORTAR_DATABASE_URL:-}" ]; then
+    timeout 20 node "$RAIZ/coletor/vps/reportar-rodada.mjs" "$nome" "$1" "$2" "$3" >> "$LOGS/$nome.log" 2>&1 || log "aviso: não consegui gravar a rodada no painel da central"
+    return 0
+  fi
   [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ] || return 0
   curl -fsS -m 15 -X POST "$SUPABASE_URL/rest/v1/robos_execucoes" \
     -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
@@ -95,7 +156,7 @@ flock -s 8   # a partir daqui o pull de OUTRO robô espera este terminar (ele s�
 log "início: $*"
 inicio=$(date +%s)
 cd "$RAIZ" || { log "ERRO: sem $RAIZ"; exit 78; }
-nice -n 10 timeout --kill-after=30 "$((limite * 60))" "$@" >> "$LOGS/$nome.log" 2>&1
+nice -n 10 timeout --kill-after=30 "$((limite * 60))" env -u REPORTAR_DATABASE_URL "$@" >> "$LOGS/$nome.log" 2>&1
 codigo=$?
 dur=$(( $(date +%s) - inicio ))
 

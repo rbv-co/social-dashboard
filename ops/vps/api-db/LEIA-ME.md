@@ -155,6 +155,76 @@ O PDV lê o número de série de `vessel_pecas`/`vessel_lotes` (`pdv-backend`, `
 2. Contêiner do PDV na rede `api_net` (o `api-db` não publica porta; o compose a declara `external`: ela tem de existir, o plano 09 recria o `api-db` sem derrubá-la): branch `feat/rev06-origem-sem-tls` do `pdv-backend` (compose + `sslmode=disable`), deploy pelo `deploy-com-reversao.sh`.
 3. `/root/pdv-backend/.env`: `SUPABASE_DATABASE_URL="postgres://pdv_leitura:<senha>@api-db:5432/api?sslmode=disable"`. Conferir no log do PDV que NÃO aparece "Sem SUPABASE_DATABASE_URL" e que a busca por número de série acha uma peça (`ABXCKN5PZA`).
 
+## Robôs da VPS: um papel por robô (plano 02 da virada, só com ok do dono)
+
+Hoje os robôs `pg` entram no Supabase como `postgres` (dono: o congelar não os barra) e os só-REST usam a chave de serviço.
+No `api-db` cada robô tem papel PRÓPRIO, com GRANT só nas tabelas/colunas que o código dele toca (`papel-robo-*.sql`,
+prova em `papel-robos.teste.sh`). Sem RLS aqui, o GRANT é a única tranca. Coluna sensível fica fora (`accounts.access_token`,
+`bling_tokens.client_secret`, `vessel_lista_espera.senha_hash`...): quem precisar pede GRANT novo, o robô falha alto com
+`permission denied`. `papel-copia.sql` vem ANTES (tira o EXECUTE de PUBLIC; os `papel-robo-*.sql` recusam sem isso).
+
+| Robô (nome no `rodar-robo.sh`) | Papel | Variável de URL em `/etc/robos.env` | Senha (`/root/secrets/…`, env do psql) |
+|---|---|---|---|
+| (todos: grava a rodada) | `robo_reporte` | `REPORTAR_DATABASE_URL` | `robo-reporte.senha` (`SENHA_ROBO_REPORTE`) |
+| fotos-do-selo | `robo_selo` | `ROBO_FOTOS_DO_SELO_DATABASE_URL` | `robo-selo.senha` |
+| pedidos-da-vessel | `robo_pedidos_vessel` | `ROBO_PEDIDOS_DA_VESSEL_DATABASE_URL` | `robo-pedidos-vessel.senha` |
+| pedidos-da-shopify | `robo_shopify` | `ROBO_PEDIDOS_DA_SHOPIFY_DATABASE_URL` | `robo-shopify.senha` |
+| meta-ads-no-zoho | `robo_metaads_zoho` | `ROBO_META_ADS_NO_ZOHO_DATABASE_URL` | `robo-metaads-zoho.senha` |
+| vigia-problemas-meta | `robo_vigia_meta` | `VIGIA_DATABASE_URL` (só este robô a recebe) | `robo-vigia-meta.senha` |
+| notas-dos-pedidos | `robo_notas` | `ROBO_NOTAS_DOS_PEDIDOS_DATABASE_URL` | `robo-notas.senha` |
+| relatorios-comerciais | `robo_relatorios` | `ROBO_RELATORIOS_COMERCIAIS_DATABASE_URL` | `robo-relatorios.senha` |
+| cards-comercial-diario | `robo_cards` | `ROBO_CARDS_COMERCIAL_DIARIO_DATABASE_URL` | `robo-cards.senha` |
+| gestor-comercial | `robo_gestor` | `ROBO_GESTOR_COMERCIAL_DATABASE_URL` | `robo-gestor.senha` |
+| sugerir-interesses | `robo_interesses` | `ROBO_SUGERIR_INTERESSES_DATABASE_URL` | `robo-interesses.senha` |
+| opr-diario | `robo_opr` | `ROBO_OPR_DIARIO_DATABASE_URL` | `robo-opr.senha` |
+| budget-ia | `robo_budget` | `ROBO_BUDGET_IA_DATABASE_URL` | `robo-budget.senha` |
+| coletor-noticias | `robo_noticias` | `ROBO_COLETOR_NOTICIAS_DATABASE_URL` | `robo-noticias.senha` |
+| faxina-storage | `robo_faxina` | `ROBO_FAXINA_STORAGE_DATABASE_URL` | `robo-faxina.senha` |
+| copia-do-banco | `copia` | `COPIA_DB_SENHA` (seção acima) | `copia.senha` |
+| conteudo-vigia | `conteudo_robo` | `CONTEUDO_DB_SENHA` (`papel-conteudo.sql`) | `conteudo.senha` |
+
+**Contrato (o que o `rodar-robo.sh` faz):**
+
+- URL de cada robô: `postgres://<papel>:<senha>@api-db:5432/api?sslmode=disable`. O `api-db` não publica porta e o cron roda no
+  host: o `rodar-robo.sh` troca `@api-db:` pelo IP atual do contêiner na `api_net` a cada rodada (sem IP: a URL fica e o robô falha
+  alto na conexão).
+- `ROBO_<NOME>_DATABASE_URL` (nome do robô em maiúsculas, `-` vira `_`) vira o `DATABASE_URL` SÓ daquele robô. As `ROBO_*_DATABASE_URL`
+  dos outros somem do ambiente dele. Sem a variável, nada muda (cron atual intacto).
+- `REPORTAR_DATABASE_URL`: a rodada vai para `robos_execucoes` por `pg` (`coletor/vps/reportar-rodada.mjs`); banco fora só deixa
+  uma linha no log, nunca derruba nem muda o código de saída do robô. Não chega ao comando do robô. Sem ela, o `reportar` segue por
+  REST no Supabase.
+- Robô do Meta exige `CORE_META=true` no env (nenhum papel lê `accounts.access_token`: o token vem do Core).
+- As flags (`SAIU_DO_SUPABASE`, as URLs, `REPORTAR_DATABASE_URL`) e as senhas vivem SÓ em `/etc/robos.env` (o rollback A4/B5
+  restaura esse arquivo). Senha nunca em linha de comando, em log, em chat.
+- **Fase 2 (sem papel de Storage):** `opr-diario`, `faxina-fabrica`/`faxina-storage`, `vigia-armazenamento` e `ig-coletor`/`passo-faxina`
+  usam `/storage/v1/...` do Supabase, que a API Go não expõe (há `PUT/GET/DELETE /arquivos/{bucket}/*`, disco `/var/lib/api/arquivos`).
+  Até a fase 2 esses passos seguem no Supabase; o papel dá só a leitura.
+- **Chave de Storage (`STORAGE_SUPABASE_SERVICE_KEY`):** o `robos-troca-env.sh aplicar` renomeia a `SUPABASE_SERVICE_KEY` do `/etc/robos.env`
+  para `STORAGE_SUPABASE_SERVICE_KEY` (guardada para a fase 2; o `rodar-robo.sh` não a entrega a robô nenhum).
+  **`opr-diario` e `faxina-storage` ficam RECUSADOS (exit 78 + aviso) com `SAIU_DO_SUPABASE`:** leem tabelas por REST do Supabase velho
+  (a faxina apagaria do bucket arquivo de campanha criada depois do corte). Dependência do plano 03: portar essas leituras para o `pg`
+  e dar Storage à API; depois se remove a linha `fase2` do `rodar-robo.sh`. Até lá, o relatório OPR diário e a faxina de arquivos
+  ficam parados (aviso no WhatsApp a cada 6 h).
+- **Sem papel e sem `DATABASE_URL` global:** `copia-do-banco` (usa o papel `copia` por `COPIA_DB_SENHA`) e `publicar-o-site` (não toca em banco).
+  Com a flag, o `rodar-robo.sh` descarta o `DATABASE_URL` global deles, e eles não são recusados pela trava.
+- **`VIGIA_DATABASE_URL`** só chega ao `vigia-problemas-meta`; o `rodar-robo.sh` a remove do ambiente de todos os outros robôs.
+
+**Aplicar (um comando por linha; roda de novo sem estrago):**
+
+```sh
+scp ops/vps/api-db/papel-robo-*.sql op:/root/api-db/
+ssh op
+for r in reporte selo pedidos-vessel shopify metaads-zoho vigia-meta notas relatorios cards gestor interesses opr budget noticias faxina; do
+  [ -e /root/secrets/robo-$r.senha ] || ( umask 077; openssl rand -hex 24 > /root/secrets/robo-$r.senha )
+  V=SENHA_ROBO_$(echo $r | tr 'a-z-' 'A-Z_')
+  # export é builtin: a senha não aparece no argv (ps) de nenhum processo; `-e VAR` sem valor repassa do ambiente
+  ( export "$V=$(cat /root/secrets/robo-$r.senha)"; docker exec -i -e "$V" api-db psql -U api -d api < /root/api-db/papel-robo-$r.sql ) || break
+done
+```
+
+Os papéis morrem num `docker compose down -v` (volume novo): refazer depois do restore, no mesmo passo do `papel-copia.sql`.
+Quem grava `ROBO_*_DATABASE_URL` no `/etc/robos.env` é o `ops/virada/robos-troca-env.sh` (backup e reversão; só no corte).
+
 ## Regras do projeto
 
 - **Nunca recriar o contêiner com operação em andamento** (migração, restauração, backup rodando).

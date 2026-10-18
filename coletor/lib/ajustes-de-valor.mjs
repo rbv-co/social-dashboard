@@ -58,3 +58,16 @@ export async function ajustesDeValor(supabaseUrl, chave, fetchImpl = fetch) {
   }
   return linhas;
 }
+
+/**
+ * O mesmo que `ajustesDeValor`, pelo `pg` que o robô já usa (`DATABASE_URL`). A mesma postura: se não der para ler, LANÇA.
+ * `numeric` e `bigint` chegam como texto; a regra (`valorValido`, `String(pedido_id)`) já trata os dois.
+ */
+export async function ajustesDeValorPg(cli) {
+  try {
+    const { rows } = await cli.query('select pedido_id, total_corrigido from public.bling_pedido_ajuste_valor');
+    return rows;
+  } catch (e) {
+    throw new Error('não deu para ler bling_pedido_ajuste_valor: ' + (e?.message || e));
+  }
+}
