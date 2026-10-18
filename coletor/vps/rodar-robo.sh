@@ -54,6 +54,28 @@ avisar() {
   fi
 }
 
+# A CHAVE DO CORTE (a mesma de copia-do-banco.sh): com SAIU_DO_SUPABASE ligada o banco é o NOVO. Robô cujo DATABASE_URL ainda é o
+# pooler do Supabase gravaria no banco VELHO (o `postgres` do pooler é o dono das tabelas: o congelar não o barra) e robô com
+# SUPABASE_SERVICE_KEY leria o velho por REST. Recusa SEM rodar nada (nem o `git pull`) e avisa o que ajustar em $ENV_ROBOS.
+# Achado 06-1 (REVISAO-TESTES-2026-10): o roteiro da virada só põe CENTRAL_API_* no env dos robôs.
+if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
+  velho=""
+  case "${DATABASE_URL:-}" in *supabase.com*|*supabase.co*) velho="DATABASE_URL" ;; esac
+  # a chave de serviço só é "velha" se a URL REST ainda for a do Supabase (sem SUPABASE_URL, os robôs caem no host fixo dele)
+  if [ -z "$velho" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
+    case "${SUPABASE_URL:-supabase.co}" in *supabase.co*|*supabase.com*) velho="SUPABASE_SERVICE_KEY" ;; esac
+  fi
+  if [ -n "$velho" ]; then
+    log "RECUSADO: SAIU_DO_SUPABASE está ligada e $velho ainda aponta para o Supabase (o banco agora é o novo): ajuste $ENV_ROBOS"
+    marca="$LOGS/$nome.falhou"
+    if [ ! -e "$marca" ] || [ -n "$(find "$marca" -mmin +360 2>/dev/null)" ]; then
+      touch "$marca"
+      avisar "Robô $nome RECUSADO na VPS: $velho ainda aponta para o Supabase com SAIU_DO_SUPABASE ligada. Ajuste $ENV_ROBOS."
+    fi
+    exit 78
+  fi
+fi
+
 # SEGUNDO CANAL DE AVISO: grava a rodada em `robos_execucoes`, o mesmo termômetro do painel de saúde da central
 # (`robos_saude`, olhado contra `robos_esperados`). O WhatsApp (ALERT_COMANDO) depende de uma sessão da Evolution que
 # cai e só volta lendo QR; sem este canal, robô parado é silêncio. Falha ao gravar NUNCA derruba nem muda o robô.

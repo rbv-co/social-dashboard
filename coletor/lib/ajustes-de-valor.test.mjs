@@ -114,3 +114,22 @@ test('na ordem INVERTIDA o pedido trazido escaparia — é isto que a ordem prot
   const invertido = ajustarPelaDataDaNota(comValorAntes, [linhaDaNota], '2026-09-12', '2026-09-12').pedidos;
   assert.equal(invertido[0].total, 1900, 'o pedido entra depois do ajuste e sai com o valor errado');
 });
+
+// Depois do Supabase o robô de pedidos já lê tudo por `pg`: a correção de valor vem do MESMO banco (antes ia à REST do
+// Supabase só por isto, e leria uma tabela congelada, em silêncio, depois da virada).
+import { ajustesDeValorPg } from './ajustes-de-valor.mjs';
+
+test('pg: lê as duas colunas da tabela inteira e a regra aplica o valor (numeric e bigint chegam como texto)', async () => {
+  const consultas = [];
+  const cli = { query: async (sql) => { consultas.push(sql); return { rows: [{ pedido_id: '26851358889', total_corrigido: '1615.00' }] }; } };
+  const linhas = await ajustesDeValorPg(cli);
+  assert.match(consultas[0], /select pedido_id, total_corrigido from (public\.)?bling_pedido_ajuste_valor/);
+  const { pedidos, ajustados } = aplicarValorCorrigido([{ id: 26851358889, total: 1000 }], linhas);
+  assert.equal(ajustados, 1);
+  assert.equal(pedidos[0].total, 1615);
+});
+
+test('pg: se não der para ler, LANÇA (robô que não lê a correção para, não publica o número velho)', async () => {
+  const cli = { query: async () => { throw new Error('connection terminated'); } };
+  await assert.rejects(ajustesDeValorPg(cli), /não deu para ler bling_pedido_ajuste_valor: connection terminated/);
+});
