@@ -314,7 +314,11 @@ try {
           -- estava ligado continua.
           pessoa_id = coalesce(excluded.pessoa_id, vessel_pedidos.pessoa_id),
           casou_por = coalesce(excluded.casou_por, vessel_pedidos.casou_por),
-          loja_id = excluded.loja_id, vendedor_id = excluded.vendedor_id,
+          -- ⚠️ Mesma regra do vendedor: o Bling devolve vendedor.id=0 para pedido
+          -- vendido antes do vínculo (e não deixa corrigir depois), e o ajuste
+          -- manual no banco não pode ser desfeito pela rodada seguinte.
+          loja_id = excluded.loja_id,
+          vendedor_id = coalesce(excluded.vendedor_id, vessel_pedidos.vendedor_id),
           data_do_pedido = excluded.data_do_pedido, data_da_nota = excluded.data_da_nota,
           data_da_venda = excluded.data_da_venda, origem_da_data = excluded.origem_da_data,
           total_produtos = excluded.total_produtos, desconto = excluded.desconto,
