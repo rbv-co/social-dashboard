@@ -17,25 +17,34 @@ export const ROBOS_PG = [
   'lib/conteudo-banco.mjs', 'lib/zoho-da-central.mjs', 'lib/ajustes-de-valor.mjs', 'lib/colunas-existem.mjs',
 ];
 
-/** O SQL (para o psql) com um PREPARE por instrução encontrada em `textos` = [[nome, conteúdo]]. */
-export function sqlDePrepare(textos) {
+/** As instruções SQL literais de `textos` = [[nome, conteúdo]], sem repetir: [{ nome, sql }]. */
+export function instrucoes(textos) {
   const vistos = new Set();
-  let n = 0;
-  let sql = 'begin read only;\n';
+  const achadas = [];
   for (const [nome, t] of textos) {
     for (const m of t.matchAll(/`([^`]*)`|'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"/g)) {
       const s = (m[1] ?? m[2] ?? m[3] ?? '').trim();
       if (!s || s.includes('${')) continue;
       if (!/^(select|insert\s+into|update|delete\s+from|with)\b/i.test(s)) continue;
       if (!/\b(from|into|set)\b/i.test(s) && !/^select\s+(public\.)?[a-z_]+\(/i.test(s)) continue;
-      const k = s.replace(/\s+/g, ' ');
+      const k = s.replace(/\s+/g, ' ').replace(/;\s*$/, '');
       if (vistos.has(k)) continue;
       vistos.add(k);
-      n++;
-      sql += `\\echo ## ${n} ${nome}\nsavepoint s${n};\nprepare p${n} as ${k.replace(/;\s*$/, '')};\nrollback to s${n};\n`;
+      achadas.push({ nome, sql: k });
     }
   }
-  return { sql: sql + 'rollback;\n', total: n };
+  return achadas;
+}
+
+/** O SQL (para o psql) com um PREPARE por instrução encontrada em `textos` = [[nome, conteúdo]]. */
+export function sqlDePrepare(textos) {
+  const achadas = instrucoes(textos);
+  let sql = 'begin read only;\n';
+  achadas.forEach(({ nome, sql: k }, i) => {
+    const n = i + 1;
+    sql += `\\echo ## ${n} ${nome}\nsavepoint s${n};\nprepare p${n} as ${k};\nrollback to s${n};\n`;
+  });
+  return { sql: sql + 'rollback;\n', total: achadas.length };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

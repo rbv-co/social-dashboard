@@ -43,6 +43,24 @@ while IFS= read -r linha || [ -n "$linha" ]; do
 done < "$ENV_ROBOS"
 export PATH="$NODE_BIN:$PATH"
 
+# PAPEL DO ROBÔ NO BANCO NOVO (plano 02 da virada, ops/vps/api-db/LEIA-ME.md): cada robô tem a PRÓPRIA URL do api-db,
+# ROBO_<NOME>_DATABASE_URL (nome em maiúsculas, `-` vira `_`), que vira o DATABASE_URL só dele. Sem a variável nada muda (cron atual).
+# As URLs dos outros robôs saem do ambiente: papel por robô não vale nada se todo robô enxerga a senha de todos.
+var_url="ROBO_$(printf %s "$nome" | tr 'a-z-' 'A-Z_')_DATABASE_URL"
+[ -n "${!var_url:-}" ] && export DATABASE_URL="${!var_url}"
+for v in $(compgen -e | grep -E '^ROBO_.*_DATABASE_URL$'); do unset "$v"; done
+# O api-db não publica porta e o cron roda no host: `@api-db:` na URL vira o IP atual do contêiner na api_net (como o copia-do-banco.sh).
+# Sem IP a URL fica como está e o robô falha alto na conexão (nunca cai calado no banco velho).
+case "${DATABASE_URL:-}${REPORTAR_DATABASE_URL:-}${VIGIA_DATABASE_URL:-}" in
+  *@api-db:*)
+    ip_api_db=$(docker inspect -f '{{(index .NetworkSettings.Networks "api_net").IPAddress}}' api-db 2>/dev/null)
+    if [ -n "$ip_api_db" ]; then
+      for v in DATABASE_URL REPORTAR_DATABASE_URL VIGIA_DATABASE_URL; do
+        [ -n "${!v:-}" ] && export "$v=${!v//@api-db:/@$ip_api_db:}"
+      done
+    else log "aviso: não achei o IP do api-db (docker inspect)"; fi ;;
+esac
+
 # Canais de aviso (ambos opcionais, em /etc/robos.env): ALERT_COMANDO (programa que recebe o texto como $1; na VPS
 # é o avisar-whatsapp.py, o mesmo grupo do monitor) e ALERT_WEBHOOK_URL (JSON `text`/`content`: Slack e Discord).
 # A mensagem nunca leva segredo: só o nome do robô e o motivo.
@@ -79,8 +97,13 @@ fi
 # SEGUNDO CANAL DE AVISO: grava a rodada em `robos_execucoes`, o mesmo termômetro do painel de saúde da central
 # (`robos_saude`, olhado contra `robos_esperados`). O WhatsApp (ALERT_COMANDO) depende de uma sessão da Evolution que
 # cai e só volta lendo QR; sem este canal, robô parado é silêncio. Falha ao gravar NUNCA derruba nem muda o robô.
-# Sem SUPABASE_URL/SUPABASE_SERVICE_KEY em $ENV_ROBOS, não faz nada. $1=status $2=ok(true/false) $3=texto sem aspas.
+# Com REPORTAR_DATABASE_URL (papel `robo_reporte` no api-db) grava por `pg`; senão, por REST no Supabase (SUPABASE_URL +
+# SUPABASE_SERVICE_KEY); sem nenhum dos dois, não faz nada. $1=status $2=ok(true/false) $3=texto sem aspas.
 reportar() {
+  if [ -n "${REPORTAR_DATABASE_URL:-}" ]; then
+    timeout 20 node "$RAIZ/coletor/vps/reportar-rodada.mjs" "$nome" "$1" "$2" "$3" >> "$LOGS/$nome.log" 2>&1 || log "aviso: não consegui gravar a rodada no painel da central"
+    return 0
+  fi
   [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ] || return 0
   curl -fsS -m 15 -X POST "$SUPABASE_URL/rest/v1/robos_execucoes" \
     -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
@@ -117,7 +140,7 @@ flock -s 8   # a partir daqui o pull de OUTRO robô espera este terminar (ele s�
 log "início: $*"
 inicio=$(date +%s)
 cd "$RAIZ" || { log "ERRO: sem $RAIZ"; exit 78; }
-nice -n 10 timeout --kill-after=30 "$((limite * 60))" "$@" >> "$LOGS/$nome.log" 2>&1
+nice -n 10 timeout --kill-after=30 "$((limite * 60))" env -u REPORTAR_DATABASE_URL "$@" >> "$LOGS/$nome.log" 2>&1
 codigo=$?
 dur=$(( $(date +%s) - inicio ))
 
