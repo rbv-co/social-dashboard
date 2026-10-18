@@ -5,6 +5,7 @@
 # Uso: sh ops/virada/robos-troca-env.sh <aplicar|reverter> DIR [ENV=/etc/robos.env] [SEGREDOS=/root/secrets]
 #   aplicar   exige TODA senha em SEGREDOS (falha antes de mexer em qualquer coisa), guarda DIR/robos.env.antes (nunca
 #             sobrescreve) e troca de forma atômica. Remove só as chaves que ele mesmo grava e acrescenta as novas.
+#             SUPABASE_SERVICE_KEY vira STORAGE_SUPABASE_SERVICE_KEY (só opr-diario e faxina-storage a usam: Storage, fase 2).
 #             O DATABASE_URL global (Supabase) fica: com SAIU_DO_SUPABASE ligada o rodar-robo.sh RECUSA o robô que ainda
 #             aponta para lá (falha alta), e robô fora do contrato não perde a conexão em silêncio.
 #   reverter  devolve DIR/robos.env.antes ao ENV (some a flag e as URLs novas) e confere por sha256.
@@ -43,19 +44,22 @@ fi
 [ ! -e "$ANTES" ] || { echo "$ANTES já existe (corte já iniciado?): reverta ou mova antes" >&2; exit 1; }
 echo "$TABELA" | while read -r v arq papel; do
   [ -s "$SEG/$arq.senha" ] || { echo "falta a senha $SEG/$arq.senha ($papel): aplique o papel antes" >&2; exit 1; }
+  case "$(cat "$SEG/$arq.senha")" in *[!A-Za-z0-9._~-]*) echo "senha de $papel com caractere fora de [A-Za-z0-9._~-] (quebraria a URL): gere com openssl rand -hex 24" >&2; exit 1 ;; esac
 done
 cp -p "$ENV" "$ANTES"
 NOVO="$ENV.novo"
 # tira as chaves que este script grava (e SAIU_DO_SUPABASE), mantém o resto intacto, e acrescenta as novas
-grep -Ev '^(export[[:space:]]+)?(SAIU_DO_SUPABASE|REPORTAR_DATABASE_URL|VIGIA_DATABASE_URL|ROBO_[A-Z0-9_]*_DATABASE_URL)=' "$ANTES" > "$NOVO" || true
+grep -Ev '^(export[[:space:]]+)?(SAIU_DO_SUPABASE|STORAGE_SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_KEY|REPORTAR_DATABASE_URL|VIGIA_DATABASE_URL|ROBO_[A-Z0-9_]*_DATABASE_URL)=' "$ANTES" > "$NOVO" || true
 {
   echo 'SAIU_DO_SUPABASE=1'
+  # Storage (fase 2): a chave do Supabase muda de nome, só opr-diario e faxina-storage a recebem (ver rodar-robo.sh)
+  sed -n 's/^\(export[[:space:]]\{1,\}\)\{0,1\}SUPABASE_SERVICE_KEY=/STORAGE_SUPABASE_SERVICE_KEY=/p' "$ANTES" | tail -1
   echo "$TABELA" | while read -r v arq papel; do
     printf '%s=postgres://%s:%s@api-db:5432/api?sslmode=disable\n' "$v" "$papel" "$(cat "$SEG/$arq.senha")"
   done
 } >> "$NOVO"
 chmod --reference="$ANTES" "$NOVO" 2>/dev/null || chmod 600 "$NOVO"
+n=$(grep -c '_DATABASE_URL=postgres://robo_' "$NOVO" || true)
+grep -q '^SAIU_DO_SUPABASE=1$' "$NOVO" && [ "$n" -eq 15 ] && ! grep -q '^SUPABASE_SERVICE_KEY=' "$NOVO" || { rm -f "$NOVO" "$ANTES"; echo "FALHOU: env novo sem a flag, sem as 15 URLs ou com a chave antiga; $ENV não foi tocado" >&2; exit 1; }
 mv "$NOVO" "$ENV"
-n=$(grep -c '_DATABASE_URL=postgres://robo_' "$ENV" || true)
-grep -q '^SAIU_DO_SUPABASE=1$' "$ENV" && [ "$n" -eq 15 ] || { echo "FALHOU: env gravado sem a flag ou sem as 15 URLs (veja $ANTES)" >&2; exit 1; }
 echo "aplicado: flag ligada e $n URLs gravadas em $ENV; env de antes em $ANTES (reverter: sh $0 reverter $DIR $ENV)"

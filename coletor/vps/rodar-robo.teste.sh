@@ -47,7 +47,8 @@ bash "$R" sem-papel 1 -- sh -c '[ "$DATABASE_URL" = postgres://global ]'; confer
 # o host não resolve `api-db`: a URL ganha o IP do contêiner (docker falso); sem IP, a URL fica e o robô falha alto na conexão
 printf '#!/bin/sh\necho "$IP_FALSO"\n' > "$T/docker"; chmod +x "$T/docker"
 printf '%s\n' 'ROBO_NOME_DATABASE_URL=postgres://robo_x:s@api-db:5432/api' 'VIGIA_DATABASE_URL=postgres://robo_v:s@api-db:5432/api' >> "$T/robos.env"
-IP_FALSO=172.20.0.9 bash "$R" nome 1 -- sh -c '[ "$DATABASE_URL" = postgres://robo_x:s@172.20.0.9:5432/api ] && [ "$VIGIA_DATABASE_URL" = postgres://robo_v:s@172.20.0.9:5432/api ]'; confere "@api-db: vira o IP da api_net" $? 0
+IP_FALSO=172.20.0.9 bash "$R" nome 1 -- sh -c '[ "$DATABASE_URL" = postgres://robo_x:s@172.20.0.9:5432/api ] && [ -z "${VIGIA_DATABASE_URL:-}" ]'; confere "@api-db: vira o IP da api_net" $? 0
+IP_FALSO=172.20.0.9 bash "$R" vigia-problemas-meta 1 -- sh -c '[ "$VIGIA_DATABASE_URL" = postgres://robo_v:s@172.20.0.9:5432/api ]'; confere "VIGIA_DATABASE_URL: só o vigia a recebe, com o IP" $? 0
 IP_FALSO= bash "$R" nome 1 -- sh -c '[ "$DATABASE_URL" = postgres://robo_x:s@api-db:5432/api ]'; confere "sem IP a URL fica como está" $? 0
 grep -q "não achei o IP do api-db" "$T/logs/nome.log"; confere "e o log diz por quê" $? 0
 bash "$R" com-hifen-x 1 -- true; : > "$T/curl-chamadas"

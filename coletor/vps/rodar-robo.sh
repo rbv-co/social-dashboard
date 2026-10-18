@@ -61,6 +61,23 @@ case "${DATABASE_URL:-}${REPORTAR_DATABASE_URL:-}${VIGIA_DATABASE_URL:-}" in
     else log "aviso: não achei o IP do api-db (docker inspect)"; fi ;;
 esac
 
+# Robôs que NÃO leem o DATABASE_URL global (copia fala por COPIA_*, vigia por VIGIA_DATABASE_URL, publicar-o-site por banco nenhum):
+# com o corte ligado ele não vale para eles, e a trava abaixo os recusaria por nada (revisão Opus do PR do plano 02).
+# STORAGE (fase 2 do plano 02): opr-diario e faxina-storage ainda mexem em arquivo no Storage do Supabase. O robos-troca-env.sh
+# renomeia a chave para STORAGE_SUPABASE_SERVICE_KEY; só esses dois a recebem (como SUPABASE_SERVICE_KEY) e a trava não olha a
+# chave deles. Para os outros ela some e a SUPABASE_SERVICE_KEY solta segue recusada. Sem a flag nada muda.
+so_storage=""
+if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
+  case "$nome" in copia-do-banco|vigia-problemas-meta|publicar-o-site) unset DATABASE_URL ;; esac
+  case "$nome" in
+    opr-diario|faxina-storage)
+      if [ -n "${STORAGE_SUPABASE_SERVICE_KEY:-}" ]; then export SUPABASE_SERVICE_KEY="$STORAGE_SUPABASE_SERVICE_KEY"; so_storage=1; fi ;;
+  esac
+fi
+unset STORAGE_SUPABASE_SERVICE_KEY
+# a credencial do vigia é só dele (o REPORTAR_DATABASE_URL, do papel de menor poder, todos usam)
+[ "$nome" = vigia-problemas-meta ] || unset VIGIA_DATABASE_URL
+
 # Canais de aviso (ambos opcionais, em /etc/robos.env): ALERT_COMANDO (programa que recebe o texto como $1; na VPS
 # é o avisar-whatsapp.py, o mesmo grupo do monitor) e ALERT_WEBHOOK_URL (JSON `text`/`content`: Slack e Discord).
 # A mensagem nunca leva segredo: só o nome do robô e o motivo.
@@ -80,7 +97,7 @@ if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
   velho=""
   case "${DATABASE_URL:-}" in *supabase.com*|*supabase.co*) velho="DATABASE_URL" ;; esac
   # a chave de serviço só é "velha" se a URL REST ainda for a do Supabase (sem SUPABASE_URL, os robôs caem no host fixo dele)
-  if [ -z "$velho" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
+  if [ -z "$velho" ] && [ -z "$so_storage" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
     case "${SUPABASE_URL:-supabase.co}" in *supabase.co*|*supabase.com*) velho="SUPABASE_SERVICE_KEY" ;; esac
   fi
   if [ -n "$velho" ]; then

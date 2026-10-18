@@ -43,4 +43,24 @@ roda e; grep -q RECUSADO "$T/logs/e.log" 2>/dev/null; confere "chave de serviço
 env_com 'SAIU_DO_SUPABASE=sim' 'SUPABASE_URL=https://abc.supabase.co' 'SUPABASE_SERVICE_KEY=chave'
 roda f; confere "chave de serviço com SUPABASE_URL do Supabase: recusa (78)" $? 78
 
+# revisão Opus do plano 02: robô que não usa o DATABASE_URL global e robôs do Storage (fase 2) com a chave renomeada
+POOLER='DATABASE_URL=postgresql://postgres.abc:senha@aws-1-sa-east-1.pooler.supabase.com:6543/postgres'
+roda_env() { bash "$R" "$1" 1 -- sh -c "echo \"DB=\${DATABASE_URL:-} K=\${SUPABASE_SERVICE_KEY:-} V=\${VIGIA_DATABASE_URL:-} S=\${STORAGE_SUPABASE_SERVICE_KEY:-}\" > $T/env" >/dev/null 2>&1; }
+for r in publicar-o-site copia-do-banco; do
+  env_com 'SAIU_DO_SUPABASE=sim' "$POOLER"; roda_env $r
+  confere "$r sem uso do DATABASE_URL global: roda com o corte ligado" "$(cat "$T/env" 2>/dev/null)" "DB= K= V= S="
+done
+env_com 'SAIU_DO_SUPABASE=sim' "$POOLER" 'VIGIA_DATABASE_URL=postgres://robo_vigia_meta:x@172.21.0.2:5432/api'; roda_env vigia-problemas-meta
+confere "vigia roda com o corte ligado e fica com a URL dele" "$(cat "$T/env" 2>/dev/null)" "DB= K= V=postgres://robo_vigia_meta:x@172.21.0.2:5432/api S="
+env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://api:x@172.21.0.2:5432/api' 'VIGIA_DATABASE_URL=segredo-do-vigia'; roda_env outro
+confere "a URL do vigia não chega aos outros robôs" "$(cat "$T/env" 2>/dev/null)" "DB=postgres://api:x@172.21.0.2:5432/api K= V= S="
+for r in opr-diario faxina-storage; do
+  env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://api:x@172.21.0.2:5432/api' 'SUPABASE_URL=https://abc.supabase.co' 'STORAGE_SUPABASE_SERVICE_KEY=chave-storage'; roda_env $r
+  confere "$r (Storage) recebe a chave como SUPABASE_SERVICE_KEY e não é recusado" "$(cat "$T/env" 2>/dev/null)" "DB=postgres://api:x@172.21.0.2:5432/api K=chave-storage V= S="
+done
+env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://api:x@172.21.0.2:5432/api' 'SUPABASE_URL=https://abc.supabase.co' 'STORAGE_SUPABASE_SERVICE_KEY=chave-storage'; roda_env cards
+confere "robô fora do Storage não recebe a chave do Storage" "$(cat "$T/env" 2>/dev/null)" "DB=postgres://api:x@172.21.0.2:5432/api K= V= S="
+env_com 'DATABASE_URL=postgres://velho' 'SUPABASE_SERVICE_KEY=chave' 'STORAGE_SUPABASE_SERVICE_KEY=outra'; roda_env opr-diario
+confere "SEM a flag nada muda (a chave solta fica, a do Storage não é usada)" "$(cat "$T/env" 2>/dev/null)" "DB=postgres://velho K=chave V= S="
+
 [ "$falhas" -eq 0 ] && echo "TUDO OK" || { echo "$falhas falha(s)"; exit 1; }

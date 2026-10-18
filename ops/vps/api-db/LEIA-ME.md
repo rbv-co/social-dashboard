@@ -170,7 +170,7 @@ prova em `papel-robos.teste.sh`). Sem RLS aqui, o GRANT é a única tranca. Colu
 | pedidos-da-vessel | `robo_pedidos_vessel` | `ROBO_PEDIDOS_DA_VESSEL_DATABASE_URL` | `robo-pedidos-vessel.senha` |
 | pedidos-da-shopify | `robo_shopify` | `ROBO_PEDIDOS_DA_SHOPIFY_DATABASE_URL` | `robo-shopify.senha` |
 | meta-ads-no-zoho | `robo_metaads_zoho` | `ROBO_META_ADS_NO_ZOHO_DATABASE_URL` | `robo-metaads-zoho.senha` |
-| vigia-problemas-meta | `robo_vigia_meta` | `VIGIA_DATABASE_URL` (o script já lê) | `robo-vigia-meta.senha` |
+| vigia-problemas-meta | `robo_vigia_meta` | `VIGIA_DATABASE_URL` (só este robô a recebe) | `robo-vigia-meta.senha` |
 | notas-dos-pedidos | `robo_notas` | `ROBO_NOTAS_DOS_PEDIDOS_DATABASE_URL` | `robo-notas.senha` |
 | relatorios-comerciais | `robo_relatorios` | `ROBO_RELATORIOS_COMERCIAIS_DATABASE_URL` | `robo-relatorios.senha` |
 | cards-comercial-diario | `robo_cards` | `ROBO_CARDS_COMERCIAL_DIARIO_DATABASE_URL` | `robo-cards.senha` |
@@ -199,6 +199,14 @@ prova em `papel-robos.teste.sh`). Sem RLS aqui, o GRANT é a única tranca. Colu
 - **Fase 2 (sem papel de Storage):** `opr-diario`, `faxina-fabrica`/`faxina-storage`, `vigia-armazenamento` e `ig-coletor`/`passo-faxina`
   usam `/storage/v1/...` do Supabase, que a API Go não expõe (há `PUT/GET/DELETE /arquivos/{bucket}/*`, disco `/var/lib/api/arquivos`).
   Até a fase 2 esses passos seguem no Supabase; o papel dá só a leitura.
+- **Chave de Storage (`STORAGE_SUPABASE_SERVICE_KEY`):** o `robos-troca-env.sh aplicar` renomeia a `SUPABASE_SERVICE_KEY` do `/etc/robos.env`
+  para `STORAGE_SUPABASE_SERVICE_KEY`. Com `SAIU_DO_SUPABASE`, o `rodar-robo.sh` entrega a chave (como `SUPABASE_SERVICE_KEY`) só a
+  `opr-diario` e `faxina-storage`; os demais robôs nunca a veem, e a trava da virada continua recusando chave solta.
+  **Dependência do plano 03:** `opr-diario` ainda lê DADOS por REST do Supabase; ele precisa ser portado para o `pg` antes do T+17,
+  senão lê dado velho em silêncio com a chave de Storage.
+- **Sem papel e sem `DATABASE_URL` global:** `copia-do-banco` (usa o papel `copia` por `COPIA_DB_SENHA`) e `publicar-o-site` (não toca em banco).
+  Com a flag, o `rodar-robo.sh` descarta o `DATABASE_URL` global deles, e eles não são recusados pela trava.
+- **`VIGIA_DATABASE_URL`** só chega ao `vigia-problemas-meta`; o `rodar-robo.sh` a remove do ambiente de todos os outros robôs.
 
 **Aplicar (um comando por linha; roda de novo sem estrago):**
 
@@ -208,7 +216,8 @@ ssh op
 for r in reporte selo pedidos-vessel shopify metaads-zoho vigia-meta notas relatorios cards gestor interesses opr budget noticias faxina; do
   [ -e /root/secrets/robo-$r.senha ] || ( umask 077; openssl rand -hex 24 > /root/secrets/robo-$r.senha )
   V=SENHA_ROBO_$(echo $r | tr 'a-z-' 'A-Z_')
-  env $V="$(cat /root/secrets/robo-$r.senha)" sh -c 'docker exec -i -e '$V' api-db psql -U api -d api < /root/api-db/papel-robo-'$r'.sql' || break
+  # export é builtin: a senha não aparece no argv (ps) de nenhum processo; `-e VAR` sem valor repassa do ambiente
+  ( export "$V=$(cat /root/secrets/robo-$r.senha)"; docker exec -i -e "$V" api-db psql -U api -d api < /root/api-db/papel-robo-$r.sql ) || break
 done
 ```
 
