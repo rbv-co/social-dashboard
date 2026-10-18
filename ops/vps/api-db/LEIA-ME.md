@@ -200,10 +200,11 @@ prova em `papel-robos.teste.sh`). Sem RLS aqui, o GRANT é a única tranca. Colu
   usam `/storage/v1/...` do Supabase, que a API Go não expõe (há `PUT/GET/DELETE /arquivos/{bucket}/*`, disco `/var/lib/api/arquivos`).
   Até a fase 2 esses passos seguem no Supabase; o papel dá só a leitura.
 - **Chave de Storage (`STORAGE_SUPABASE_SERVICE_KEY`):** o `robos-troca-env.sh aplicar` renomeia a `SUPABASE_SERVICE_KEY` do `/etc/robos.env`
-  para `STORAGE_SUPABASE_SERVICE_KEY`. Com `SAIU_DO_SUPABASE`, o `rodar-robo.sh` entrega a chave (como `SUPABASE_SERVICE_KEY`) só a
-  `opr-diario` e `faxina-storage`; os demais robôs nunca a veem, e a trava da virada continua recusando chave solta.
-  **Dependência do plano 03:** `opr-diario` ainda lê DADOS por REST do Supabase; ele precisa ser portado para o `pg` antes do T+17,
-  senão lê dado velho em silêncio com a chave de Storage.
+  para `STORAGE_SUPABASE_SERVICE_KEY` (guardada para a fase 2; o `rodar-robo.sh` não a entrega a robô nenhum).
+  **`opr-diario` e `faxina-storage` ficam RECUSADOS (exit 78 + aviso) com `SAIU_DO_SUPABASE`:** leem tabelas por REST do Supabase velho
+  (a faxina apagaria do bucket arquivo de campanha criada depois do corte). Dependência do plano 03: portar essas leituras para o `pg`
+  e dar Storage à API; depois se remove a linha `fase2` do `rodar-robo.sh`. Até lá, o relatório OPR diário e a faxina de arquivos
+  ficam parados (aviso no WhatsApp a cada 6 h).
 - **Sem papel e sem `DATABASE_URL` global:** `copia-do-banco` (usa o papel `copia` por `COPIA_DB_SENHA`) e `publicar-o-site` (não toca em banco).
   Com a flag, o `rodar-robo.sh` descarta o `DATABASE_URL` global deles, e eles não são recusados pela trava.
 - **`VIGIA_DATABASE_URL`** só chega ao `vigia-problemas-meta`; o `rodar-robo.sh` a remove do ambiente de todos os outros robôs.

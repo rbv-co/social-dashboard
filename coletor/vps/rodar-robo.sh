@@ -63,16 +63,15 @@ esac
 
 # Robôs que NÃO leem o DATABASE_URL global (copia fala por COPIA_*, vigia por VIGIA_DATABASE_URL, publicar-o-site por banco nenhum):
 # com o corte ligado ele não vale para eles, e a trava abaixo os recusaria por nada (revisão Opus do PR do plano 02).
-# STORAGE (fase 2 do plano 02): opr-diario e faxina-storage ainda mexem em arquivo no Storage do Supabase. O robos-troca-env.sh
-# renomeia a chave para STORAGE_SUPABASE_SERVICE_KEY; só esses dois a recebem (como SUPABASE_SERVICE_KEY) e a trava não olha a
-# chave deles. Para os outros ela some e a SUPABASE_SERVICE_KEY solta segue recusada. Sem a flag nada muda.
-so_storage=""
+# FASE 2 (Storage, plano 02): opr-diario e faxina-storage leem TABELAS por REST no Supabase velho (opr-diario: campaign_insights,
+# followers_leituras...; faxina-storage: fabrica_* para decidir o que apagar do bucket) e o Storage ainda mora lá. Com a chave
+# entregue eles leriam dado congelado (a faxina apagaria arquivo de campanha nova): ficam RECUSADOS (trava abaixo) até o plano 03
+# portar as leituras para o pg e a API ganhar o Storage. A chave segue guardada como STORAGE_SUPABASE_SERVICE_KEY no env, sem
+# ser entregue a ninguém. Sem a flag nada muda.
+fase2=""
 if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
   case "$nome" in copia-do-banco|vigia-problemas-meta|publicar-o-site) unset DATABASE_URL ;; esac
-  case "$nome" in
-    opr-diario|faxina-storage)
-      if [ -n "${STORAGE_SUPABASE_SERVICE_KEY:-}" ]; then export SUPABASE_SERVICE_KEY="$STORAGE_SUPABASE_SERVICE_KEY"; so_storage=1; fi ;;
-  esac
+  case "$nome" in opr-diario|faxina-storage) fase2="SUPABASE_URL (dados e Storage ainda lidos do Supabase: fase 2)" ;; esac
 fi
 unset STORAGE_SUPABASE_SERVICE_KEY
 # a credencial do vigia é só dele (o REPORTAR_DATABASE_URL, do papel de menor poder, todos usam)
@@ -94,10 +93,10 @@ avisar() {
 # SUPABASE_SERVICE_KEY leria o velho por REST. Recusa SEM rodar nada (nem o `git pull`) e avisa o que ajustar em $ENV_ROBOS.
 # Achado 06-1 (REVISAO-TESTES-2026-10): o roteiro da virada só põe CENTRAL_API_* no env dos robôs.
 if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
-  velho=""
+  velho="$fase2"
   case "${DATABASE_URL:-}" in *supabase.com*|*supabase.co*) velho="DATABASE_URL" ;; esac
   # a chave de serviço só é "velha" se a URL REST ainda for a do Supabase (sem SUPABASE_URL, os robôs caem no host fixo dele)
-  if [ -z "$velho" ] && [ -z "$so_storage" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
+  if [ -z "$velho" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
     case "${SUPABASE_URL:-supabase.co}" in *supabase.co*|*supabase.com*) velho="SUPABASE_SERVICE_KEY" ;; esac
   fi
   if [ -n "$velho" ]; then

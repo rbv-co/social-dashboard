@@ -5,7 +5,7 @@
 # Uso: sh ops/virada/robos-troca-env.sh <aplicar|reverter> DIR [ENV=/etc/robos.env] [SEGREDOS=/root/secrets]
 #   aplicar   exige TODA senha em SEGREDOS (falha antes de mexer em qualquer coisa), guarda DIR/robos.env.antes (nunca
 #             sobrescreve) e troca de forma atômica. Remove só as chaves que ele mesmo grava e acrescenta as novas.
-#             SUPABASE_SERVICE_KEY vira STORAGE_SUPABASE_SERVICE_KEY (só opr-diario e faxina-storage a usam: Storage, fase 2).
+#             SUPABASE_SERVICE_KEY vira STORAGE_SUPABASE_SERVICE_KEY (guardada para a fase 2 do Storage; nenhum robô a recebe: opr-diario e faxina-storage ficam recusados até o plano 03).
 #             O DATABASE_URL global (Supabase) fica: com SAIU_DO_SUPABASE ligada o rodar-robo.sh RECUSA o robô que ainda
 #             aponta para lá (falha alta), e robô fora do contrato não perde a conexão em silêncio.
 #   reverter  devolve DIR/robos.env.antes ao ENV (some a flag e as URLs novas) e confere por sha256.
@@ -52,7 +52,7 @@ NOVO="$ENV.novo"
 grep -Ev '^(export[[:space:]]+)?(SAIU_DO_SUPABASE|STORAGE_SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_KEY|REPORTAR_DATABASE_URL|VIGIA_DATABASE_URL|ROBO_[A-Z0-9_]*_DATABASE_URL)=' "$ANTES" > "$NOVO" || true
 {
   echo 'SAIU_DO_SUPABASE=1'
-  # Storage (fase 2): a chave do Supabase muda de nome, só opr-diario e faxina-storage a recebem (ver rodar-robo.sh)
+  # Storage (fase 2): a chave do Supabase muda de nome, guardada, não entregue (opr-diario e faxina-storage recusados; ver rodar-robo.sh)
   sed -n 's/^\(export[[:space:]]\{1,\}\)\{0,1\}SUPABASE_SERVICE_KEY=/STORAGE_SUPABASE_SERVICE_KEY=/p' "$ANTES" | tail -1
   echo "$TABELA" | while read -r v arq papel; do
     printf '%s=postgres://%s:%s@api-db:5432/api?sslmode=disable\n' "$v" "$papel" "$(cat "$SEG/$arq.senha")"
