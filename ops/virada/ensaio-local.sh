@@ -127,5 +127,24 @@ s "$BASE" "insert into public.eventos (tipo) values ('depois do replay')" > /dev
 s "$APP" "insert into public.log_sem_pk values ('sem chave')" > /dev/null
 sh "$AQUI/delta.sh" exportar "$APP" "$D" > /dev/null 2> "$OUT/err.txt" && falha "tabela sem PK mudou e o exportar saiu 0" || { grep -q 'log_sem_pk: SEM CHAVE' "$OUT/err.txt" && ok "tabela sem chave primária que mudou é acusada" || falha "aviso da tabela sem PK"; }
 
+echo "== janela.sh (o runbook) contra o mesmo Postgres que imita o Supabase: só os passos que falam com o Supabase"
+JD=$OUT/janela; s "$DONO" "select cron.schedule('push-vendas-22h', '0 1 * * *', 'select 1')" > /dev/null   # do dono: o pg_cron só mostra a cada papel os jobs dele
+s "$SU" "delete from cron.job_run_details; insert into cron.job_run_details (jobid, database, username, command, status, start_time, end_time) select jobid, 'postgres', 'dono', 'select 1', 'succeeded', now() - interval '20 minutes', now() - interval '19 minutes' from cron.job where jobname = 'push-vendas-22h'"
+jan() { FORCAR=1 D="$JD" SB="$DONO" ESPERA_MAX=0 INTERVALO=1 ATRASO_FOTO=1 sh "$AQUI/janela.sh" "$@" 2>&1; }
+# t-32: o push das 22h saiu há 20 min; os jobs (a, b e o push) ainda estão ativos
+r=$(jan t-32); [ "$(echo "$r" | tail -n 1)" = OK ] && ok "janela t-32: push-vendas-22h saiu" || { falha "janela t-32"; echo "$r" | tail -n 4; }
+r=$(jan t-30-supabase); [ "$(echo "$r" | tail -n 1)" = OK ] && [ "$(s "$DONO" 'select count(*) from cron.job where active')" = 0 ] && ok "janela t-30-supabase: 0 jobs ativos" || { falha "janela t-30-supabase"; echo "$r" | tail -n 4; }
+r=$(jan t-28); [ "$(echo "$r" | tail -n 1)" = OK ] && ok "janela t-28: nada em andamento" || { falha "janela t-28"; echo "$r" | tail -n 4; }
+r=$(jan t-1); [ "$(echo "$r" | tail -n 1)" = OK ] && ok "janela t-1: nenhuma sessão ativa" || { falha "janela t-1"; echo "$r" | tail -n 4; }
+r=$(jan t+0); [ "$(echo "$r" | tail -n 1)" = OK ] && ok "janela t+0: congelado" || { falha "janela t+0"; echo "$r" | tail -n 4; }
+r=$(jan t+0.5); [ "$(echo "$r" | tail -n 1)" = OK ] && ok "janela t+0.5: foto 1 das escritas" || { falha "janela t+0.5"; echo "$r" | tail -n 4; }
+sleep 2; r=$(jan t+9-escritas); [ "$(echo "$r" | tail -n 1)" = OK ] && ok "janela t+9-escritas: nada mudou" || { falha "janela t+9-escritas"; echo "$r" | tail -n 4; }
+deve_falhar "$DONO" authenticated "insert into public.pedidos (cliente) values ('x')"
+s "$DONO" "insert into public.log_sem_pk values ('escritor direto depois da foto')" > /dev/null; sleep 2
+r=$(REPETIR=1 jan t+9-escritas); [ "$(echo "$r" | tail -n 1)" = "FALHOU -> rollback A (janela.sh rollback-a)" ] && ok "janela t+9-escritas acusa o escritor direto e manda para o rollback A" || { falha "janela t+9-escritas não acusou"; echo "$r" | tail -n 4; }
+s "$DONO" "delete from public.log_sem_pk where msg = 'escritor direto depois da foto'" > /dev/null
+sh "$AQUI/supabase.sh" descongelar "$DONO" "$JD/sb" > /dev/null && ok "descongelar (a reversão do rollback A, A2) devolve o que a janela tirou" || falha "descongelar da janela"
+! grep -q 'postgres://' "$JD"/janela-*.log && ok "o log da janela não tem URL de banco" || falha "URL no log da janela"
+
 echo "----"
-[ "$FALHAS" = 0 ] && { echo "ENSAIO LOCAL OK"; exit 0; } || { echo "ENSAIO LOCAL: $FALHAS falha(s)"; exit 1; }
+[ "$FALHAS" = 0 ] && { mkdir -p "$AQUI/../migracao/saida" && echo "$(date '+%F %T') $(git -C "$AQUI" rev-parse HEAD)" > "$AQUI/../migracao/saida/ensaio-local.ok"; echo "ENSAIO LOCAL OK"; exit 0; } || { echo "ENSAIO LOCAL: $FALHAS falha(s)"; exit 1; }

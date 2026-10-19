@@ -6,6 +6,7 @@
 # MESMA imagem (nada de build: o deploy.sh do Chatwoot reconstrói a imagem, minutos de CPU no meio da janela).
 # Confere a variável dentro do contêiner e o GET da rota pela central (405 do Go; edge/spool respondem outro corpo);
 # se algo falhar, volta o .env anterior, recria de novo e sai 1. Guarda o anterior em /root/virada/chatwoot/.
+# CONFERE_EDGE=1 (P17, antes da janela): a conferência final espera a edge atrás da central ({"ok":false} 405) em vez do Go.
 # Uso: sh /root/virada/t16-chatwoot-go.sh [--imprimir]   (--imprimir: só mostra host antigo -> novo, sem tocar em nada)
 set -eu
 V=${V:-/root/virada}
@@ -65,5 +66,10 @@ for c in chatwoot-rails-1 chatwoot-sidekiq-1; do
   docker exec "$c" printenv CRM_EVENT_WEBHOOK_URL 2> /dev/null | grep -qxF "$NOVA" || volta "$c sem a URL nova"
 done
 resp=$(curl -sk --max-time 10 -w ' %{http_code}' --resolve "central.rbvcompany.com:443:127.0.0.1" "$NOVO_BASE/api/receber-webhook-chatwoot" < /dev/null) || resp="sem resposta"
-case $resp in *'"ok"'*|*'"spool"'*|"sem resposta") volta "a rota da central não é a do Go: $resp" ;; *' 405') ;; *) volta "esperava 405 da API Go, veio: $resp" ;; esac
+if [ "${CONFERE_EDGE:-0}" = 1 ]; then
+  # P17 (antes da janela): a central faz proxy à edge do Supabase, que responde {"ok":false} 405 ao GET
+  case $resp in *'"ok":false'*' 405') ;; *) volta "esperava 405 da edge ({\"ok\":false}), veio: $resp" ;; esac
+else
+  case $resp in *'"ok"'*|*'"spool"'*|"sem resposta") volta "a rota da central não é a do Go: $resp" ;; *' 405') ;; *) volta "esperava 405 da API Go, veio: $resp" ;; esac
+fi
 echo "ok: Chatwoot -> $(host "$NOVA") (rails e sidekiq recriados; GET de conferência: $resp; env anterior em $V/chatwoot/env.$TS)"

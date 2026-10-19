@@ -60,7 +60,7 @@ for f in nginx-central-api.conf nginx-semquery.conf api-arquivos-e-storage.conf 
 nginx -t -c $V/nginx-teste/nginx.conf > /dev/null 2>&1 && ok "E/P10 nginx -t na cópia (nginx-teste)" || falta "E/P10 nginx -t na cópia falhou (ou a cópia não existe: preparar-vps.sh nginx)"
 grep -q 'central-api.conf' $V/nginx-teste/sites-enabled/central.rbvcompany.com 2> /dev/null && ok "E/P10 a cópia inclui central-api, arquivos-e-storage e chatwoot" || falta "E/P10 a cópia não tem os includes"
 if grep -rhE '^\s*log_format\s+saude\b' /etc/nginx | grep -qE '\$(request|args|query_string|request_uri)\b'; then falta "E/P10 log_format saude com query"; else ok "E/P10 log_format saude sem \$request/\$args"; fi
-cmp -s /etc/nginx/sites-enabled/central.rbvcompany.com $V/central.rbvcompany.com && ok "E/P10 o nginx de produção ainda é o do backup (nada ligado)" || falta "E/P10 o site da central mudou depois do backup (virada ligada ou alteração alheia?)"
+grep -v 'central-chatwoot.conf' /etc/nginx/sites-enabled/central.rbvcompany.com | cmp -s - $V/central.rbvcompany.com && ok "E/P10 o nginx de produção ainda é o do backup (nada ligado; o include das rotas do Chatwoot do P17 não conta)" || falta "E/P10 o site da central mudou depois do backup (virada ligada ou alteração alheia?)"
 
 # F. P11
 [ -s $V/10-buckets.csv ] || falta "F/P11 falta $V/10-buckets.csv"
