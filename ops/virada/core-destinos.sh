@@ -10,18 +10,21 @@
 #   soltar        retido dos destinos do Supabase (pendente; falhou desde o início da janela) -> pendente já, com
 #                 tentativas 0; a varredura de 1 min do Core entrega. Com a janela ligada, só recomeça os ~81 min.
 #   contar        entregas dos destinos do Supabase por status desde o início da janela (só leitura).
+#   entregas-desde 'AAAA-MM-DD HH:MM:SS'  (UTC) entregas dos destinos que o T+14 aponta ao Go, atualizadas depois dessa hora:
+#                 `destino status http_status quantas` (só leitura; o V8 usa para provar o roteamento sem webhook sintético).
 # Cada troca grava os dois arquivos que o deploy.sh compara e roda o deploy do Core com SKIP_PULL=1 (nada de
 # código novo; o core-go é recriado: segundos sem receber, a Shopify reenvia). Se o deploy falhar (ele volta as
 # imagens e AVISA por WhatsApp e e-mail), volta o env anterior e deploya de novo. Só nomes de chave e
 # esquema://host vão para a saída, nunca segredo.
-# Uso: sh ops/virada/core-destinos.sh janela [--imprimir] | instalar ARQ | restaurar | soltar | contar
+# Uso: sh ops/virada/core-destinos.sh janela [--imprimir] | instalar ARQ | restaurar | soltar | contar | entregas-desde HORA
 #      (NA_VPS como no spool-nginx.sh)
 # Saída: 0 = feito (ou já estava); 1 = falhou (env anterior de volta); 2 = uso.
 set -eu
-uso() { sed -n '2,18p' "$0" >&2; exit 2; }
+uso() { sed -n '2,20p' "$0" >&2; exit 2; }
 case "${1:-}:$#" in
   janela:1|restaurar:1|soltar:1|contar:1|instalar:2) ;;
   janela:2) [ "$2" = --imprimir ] || uso ;;
+  entregas-desde:2) printf %s "$2" | grep -qxE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' || uso ;;
   *) uso ;;
 esac
 NA_VPS=${NA_VPS:-ssh -o BatchMode=yes ${VPS:-op}}
@@ -232,6 +235,10 @@ instalar|restaurar)
   ;;
 soltar) soltar ;;
 contar) echo "destino, status, quantas:"; retido "$CONTAR" ;;
+entregas-desde)  # ARG2 já validado como data/hora (sem aspas nem espaço extra: entra na SQL)
+  retido "SELECT destino, status, COALESCE(http_status, 0), COUNT(*) FROM webhook_entregas
+  WHERE destino IN ('supabase_checkout','supabase_abandono','supabase_pedido','central_pedidos') AND updated_at >= '$ARG2'
+  GROUP BY destino, status, http_status ORDER BY destino, status, http_status;" ;;
 esac
 NO_ALVO
 } | $NA_VPS sh

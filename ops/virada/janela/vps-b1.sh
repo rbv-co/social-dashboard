@@ -5,7 +5,7 @@
 # Roda como root na VPS. Nunca imprime senha nem token (senha só por stdin do psql ou arquivo 600; a saída ainda passa por
 # `oculta` no Mac). Cada função devolve 0 (ok) ou 1 e diz o porquê; nada aqui é chamado fora da janela.
 # Funções: recriar | papeis | clone | hosts | storage | subir | conferir | fumaca | parar | nginx-reverter |
-#          modo-chatwoot | host-chatwoot | v4 | v7 <local|publico> | v8 | v9 | revogar-fumaca
+#          modo-chatwoot | host-chatwoot | v4 | v7 <local|publico> | v8 | v8-chatwoot <epoch> | v9 | v10-criar <módulos> | v10-revogar | revogar-fumaca
 set -u
 S=/root/secrets; V=/root/virada; API=/root/api; ADB=/root/api-db
 AR=/var/lib/api/arquivos; CENTRAL=central.rbvcompany.com
@@ -139,6 +139,25 @@ fumaca() {
   echo "objeto $obj HTTP 200; fumaça OK (token em $V/fumaca.token, revogado no fim da janela)"
 }
 
+# V10 (v10-telas.mjs): conta de serviço descartável com os módulos pedidos. O nome leva a hora porque o nome de um token revogado
+# continua ocupado; o e-mail é fixo: na 2ª vez o usuário já existe (perfil com os módulos da 1ª) e o `criar` sem --modulos o reaproveita.
+# Imprime SÓ o token (última linha do stdout do `api servico criar`); quem chama guarda em memória. Os nomes ficam em $V/v10.nomes.
+v10-criar() {
+  [ -n "${1:-}" ] || falha "uso: v10-criar <módulos separados por vírgula>" || return 1
+  cd "$API" || return 1
+  n="virada-v10-$(date +%s)"; e=virada-v10@robos.invalid
+  t=$( ( umask 077; docker compose exec -T api api servico criar "$n" "$e" --modulos "$1" 2> /dev/null ) | tail -n 1 )
+  [ -n "$t" ] || t=$( ( umask 077; docker compose exec -T api api servico criar "$n" "$e" 2> /dev/null ) | tail -n 1 )
+  [ -n "$t" ] || falha "api servico criar $n" || return 1
+  echo "$n" >> "$V/v10.nomes"
+  printf '%s\n' "$t"
+}
+v10-revogar() {
+  cd "$API" || return 1
+  [ -s "$V/v10.nomes" ] || { echo "virada-v10: nenhuma conta criada, nada a revogar"; return 0; }
+  while read -r n; do docker compose exec -T api api servico revogar "$n" > /dev/null 2>&1 || true; done < "$V/v10.nomes"
+  echo "virada-v10: $(grep -c . "$V/v10.nomes") conta(s) revogada(s) (token só existia em memória)"
+}
 revogar-fumaca() {
   cd "$API" && docker compose exec -T api api servico revogar virada-fumaca > /dev/null 2>&1
   rm -f "$V/fumaca.token" "$V/fumaca.curl"; echo "virada-fumaca revogado; token apagado"
@@ -217,6 +236,32 @@ v8() {
   psql_api -c "select origem, count(*), max(recebido_em) from webhooks_recebidos where recebido_em > '$desde'::timestamptz group by 1 order by 1"
 }
 
+# V8, prova de roteamento do Chatwoot sem tráfego sintético: POSTs nas rotas do Chatwoot que o nginx registrou em saude.log
+# ("$time_iso8601 $host $status $request_method $uri", sem query) depois de <epoch>. Imprime `2xx N` e `nao-2xx M` (e até 5 linhas
+# das que falharam, sem query). Só leitura.
+v8-chatwoot() {
+  [ -n "${1:-}" ] || falha "uso: v8-chatwoot <epoch>" || return 1
+  SL=${SAUDE_LOG:-/var/log/nginx/saude.log}
+  cat "$SL.1" "$SL" 2> /dev/null | python3 -I -c '
+import re, sys
+from datetime import datetime
+ini = float(sys.argv[1]); ok = 0; ruim = []
+for l in sys.stdin:
+    c = l.split()
+    if len(c) < 5 or c[3] != "POST" or not re.fullmatch(r"/api/receber-(webhook|opt-out)-chatwoot", c[4]):
+        continue
+    try:
+        if datetime.fromisoformat(c[0]).timestamp() < ini:
+            continue
+    except ValueError:
+        continue
+    if c[2].startswith("2"): ok += 1
+    else: ruim.append(l.strip())
+print("2xx %d" % ok); print("nao-2xx %d" % len(ruim))
+for l in ruim[:5]: print(l)
+' "$1"
+}
+
 # estado do spool sem escrever nada: arquivos por pasta
 spool-estado() { find /var/lib/virada-spool -maxdepth 2 -type f 2> /dev/null | awk -F/ '{ print $4 }' | sort | uniq -c | sed 's/^ *//'; echo "spool: $(systemctl is-active virada-spool 2>&1)"; }
 
@@ -238,6 +283,6 @@ for k,v in d.items():
 [ $# -ge 1 ] || { sed -n '2,12p' "$0" >&2; exit 2; }
 fn=$1; shift
 case $fn in
-  recriar|papeis|clone|hosts|storage|subir|conferir|fumaca|parar|nginx-reverter|modo-chatwoot|host-chatwoot|v4|v7|v8|v9|spool-estado|revogar-fumaca) "$fn" "$@" ;;
+  recriar|papeis|clone|hosts|storage|subir|conferir|fumaca|parar|nginx-reverter|modo-chatwoot|host-chatwoot|v4|v7|v8|v8-chatwoot|v9|v10-criar|v10-revogar|spool-estado|revogar-fumaca) "$fn" "$@" ;;
   *) echo "função desconhecida: $fn" >&2; exit 2 ;;
 esac
