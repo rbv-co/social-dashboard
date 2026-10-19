@@ -79,7 +79,8 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import { destinoDepoisDoLogin } from '../../guarda-de-rotas.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { setSession, carregarPerfil, entrarPelaApi, abrirSessaoDaApi } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { areaNaApi, pedir } from '../../compartilhado/api.js'
@@ -89,6 +90,7 @@ import { areaNaApi, pedir } from '../../compartilhado/api.js'
 const naApi = areaNaApi('conta')
 
 const router = useRouter()
+const route = useRoute()
 
 // Caminho absoluto: servido em produção via rewrite do Vercel (/midia/:path*),
 // igual ao legado. Ligação dinâmica (:src) evita que o Vite tente resolver
@@ -117,7 +119,7 @@ async function entrar() {
     const r = await entrarPelaApi(email.value.trim(), senha.value)
     loginCarregando.value = false
     if (!r.ok) { loginErro.value = r.erro; return }
-    router.push({ name: 'inicio' })
+    router.push(destinoDepoisDoLogin(route.query.volta))
     return
   }
   const { data, error } = await sbClient.auth.signInWithPassword({
@@ -136,7 +138,7 @@ async function entrar() {
   if (data?.session) {
     setSession(data.session)
     await carregarPerfil(data.session)
-    router.push({ name: 'inicio' })
+    router.push(destinoDepoisDoLogin(route.query.volta))
   }
 }
 

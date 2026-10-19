@@ -82,6 +82,11 @@ var publicas = map[string]bool{
 	// Plano 07a: o retorno do OAuth do Zoho e da Microsoft. A trava é o state (10 min, uso único) gravado pelo admin no
 	// proxy; limite por IP no roteador; acessos/oauth_test.go
 	"GET /acessos-oauth/callback/zoho": true, "GET /acessos-oauth/callback/microsoft": true,
+	// MCP da Frota (ChatGPT): metadados e OAuth públicos por definição (registro só com host de retorno permitido,
+	// PKCE obrigatório, código de uso único); /mcp exige o token de tipo 'mcp' no handler (401). mcp/mcp_test.go
+	"GET /.well-known/oauth-protected-resource": true, "GET /.well-known/oauth-protected-resource/mcp": true,
+	"GET /.well-known/oauth-authorization-server": true, "POST /oauth/registrar": true, "GET /oauth/autorizar": true,
+	"POST /oauth/token": true, "POST /mcp": true,
 }
 
 func webhooksPublicos() []string {
@@ -570,7 +575,8 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		// Plano 5.10: o cartão EAN do Zoho, no grupo de SESSÃO com prazo próprio
 		"POST /vessel-baixar-cartao": PrazoCartao,
 		// Plano 07a: o proxy do Acessos (Graph/WorkDrive: centenas de chamadas) e o retorno do OAuth
-		"POST /acessos-proxy": PrazoAcessos, "GET /acessos-oauth/callback/zoho": 30 * time.Second, "GET /acessos-oauth/callback/microsoft": 30 * time.Second}
+		"POST /acessos-proxy": PrazoAcessos, "GET /acessos-oauth/callback/zoho": 30 * time.Second, "GET /acessos-oauth/callback/microsoft": 30 * time.Second,
+		"POST /mcp": PrazoMCP, "POST /oauth/token": 30 * time.Second}
 	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, rotas510, rotas54, rotas512, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3, 5.5, 5.10, 5.4 e 12: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}

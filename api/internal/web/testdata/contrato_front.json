@@ -3148,6 +3148,11 @@
      "src/ferramentas/noticias/tela-de-noticias.vue"
     ]
    },
+   "GET /oauth/pedido": {
+    "arquivos": [
+     "src/ferramentas/oauth/tela-de-consentimento.vue"
+    ]
+   },
    "GET /status-ia/execucoes": {
     "arquivos": [
      "src/ferramentas/claude-status/tela-de-status-claude.vue"
@@ -3251,6 +3256,11 @@
    "POST /frota/usos/trocar": {
     "arquivos": [
      "src/ferramentas/frota/tela-de-frota.vue"
+    ]
+   },
+   "POST /oauth/decidir": {
+    "arquivos": [
+     "src/ferramentas/oauth/tela-de-consentimento.vue"
     ]
    },
    "POST /patrimonio/bens/apagar-em-massa": {
