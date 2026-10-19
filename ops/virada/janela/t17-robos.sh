@@ -60,9 +60,10 @@ install -m 644 -o root -g root "$VIRADA/robos-social-dashboard.go" "$CRON" || ex
 $SYSTEMCTL start cartoes-ean || exit 1
 sleep 5; [ "$($SYSTEMCTL is-active cartoes-ean)" = active ] || { say "cartoes-ean não ficou ativo"; exit 1; }
 
-# fumaça: o rodar-robo.sh lê o env novo, resolve o IP do api-db e grava a rodada por pg (robo_reporte)
+# fumaça: o rodar-robo.sh lê o env novo, resolve o IP do api-db e grava a rodada por pg (robo_reporte). Robô sem ROBO_<NOME>_DATABASE_URL é
+# RECUSADO pela trava (com razão: o DATABASE_URL global ainda é o do Supabase), então a fumaça empresta a URL do papel robo_reporte, só no ambiente
 t0=$(date +%s)
-LOGS="$VIRADA/t17-logs" LOCKS="$VIRADA/t17-locks" ENV_ROBOS="$ENV_ROBOS" RAIZ="$REPO" bash -c 'mkdir -p "$LOGS" "$LOCKS"; touch "$LOGS/.pull"; exec "$RAIZ/coletor/vps/rodar-robo.sh" t17-fumaca 2 -- true' || exit 1
+ROBO_T17_FUMACA_DATABASE_URL=$(sed -n 's/^REPORTAR_DATABASE_URL=//p' "$ENV_ROBOS" | tail -1) LOGS="$VIRADA/t17-logs" LOCKS="$VIRADA/t17-locks" ENV_ROBOS="$ENV_ROBOS" RAIZ="$REPO" bash -c 'mkdir -p "$LOGS" "$LOCKS"; touch "$LOGS/.pull"; exec "$RAIZ/coletor/vps/rodar-robo.sh" t17-fumaca 2 -- true' || exit 1
 n=$(docker exec api-db psql -U api -d "$BANCO" -XAtc "select count(*) from robos_execucoes where robo = 't17-fumaca' and conferido_em >= to_timestamp($t0 - 2)")
 [ "${n:-0}" -ge 1 ] || { say "a rodada de fumaça não apareceu em robos_execucoes"; exit 1; }
 trap - EXIT
