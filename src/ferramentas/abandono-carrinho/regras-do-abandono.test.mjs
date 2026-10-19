@@ -39,7 +39,8 @@ test('separa por status; aguardando: o que vence primeiro em cima; demais: o mai
     { token: 'b', status: 'aguardando', ultimo_evento_em: '2026-09-28T12:01:00Z' },
     { token: 'c', status: 'fila_envio', fila_envio_em: '2026-09-28T12:10:00Z' },
     { token: 'd', status: 'fila_envio', fila_envio_em: '2026-09-28T12:20:00Z' },
-    { token: 'e', status: 'comprou', comprou_em: '2026-09-28T12:30:00Z' },
+    { token: 'e', status: 'comprou', comprou_em: '2026-09-28T12:30:00Z', total: 90 },
+    { token: 'h', status: 'comprou', comprou_em: '2026-09-28T12:35:00Z', total: null, url_de_recuperacao: null }, // criada pela compra: não aparece
     { token: 'f', status: 'pagamento_pendente', pedido_criado_em: '2026-09-28T12:40:00Z' },
     { token: 'g', status: 'pagamento_pendente', pedido_criado_em: '2026-09-28T12:50:00Z' },
   ])
