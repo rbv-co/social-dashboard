@@ -5,6 +5,8 @@ package meta
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -53,6 +56,53 @@ type Proxy struct {
 	Pool         *pgxpool.Pool
 	Core         *core.Cliente
 	HostsDeMidia []string // vazio = nenhum upload de mídia é aceito
+
+	mu       sync.Mutex
+	escritas map[string]time.Time // escrita igual em andamento ou de resultado incerto -> até quando vale a trava
+}
+
+// validadeEscritaIncerta: quanto tempo uma escrita sem resposta clara bloqueia a repetição idêntica.
+const validadeEscritaIncerta = 2 * time.Minute
+
+// reservar trava a escrita `chave` enquanto ela roda. Falso = já há uma igual em andamento ou de resultado
+// incerto (o core ou a rede falhou depois de o pedido poder ter chegado à Meta): repetir criaria campanha,
+// anúncio ou mídia em duplicidade, e a tela só repete porque não sabe se gravou.
+// ponytail: memória deste processo (a API roda numa instância só); com mais de uma, mover para o banco.
+func (p *Proxy) reservar(chave string, prazo time.Duration) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	agora := time.Now()
+	for k, ate := range p.escritas {
+		if agora.After(ate) {
+			delete(p.escritas, k)
+		}
+	}
+	if _, ocupada := p.escritas[chave]; ocupada {
+		return false
+	}
+	if p.escritas == nil {
+		p.escritas = map[string]time.Time{}
+	}
+	p.escritas[chave] = agora.Add(prazo + 10*time.Second)
+	return true
+}
+
+// concluir libera a trava; incerta a mantém por validadeEscritaIncerta.
+func (p *Proxy) concluir(chave string, incerta bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if incerta {
+		p.escritas[chave] = time.Now().Add(validadeEscritaIncerta)
+	} else {
+		delete(p.escritas, chave)
+	}
+}
+
+// chaveDaEscrita identifica "a mesma escrita": quem pediu, em qual conta, o quê e com quais parâmetros/mídia.
+func chaveDaEscrita(ator, conta string, ped core.PedidoMeta) string {
+	params, _ := json.Marshal(ped.Parametros) // chaves de mapa saem ordenadas
+	h := sha256.Sum256([]byte(strings.Join([]string{ator, conta, ped.Metodo, ped.Caminho, string(params), ped.ImagemURL, ped.ImagemCampo, ped.VideoURL}, "\x00")))
+	return hex.EncodeToString(h[:])
 }
 
 // midiaPermitida fecha o SSRF: a URL de mídia só pode ser https, sem credenciais, num host
@@ -102,7 +152,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	metodo := strings.ToUpper(in.Method)
 	escreve := metodo == "POST" || metodo == "DELETE" || in.ImageFromURL != "" || in.VideoFromURL != "" || temParam(in.Params, "method")
-	if a := auth.AtorDoContexto(r.Context()); escreve && (a == nil || a.ImpersonadorID != nil) {
+	ator := auth.AtorDoContexto(r.Context())
+	if a := ator; escreve && (a == nil || a.ImpersonadorID != nil) {
 		// Ruling 5.6-6: criar campanha, subir mídia e apagar na Meta gastam dinheiro em nome de alguém.
 		responder(w, http.StatusForbidden, map[string]string{"error": "sem_permissao", "mensagem": dados.FraseEntrarComo})
 		return
@@ -165,9 +216,21 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancela := context.WithTimeout(r.Context(), prazo)
 	defer cancela()
+	incerta := false
+	if escreve {
+		chave := chaveDaEscrita(ator.ID, conta, ped)
+		if !p.reservar(chave, prazo) {
+			// 500 de propósito: a tela trata string com status < 500 como "nada foi gravado" e deixaria repetir.
+			erro(w, http.StatusInternalServerError, "uma escrita igual está em andamento ou terminou sem resposta clara: confira na Meta se ela foi gravada antes de repetir")
+			return
+		}
+		incerta = true // padrão seguro (inclusive em pânico): só libera quando o desfecho é conhecido
+		defer func() { p.concluir(chave, incerta) }()
+	}
 	// Sem repetição aqui (tentativas = 1): o gestor e os robôs já tentam de novo.
 	resp, err := p.Core.Meta(ctx, ped, 1)
 	if errors.Is(err, core.ErrSemToken) {
+		incerta = false // nunca saiu daqui
 		erro(w, http.StatusServiceUnavailable, "core nao configurado")
 		return
 	}
@@ -177,6 +240,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		erro(w, http.StatusInternalServerError, "falha ao falar com o core")
 		return
 	}
+	incerta = resp.Status >= 500 // 5xx do core/Graph: pode ter gravado; < 500 é resposta definitiva (inclusive recusa da Graph)
 	var j any
 	dj := json.NewDecoder(bytes.NewReader(resp.Corpo))
 	dj.UseNumber() // números da Graph saem como entraram
