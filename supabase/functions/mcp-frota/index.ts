@@ -51,6 +51,8 @@ function banco(sb: any, auth: string) {
     async inserir(tabela: string, linhas: unknown) { return ou(await sb.from(tabela).insert(linhas).select()); },
     async editar(tabela: string, id: string, campos: unknown) { return ou(await sb.from(tabela).update(campos).eq('id', id).select()); },
     async apagar(tabela: string, id: string) { ou(await sb.from(tabela).delete().eq('id', id)); },
+    // o cadastro de colaboradores pela porta estreita da tela (nome e status, sem e-mail nem telefone)
+    async pessoas() { return ou(await sb.rpc('pessoas_para_escolher')); },
     // o maior km já registrado do carro (estado-do-veiculo.js): devolução, saída, hodômetro do checklist,
     // manutenção e abastecimento. Leitura que falha derruba a gravação: não se grava às cegas.
     async maiorKm(veiculo: string) {
