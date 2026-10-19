@@ -330,6 +330,24 @@ try {
     // ── forma de pagamento desta venda, linha por linha ──────────────────────
     // Só roda se o catálogo desta rodada veio ok (ver bloco 0 no topo do
     // arquivo) — sem catálogo, pular é mais seguro que gravar errado.
+    // ── quem vendeu, no cache que o ranking por vendedor lê ──────────────────
+    // ⚠️ A Gestão à Vista monta o ranking com `bling_pedido_vendedor`, que só o
+    // navegador de quem abria a tela preenchia — e desde 13/10/2026 não
+    // preenchia mais: a venda da Letícia (18/10) caiu em "Sem vendedor". O
+    // detalhe já está na mão aqui; gravar é de graça. vendedor.id=0 é "sem
+    // vendedor" no Bling: não grava (o ajuste manual mora em outra tabela,
+    // bling_pedido_ajuste_vendedor, e a tela o aplica por cima deste cache).
+    if (detalhe.vendedor?.id) {
+      await cli.query(
+        `insert into bling_pedido_vendedor (pedido_id, vendor_id, pedido_data, qtd_itens, loja_id, updated_at)
+         values ($1, $2, $3, $4, $5, now())
+         on conflict (pedido_id) do update set vendor_id = excluded.vendor_id,
+           pedido_data = excluded.pedido_data, qtd_itens = excluded.qtd_itens,
+           loja_id = excluded.loja_id, updated_at = now()`,
+        [p.id, detalhe.vendedor.id, String(p.data).slice(0, 10),
+         detalhe.itens?.length || 1, detalhe.loja?.id ?? p.loja?.id ?? null]);
+    }
+
     if (tipoPagamentoPorFormaId) {
       const linhasFP = linhasDeFormaPagamento(p.id, detalhe.loja?.id || null, detalhe.parcelas, tipoPagamentoPorFormaId);
       // Forma de pagamento fora do catálogo (raro: Bling pode ter cadastrado
