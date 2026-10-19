@@ -14,8 +14,8 @@
 #             exatamente essas 6 colunas do public, nenhum privilégio de tabela nem default, bypassrls ligado e a
 #             consulta do PDV com linhas. Qualquer falha desfaz tudo. Rodar 2× dá o mesmo resultado.
 #   ler       DB_URL = a URL do PDV (papel pdv_leitura): imprime "linhas=N shopify_pedidos=… vessel_pecas_tudo=…
-#             profiles=…" (negado | lido | erro)
-#   reverter  roda DIR/pdv_leitura-grants-antes.sql e confere que a foto ficou igual à de antes
+#             profiles=…" (negado | lido | erro); sai 1 se N = 0
+#   reverter  roda DIR/pdv_leitura-grants-antes.sql e confere com a foto (tabela que sumiu: pula, avisa e sai 1)
 # Saída: 0 ok e conferido; 1 falhou ou divergiu; 2 uso.
 set -eu
 ACAO=${1:-}; URL=${2:-}; DIR=${3:-}
@@ -26,7 +26,7 @@ umask 077; mkdir -p "$DIR"; DIR=$(cd "$DIR" && pwd)
 URL=$(printf '%s' "$URL" | sed 's#:6543/#:5432/#')   # pooler de sessão, não o de transação
 TAB=$(printf '\t')
 FOTO="$DIR/pdv_leitura-acl-antes.tsv"; REVERTER="$DIR/pdv_leitura-grants-antes.sql"
-q() { _q=0; psql "$URL" -X -q -v ON_ERROR_STOP=1 -At -F "$TAB" "$@" 2> "$DIR/.erro" || _q=$?; oculta < "$DIR/.erro" >&2; rm -f "$DIR/.erro"; return $_q; }
+q() { _q=0; psql "$URL" -X -q -v ON_ERROR_STOP=1 -At -F "$TAB" "$@" 2> "$DIR/.erro" || _q=$?; oculta < "$DIR/.erro" >&2; rm -f "$DIR/.erro"; return $((_q > 0)); }
 
 CONSULTA_PDV="select p.codigo, l.sku, p.numero_na_serie, p.criado_em from public.vessel_pecas p
  join public.vessel_lotes l on l.id = p.lote_id where l.sku is not null"
@@ -59,6 +59,13 @@ fora_do_alcance() {
                  where t.attacl is not null and $PDV and c.relnamespace <> 'public'::regnamespace)
              + (select count(*) from pg_proc p, aclexplode(p.proacl) a where $PDV)"
 }
+# o `aplicar` falhou: diz se a ACL é mesmo a da foto (uma queda durante o COMMIT pode ter gravado)
+nao_aplicou() {
+  if foto_acl 2> /dev/null | grep -v '^papel' > "$DIR/.agora" && grep -v '^papel' "$FOTO" | diff -q - "$DIR/.agora" > /dev/null
+  then echo "NÃO APLICADO: a transação foi desfeita, a ACL é a da foto" >&2
+  else echo "FALHOU e a ACL NÃO é a da foto (ou não deu para lê-la): rode 'ler' e decida entre 'reverter' e 'aplicar'" >&2; fi
+  rm -f "$DIR/.agora"; exit 1
+}
 
 case "$ACAO" in
 foto)
@@ -70,19 +77,22 @@ foto)
   { echo "-- reversão do pdv-leitura-supabase.sh aplicar: devolve os grants de pdv_leitura como estavam na foto"
     echo "begin;"
     echo "revoke all on all tables in schema public from pdv_leitura;"
-    q -c "select format('grant %s on table public.%I to pdv_leitura%s;', a.privilege_type, c.relname, $OPCAO) $TABELAS and $PDV
-          union all
-          select format('grant %s (%I) on table public.%I to pdv_leitura%s;', a.privilege_type, t.attname, c.relname, $OPCAO) $COLUNAS and $PDV
-          union all
-          select format('alter default privileges %s grant %s on %s to pdv_leitura%s;', $DONO_PADRAO, a.privilege_type, $TIPO_PADRAO, $OPCAO)
-          $PADRAO where $PDV
-          order by 1"
+    # cada grant protegido: tabela/coluna apagada ou renomeada depois da foto não desfaz a reversão inteira (o diff acusa)
+    q -c "select format('do \$r\$ begin %s exception when undefined_table or undefined_column then raise warning %L, sqlerrm; end \$r\$;',
+                        g, 'reversão pulou (sumiu depois da foto): %')
+            from (select format('grant %s on table public.%I to pdv_leitura%s;', a.privilege_type, c.relname, $OPCAO) $TABELAS and $PDV
+                  union all
+                  select format('grant %s (%I) on table public.%I to pdv_leitura%s;', a.privilege_type, t.attname, c.relname, $OPCAO) $COLUNAS and $PDV
+                  union all
+                  select format('alter default privileges %s grant %s on %s to pdv_leitura%s;', $DONO_PADRAO, a.privilege_type, $TIPO_PADRAO, $OPCAO)
+                  $PADRAO where $PDV) s(g)
+           order by g"
     echo "commit;"; } > "$DIR/reverter.tmp"
   mv "$DIR/reverter.tmp" "$REVERTER"; mv "$DIR/foto.tmp" "$FOTO"
   echo "foto: $(wc -l < "$FOTO" | tr -d ' ') linhas ($(grep -c "^tabela" "$FOTO" || true) de tabela, $(grep -c "^coluna" "$FOTO" || true) de coluna, $(grep -c "^padrao" "$FOTO" || true) default); reversão: $REVERTER";;
 aplicar)
   [ -e "$FOTO" ] && [ -e "$REVERTER" ] || { echo "sem a foto em $DIR: rode 'foto' antes (é ela que reverte)" >&2; exit 1; }
-  q -1 -f - <<SQL || { echo "NÃO APLICADO: a transação foi desfeita, a ACL ficou como estava" >&2; exit 1; }
+  q -1 -f - <<SQL || nao_aplicou
 revoke all on all tables in schema public from pdv_leitura;
 alter default privileges for role postgres in schema public revoke all on tables from pdv_leitura;
 grant select (codigo, lote_id, numero_na_serie, criado_em) on public.vessel_pecas to pdv_leitura;
@@ -114,7 +124,8 @@ ler)
             elif grep -q 'permission denied' "$DIR/.erro"; then echo negado; else echo erro; fi; rm -f "$DIR/.erro"; }
   echo "linhas=$n shopify_pedidos=$(sonda 'select cliente_email from public.shopify_pedidos limit 1')" \
        "vessel_pecas_tudo=$(sonda 'select * from public.vessel_pecas limit 1')" \
-       "profiles=$(sonda 'select 1 from public.profiles limit 1')";;
+       "profiles=$(sonda 'select 1 from public.profiles limit 1')"
+  [ "$n" != 0 ] || { echo "o PDV lê 0 linhas" >&2; exit 1; };;
 reverter)
   [ -e "$REVERTER" ] || { echo "sem $REVERTER: nada a reverter" >&2; exit 1; }
   q -f "$REVERTER" > /dev/null

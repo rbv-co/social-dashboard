@@ -35,6 +35,7 @@ psql "$BASE" -X -q -v ON_ERROR_STOP=1 -c "create role pdv_leitura login bypassrl
   -c "do \$\$ begin if not exists (select from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if; end \$\$" || exit 1
 adm <<'SQLX'
 alter default privileges for role postgres in schema public grant select on tables to pdv_leitura;
+create table velha (x int);
 create table vessel_lotes (id uuid primary key, sku text, fornecedor text);
 create table vessel_pecas (codigo text primary key, lote_id uuid references vessel_lotes, numero_na_serie int, gravada_em timestamptz, criado_em timestamptz);
 create table shopify_pedidos (id int primary key, cliente_email text);
@@ -59,8 +60,9 @@ ANTES="$(acl)"
 confere "foto" "$(saida foto)" "0"
 confere "foto de novo: recusa sobrescrever" "$(saida foto)" "1"
 
-adm -c "alter role pdv_leitura nobypassrls" 2>/dev/null || psql "$BASE" -X -q -c "alter role pdv_leitura nobypassrls"
-confere "aplicar sem bypassrls: falha" "$(saida aplicar)" "1"
+psql "$BASE" -X -q -c "alter role pdv_leitura nobypassrls"
+SAIDA="$(roda aplicar)"; confere "aplicar sem bypassrls: falha" "$?" "1"
+confere "  e diz que não aplicou" "$(printf '%s\n' "$SAIDA" | grep -c '^NÃO APLICADO')" "1"
 confere "e desfaz tudo (ACL igual à de antes)" "$(acl)" "$ANTES"
 psql "$BASE" -X -q -c "alter role pdv_leitura bypassrls"
 adm -c "grant select on shopify_pedidos to public"
@@ -71,7 +73,14 @@ confere "e desfaz tudo de novo" "$(acl)" "$ANTES"
 confere "aplicar (rodada 1)" "$(saida aplicar)" "0"; DEPOIS="$(acl)"
 confere "aplicar (rodada 2)" "$(saida aplicar)" "0"
 confere "a rodada 2 não muda a ACL" "$(acl)" "$DEPOIS"
+psql "$BASE" -X -q -c "alter role pdv_leitura nobypassrls"
+confere "aplicar falhando com a ACL já mudada: não diz 'não aplicado'" "$(roda aplicar | grep -c '^FALHOU e a ACL NÃO é a da foto')" "1"
+psql "$BASE" -X -q -c "alter role pdv_leitura bypassrls"
 confere "ler como o PDV" "$(roda ler "$SERVIDOR_PDV/$NOME")" "linhas=1 shopify_pedidos=negado vessel_pecas_tudo=negado profiles=negado"
+adm -c "update vessel_lotes set sku = null where sku = 'SS1A.01'"
+confere "ler com 0 linhas: sai 1" "$(saida ler "$SERVIDOR_PDV/$NOME")" "1"
+adm -c "update vessel_lotes set sku = 'SS1A.01' where id = 'aaaaaaaa-0000-0000-0000-000000000001'"
+confere "ler sem conexão: sai 1 (não o 2 do psql)" "$(saida ler 'postgres://ninguem@127.0.0.1:1/x')" "1"
 
 Q="select p.codigo, l.sku, p.numero_na_serie, p.criado_em is not null from public.vessel_pecas p join public.vessel_lotes l on l.id = p.lote_id where l.sku is not null"
 confere "todas(): a peça com SKU, apesar do RLS" "$(pdv -c "$Q")" "ABXCKN5PZA|SS1A.01|7|t"
@@ -85,8 +94,11 @@ adm -c "create table nova (x int)"
 nega "tabela nova depois do aplicar: não lê (o default saiu)" "select * from nova"
 confere "bypassrls continua ligado" "$(adm -c "select rolbypassrls from pg_roles where rolname = 'pdv_leitura'")" "t"
 
-adm -c "drop table nova"
-confere "reverter" "$(roda reverter)" "REVERTIDO: ACL igual à de antes (8 linhas)"
+adm -c "drop table nova" -c "drop table velha"
+confere "reverter com tabela apagada depois da foto: devolve o resto e acusa" "$(saida reverter)" "1"
+confere "  o resto voltou (o PDV lê profiles)" "$(pdv -c 'select count(*) from profiles')" "0"
+adm -c "create table velha (x int)"
+confere "reverter" "$(roda reverter)" "REVERTIDO: ACL igual à de antes (9 linhas)"
 confere "a ACL inteira voltou a ser a de antes" "$(acl)" "$ANTES"
 confere "ler depois de reverter" "$(roda ler "$SERVIDOR_PDV/$NOME")" "linhas=1 shopify_pedidos=lido vessel_pecas_tudo=lido profiles=lido"
 adm -c "create table nova (x int)"
