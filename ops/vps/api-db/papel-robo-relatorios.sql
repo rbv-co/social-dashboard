@@ -35,5 +35,6 @@ grant usage on schema public to robo_relatorios;
 -- refaz do zero: reaplicar tira o que saiu deste arquivo
 revoke all on all tables in schema public from robo_relatorios;
 revoke all on all sequences in schema public from robo_relatorios;
-grant select, insert, update on bling_depositos, bling_lojas, gc_estoque_item, gc_vendas_item to robo_relatorios;
+grant select, insert, update on bling_depositos, bling_lojas, gc_estoque_item to robo_relatorios;
+grant select, insert, update, delete on gc_vendas_item to robo_relatorios;
 grant select on bling_pedido_nota, bling_pedido_ajuste_valor to robo_relatorios;

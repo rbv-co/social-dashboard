@@ -63,15 +63,17 @@ esac
 
 # Robôs que NÃO leem o DATABASE_URL global (copia fala por COPIA_*, vigia por VIGIA_DATABASE_URL, publicar-o-site por banco nenhum):
 # com o corte ligado ele não vale para eles, e a trava abaixo os recusaria por nada (revisão Opus do PR do plano 02).
-# FASE 2 (Storage, plano 02): opr-diario e faxina-storage leem TABELAS por REST no Supabase velho (opr-diario: campaign_insights,
-# followers_leituras...; faxina-storage: fabrica_* para decidir o que apagar do bucket) e o Storage ainda mora lá. Com a chave
-# entregue eles leriam dado congelado (a faxina apagaria arquivo de campanha nova): ficam RECUSADOS (trava abaixo) até o plano 03
-# portar as leituras para o pg e a API ganhar o Storage. A chave segue guardada como STORAGE_SUPABASE_SERVICE_KEY no env, sem
-# ser entregue a ninguém. Sem a flag nada muda.
+# FASE 2 (Storage): faxina-storage é inteira sobre o bucket do Supabase (lista e apaga arquivos, decide pelo fabrica_*) e a API ainda
+# não tem Storage: fica RECUSADA (trava abaixo) até a fase 2 (a faxina apagaria arquivo de campanha nova com dado congelado). O
+# opr-diario (plano 03) lê e grava por pg; só a IMAGEM do relatório depende do Storage e é omitida em pg (as mensagens de texto saem).
+# A chave segue guardada como STORAGE_SUPABASE_SERVICE_KEY no env, sem ser entregue a ninguém. Sem a flag nada muda.
 fase2=""
 if [ -n "${SAIU_DO_SUPABASE:-}" ]; then
   case "$nome" in copia-do-banco|vigia-problemas-meta|publicar-o-site) unset DATABASE_URL ;; esac
-  case "$nome" in opr-diario|faxina-storage) fase2="SUPABASE_URL (dados e Storage ainda lidos do Supabase: fase 2)" ;; esac
+  case "$nome" in faxina-storage) fase2="SUPABASE_URL (dados e Storage ainda lidos do Supabase: fase 2)" ;; esac
+  # plano 03: os robôs "só-REST" (coletor/lib/rest-pg.mjs) trocam o PostgREST do Supabase por pg quando a flag está ligada.
+  # Só com DATABASE_URL (o do papel do robô): robô sem ele (copia-do-banco...) segue como está. Rollback = tirar SAIU_DO_SUPABASE.
+  [ -n "${DATABASE_URL:-}" ] && export REST_VIA_PG=1
 fi
 unset STORAGE_SUPABASE_SERVICE_KEY
 # a credencial do vigia é só dele (o REPORTAR_DATABASE_URL, do papel de menor poder, todos usam)

@@ -54,13 +54,24 @@ env_com 'SAIU_DO_SUPABASE=sim' "$POOLER" 'VIGIA_DATABASE_URL=postgres://robo_vig
 confere "vigia roda com o corte ligado e fica com a URL dele" "$(cat "$T/env" 2>/dev/null)" "DB= K= V=postgres://robo_vigia_meta:x@172.21.0.2:5432/api S="
 env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://api:x@172.21.0.2:5432/api' 'VIGIA_DATABASE_URL=segredo-do-vigia'; roda_env outro
 confere "a URL do vigia não chega aos outros robôs" "$(cat "$T/env" 2>/dev/null)" "DB=postgres://api:x@172.21.0.2:5432/api K= V= S="
-for r in opr-diario faxina-storage; do
+for r in faxina-storage; do
   rm -f "$T/env"; env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://api:x@172.21.0.2:5432/api' 'SUPABASE_URL=https://abc.supabase.co' 'STORAGE_SUPABASE_SERVICE_KEY=chave-storage'; roda_env $r
   confere "$r (fase 2) é RECUSADO com o corte ligado: ainda lê dado do Supabase" "$([ -e "$T/env" ] && echo rodou || echo recusado)" "recusado"
 done
+rm -f "$T/env"; env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://robo_opr:x@172.21.0.2:5432/api' 'SUPABASE_URL=https://abc.supabase.co'; roda_env opr-diario
+confere "opr-diario (plano 03, por pg) roda com o corte ligado" "$([ -e "$T/env" ] && echo rodou || echo recusado)" "rodou"
 env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://api:x@172.21.0.2:5432/api' 'SUPABASE_URL=https://abc.supabase.co' 'STORAGE_SUPABASE_SERVICE_KEY=chave-storage'; roda_env cards
 confere "a chave do Storage não é entregue a nenhum robô" "$(cat "$T/env" 2>/dev/null)" "DB=postgres://api:x@172.21.0.2:5432/api K= V= S="
 env_com 'DATABASE_URL=postgres://velho' 'SUPABASE_SERVICE_KEY=chave' 'STORAGE_SUPABASE_SERVICE_KEY=outra'; roda_env opr-diario
 confere "SEM a flag nada muda (a chave solta fica; opr-diario roda)" "$(cat "$T/env" 2>/dev/null)" "DB=postgres://velho K=chave V= S="
 
+
+# plano 03: a flag que liga os robôs "só-REST" em pg só vale com o corte ligado E com DATABASE_URL (robô sem ele segue como está)
+roda_flag() { bash "$R" "$1" 1 -- sh -c "echo \"F=\${REST_VIA_PG:-}\" > $T/env" >/dev/null 2>&1; }
+env_com 'SAIU_DO_SUPABASE=sim' 'DATABASE_URL=postgres://robo_x:x@172.21.0.2:5432/api'; roda_flag notas-dos-pedidos
+confere "corte ligado + DATABASE_URL: REST_VIA_PG=1" "$(cat "$T/env" 2>/dev/null)" "F=1"
+env_com 'SAIU_DO_SUPABASE=sim' "$POOLER"; roda_flag copia-do-banco
+confere "robô sem DATABASE_URL (copia-do-banco): sem a flag" "$(cat "$T/env" 2>/dev/null)" "F="
+env_com 'DATABASE_URL=postgres://velho' 'SUPABASE_SERVICE_KEY=chave'; roda_flag notas-dos-pedidos
+confere "SEM o corte: sem a flag (rollback)" "$(cat "$T/env" 2>/dev/null)" "F="
 [ "$falhas" -eq 0 ] && echo "TUDO OK" || { echo "$falhas falha(s)"; exit 1; }

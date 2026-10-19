@@ -6,6 +6,7 @@
 // Sem deps externas — fetch nativo (Node 18+).
 
 import fs from 'fs';
+import { abrirRest } from './lib/rest-pg.mjs';
 import { loginServico, robosNaApi, blingProxy, blingPedidos, blingProdutos, blingSaldoFoco, classificarItem, DEP_FOCO } from './lib/bling-comercial.mjs';
 import { CANAIS, realPorCanalDe, canaisFocoDe } from './lib/comercial-canais.mjs';
 import { bcgClass } from './lib/classificacao-comercial.mjs';
@@ -18,32 +19,28 @@ import { pathToFileURL } from 'node:url';
 const _t0 = Date.now(); // início da rodada (para medir duração no painel de status)
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY_GESTOR || process.env.ANTHROPIC_API_KEY;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM';
 const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 const MODEL = process.env.GESTOR_MODEL || 'claude-opus-4-8';
 
-if (!ANTHROPIC_API_KEY || !SERVICE_KEY || (!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
-  console.error('✗ Faltam segredos: ANTHROPIC_API_KEY_GESTOR, SUPABASE_SERVICE_KEY, GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
+if (!ANTHROPIC_API_KEY || (!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
+  console.error('✗ Faltam segredos: ANTHROPIC_API_KEY_GESTOR, GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
   process.exit(1);
 }
 
 // CANAIS foco vive em ./lib/comercial-canais.mjs (fonte única, reusada pelo
 // atualizador diário dos cards). Comportamento idêntico ao antigo const local.
-const REST = SUPABASE_URL + '/rest/v1';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// ── Supabase REST (service key) ──
-const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
+// ── REST do Supabase (rollback) ou pg com o papel robo_gestor (REST_VIA_PG=1); aberto em main() por abrirRest() ──
+let rest, REST, sb;
 async function sbGet(path) {
-  const r = await fetch(REST + path, { headers: sb });
+  const r = await rest.fetch(REST + path, { headers: sb });
   if (!r.ok) throw new Error('REST GET ' + path + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
 }
 async function sbInsert(path, body, prefer) {
-  const r = await fetch(REST + path, { method: 'POST', headers: prefer ? { ...sb, Prefer: prefer } : sb, body: JSON.stringify(body) });
+  const r = await rest.fetch(REST + path, { method: 'POST', headers: prefer ? { ...sb, Prefer: prefer } : sb, body: JSON.stringify(body) });
   if (!r.ok && ![200, 201, 204].includes(r.status)) throw new Error('REST POST ' + path + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r;
 }
@@ -379,6 +376,8 @@ function proximasDatasComerciais(hoje, dias = 80) {
 }
 
 async function main() {
+  rest = await abrirRest();   // banco fora: falha aqui, antes de qualquer escrita
+  ({ REST, sb } = rest);
   const hoje = hojeBR();
   const [y, m, d] = hoje.split('-').map(Number);
   const diasNoMes = new Date(y, m, 0).getDate();
@@ -409,8 +408,7 @@ async function main() {
     const pedidos90 = await blingPedidos(token, di90, df);
     const { giro, ultimaVenda } = await blingVendas(token, pedidos90, di);
     estoque = montarEstoque(saldoPorDep, prodMap, giro, d);
-    const weekNum = Math.floor(Date.now() / (7 * 864e5));
-    oportunidades = montarOportunidades(saldoPorDep, prodMap, giro, ultimaVenda, hoje, weekNum);
+    oportunidades = montarOportunidades(saldoPorDep, prodMap, giro, ultimaVenda, hoje); // weekNum era passado como `depositos` (bug de 05/09); sem lista, vale a semente
     cardapio = montarCardapio(saldoPorDep, prodMap, giro, ultimaVenda, hoje);
     console.log('estoque/opp:', estoque.map(e => `${e.canal}=${e.rupturas.length} rupt`).join(' · '), '| ofertas:', oportunidades.map(o => `${o.loja}=${o.itens.length}`).join(' · '), '| cardápio:', Object.entries(cardapio).map(([l, a]) => `${l}=${a.length}`).join(' · '));
   } catch (e) {
@@ -458,7 +456,7 @@ async function main() {
     + 'Pensa como dono: prioriza caixa, giro e competitividade; é criativo e agressivo no ponto certo; escreve briefings semanais AFIADOS, diretos e 100% acionáveis — chão de loja, sem encheção, sem repetir número à toa. '
     + 'Foco TOTAL em 3 canais: Shopping Tivoli (Santa Bárbara), Shopping Dom Pedro e Atacado Nuvem Shop. '
     + 'REGRAS DE MARCA (invioláveis): (1) a Vessel NÃO trabalha com itens nem público MASCULINO — nunca sugira produto, campanha ou segmentação masculina; (2) as bolsas são de CANVAS (tecido premium), MUITO mais duráveis que couro — JAMAIS chame ou trate o produto como "couro"; ao posicionar/argumentar venda, destaque o Canvas/tecido premium e a durabilidade superior ao couro.';
-  const lojasGarimpo = LOJAS_VAREJO.map(l => l.loja).join('" e "');
+  const lojasGarimpo = lojasEPulmao(null).lojas.map(l => l.loja).join('" e "');
   const user = 'Dados desta semana (R$ reais do Bling, metas e movimento de concorrentes):\n\n'
     + 'NÚMEROS:\n' + JSON.stringify(dados, null, 2) + '\n\n'
     + 'CONCORRENTES (últimas 2 semanas):\n' + (noticias.length ? noticias.map(n => `- [${n.marca}/${n.categoria}] ${n.titulo} (${n.fonte}, ${n.data_publicacao})`).join('\n') : '(sem notícias recentes)') + '\n\n'
@@ -533,5 +531,5 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     await logGestor('fim', e.message.slice(0, 500), 'falha geral');
     await registrarExecucao({ robo: 'gestor-comercial', acao: 'briefing semanal', modelo: MODEL, duracaoMs: Date.now() - _t0, status: 'erro', detalhe: e.message.slice(0, 500) });
     process.exit(1);
-  });
+  }).finally(() => rest?.fechar());
 }

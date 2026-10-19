@@ -38,11 +38,12 @@ export async function visitasPerfilDoDiaMeta(igId, token, diaISO, meta = metaDoC
 
 // Grava o cache que a tela lê (visitas_perfil_dia) — upsert por
 // (account_id, dia), então rodar de novo pro mesmo dia só atualiza.
-export async function salvarVisitasPerfilDoDia(restUrl, headers, accountId, diaISO, visitas) {
-  const r = await fetch(`${restUrl}/visitas_perfil_dia?on_conflict=account_id,dia`, {
+// `f`: fetch do `abrirRest` (lib/rest-pg.mjs), para o robô gravar por pg; padrão = fetch global.
+export async function salvarVisitasPerfilDoDia(restUrl, headers, accountId, diaISO, visitas, f = fetch) {
+  const r = await f(`${restUrl}/visitas_perfil_dia?on_conflict=account_id,dia`, {
     method: 'POST',
     headers: { ...headers, Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({ account_id: accountId, dia: diaISO, visitas }),
   });
-  if (!r.ok) throw new Error(`Supabase upsert visitas_perfil_dia: ${r.status} ${await r.text()}`);
+  if (!r.ok) throw new Error(`upsert visitas_perfil_dia: ${r.status} ${await r.text()}`);
 }

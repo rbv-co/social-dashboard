@@ -22,21 +22,21 @@ try {
 // a lib-llm lê ANTHROPIC_API_KEY no import → garante antes de importar
 if (!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY_GESTOR) process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY_GESTOR;
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SERVICE = process.env.SUPABASE_SERVICE_KEY;
-if (!SERVICE) { console.error('✗ falta SUPABASE_SERVICE_KEY'); process.exit(1); }
-const H = { apikey: SERVICE, Authorization: 'Bearer ' + SERVICE, 'Content-Type': 'application/json' };
-const rest = (p) => SUPABASE_URL + '/rest/v1' + p;
+// REST_VIA_PG=1 (plano 03 da virada): o mesmo caminho vira SQL no api-db; sem a flag segue o REST do Supabase.
+const { abrirRest } = await import('./lib/rest-pg.mjs');
+const R = await abrirRest().catch((e) => { console.error('✗ ' + e.message); process.exit(1); });
+const H = R.sb;
+const rest = (p) => R.REST + p;
 
 const { structured, OPUS, usageSummary } = await import('./lib-llm.mjs');
 const { registrarExecucao } = await import('./registrar-execucao.mjs');
 const _t0 = Date.now();
 
 // 1) edição mais recente
-const ultR = await fetch(rest('/noticias_concorrentes?select=rodada&order=rodada.desc&limit=1'), { headers: H }).then(r => r.json());
+const ultR = await R.fetch(rest('/noticias_concorrentes?select=rodada&order=rodada.desc&limit=1'), { headers: H }).then(r => r.json());
 const rodada = ultR && ultR[0] && ultR[0].rodada;
 if (!rodada) { console.error('✗ sem rodada'); process.exit(1); }
-const itens = await fetch(rest('/noticias_concorrentes?rodada=eq.' + rodada + '&select=marca,categoria,titulo,resumo,destaque&order=marca.asc'), { headers: H }).then(r => r.json());
+const itens = await R.fetch(rest('/noticias_concorrentes?rodada=eq.' + rodada + '&select=marca,categoria,titulo,resumo,destaque&order=marca.asc'), { headers: H }).then(r => r.json());
 console.log('edição', rodada, '·', itens.length, 'itens');
 
 // 2) monta o contexto (foco campanhas/marketing/promo, mas manda tudo pro modelo julgar)
@@ -70,7 +70,7 @@ if (!md || md.length < 200) { console.error('✗ resposta vazia/curta'); process
 const uso = usageSummary().text;
 
 // 3) upsert noticias_panorama
-const r = await fetch(rest('/noticias_panorama?on_conflict=rodada'), {
+const r = await R.fetch(rest('/noticias_panorama?on_conflict=rodada'), {
   method: 'POST',
   headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
   body: JSON.stringify({ rodada, conteudo_md: md, modelo: OPUS, uso }),
@@ -84,3 +84,4 @@ await registrarExecucao({
   duracaoMs: Date.now() - _t0, itens: 1, unidade: 'panoramas',
   status: 'ok', detalhe: `rodada ${rodada} · ${md.length} chars`,
 });
+await R.fechar();

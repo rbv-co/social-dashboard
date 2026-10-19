@@ -2,17 +2,16 @@
 // Determinístico (sem LLM). RODADA = env ou hoje (BR). Idempotente por marca+rodada+categoria.
 import fs from 'fs';
 import { coletarLoja, LOJAS } from './lojas.mjs';
+import { abrirRest } from './lib/rest-pg.mjs';
 
 const env = {};
 try { for (const l of fs.readFileSync(new URL('./.env', import.meta.url), 'utf8').split('\n')) { const m = l.match(/^([A-Z_]+)=(.*)$/); if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, ''); } } catch (e) {}
-const URL_SB = process.env.SUPABASE_URL || env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const KEY = process.env.SUPABASE_SERVICE_KEY || env.SUPABASE_SERVICE_KEY;
 const RODADA = process.env.RODADA || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 const DRY = process.env.DRY === '1';
-if (!KEY) { console.error('✗ falta SUPABASE_SERVICE_KEY'); process.exit(1); }
-const sbH = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+// REST_VIA_PG=1 (plano 03 da virada): o mesmo caminho vira SQL no api-db; sem a flag segue o REST do Supabase.
+const R = await abrirRest({ ...env, ...process.env }).catch((e) => { console.error('✗ ' + e.message); process.exit(1); });
 async function rest(method, path, body) {
-  const r = await fetch(URL_SB + '/rest/v1/' + path, { method, headers: { ...sbH, Prefer: 'return=representation' }, body: body ? JSON.stringify(body) : undefined });
+  const r = await R.fetch(R.REST + '/' + path, { method, headers: { ...R.sb, Prefer: 'return=representation' }, body: body ? JSON.stringify(body) : undefined });
   const t = await r.text(); if (!r.ok) throw new Error(method + ' ' + path + ' → ' + r.status + ' ' + t.slice(0, 160)); return t ? JSON.parse(t) : null;
 }
 const base = { url: null, fonte: null, data_publicacao: RODADA, rodada: RODADA, destaque: false, imagem_url: null, produtos: null, resumo: null };
@@ -36,3 +35,4 @@ for (const marca of Object.keys(LOJAS)) {
   } catch (e) { console.log(`  ✗ ${marca}: ${String(e).slice(0, 120)}`); }
 }
 console.log(`Lojas OK em ${okG}/${Object.keys(LOJAS).length} marcas.`);
+await R.fechar();

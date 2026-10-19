@@ -562,6 +562,7 @@ export function custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada) {
 // ---------- infra (rede) — só roda no main(), não é importado nos testes ----------
 import { registrarExecucao } from './registrar-execucao.mjs';
 import { metaDoColetor } from './lib/core-meta.mjs';
+import { abrirRest } from './lib/rest-pg.mjs';
 // Onde mora o orçamento (CBO na campanha x ABO nos conjuntos) e quanto ele soma
 // de fato. Módulo puro, o MESMO que a tela usa — a conta não pode divergir entre
 // o que o robô sugere e o que a tela mostra.
@@ -605,25 +606,23 @@ import { custoPorSeguidorDaConta } from '../src/ferramentas/gestao-trafego/segui
 import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY_TRAFEGO || process.env.ANTHROPIC_API_KEY_BUDGET || process.env.ANTHROPIC_API_KEY;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const MODEL = process.env.BUDGET_MODEL || 'claude-opus-4-8';
 const GRAPH = 'https://graph.facebook.com/v21.0';
 // CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token. Ver lib/core-meta.mjs.
 const META = metaDoColetor();
-const REST = SUPABASE_URL + '/rest/v1';
 const DRY = process.argv.includes('--dry');
 
-const sbHeaders = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
+// REST do Supabase (rollback) ou pg com o papel robo_budget (REST_VIA_PG=1); aberto em main() por abrirRest().
+let rest, REST, sbHeaders;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function sbGet(path) {
-  const r = await fetch(REST + path, { headers: sbHeaders });
+  const r = await rest.fetch(REST + path, { headers: sbHeaders });
   if (!r.ok) throw new Error('REST GET ' + path + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
 }
 async function sbUpsert(path, body) {
-  const r = await fetch(REST + path, {
+  const r = await rest.fetch(REST + path, {
     method: 'POST',
     headers: { ...sbHeaders, Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(body),
@@ -675,10 +674,12 @@ async function main() {
   // Em --dry nada é enviado ao modelo (o laço dá `continue` antes da chamada),
   // então exigir a chave da API só impedia a conferência de rodar na máquina de
   // quem não tem o segredo — que é justamente quando conferir é mais útil.
-  if ((!ANTHROPIC_API_KEY && !DRY) || !SERVICE_KEY) {
-    console.error('✗ Faltam segredos: ' + (!ANTHROPIC_API_KEY && !DRY ? 'ANTHROPIC_API_KEY_TRAFEGO ' : '') + (!SERVICE_KEY ? 'SUPABASE_SERVICE_KEY' : ''));
+  if (!ANTHROPIC_API_KEY && !DRY) {
+    console.error('✗ Faltam segredos: ANTHROPIC_API_KEY_TRAFEGO');
     process.exit(1);
   }
+  rest = await abrirRest();   // banco fora (ou falta a chave do REST): falha aqui, antes de qualquer escrita
+  ({ REST, sb: sbHeaders } = rest);
   const agoraMs = Date.now();
   let _totIn = 0, _totOut = 0, _chamadas = 0; // uso da API p/ calcular o custo da rodada
   const { modo, motivo } = decidirEscopo(agoraMs, process.env.BUDGET_ESCOPO);
@@ -1082,5 +1083,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.error(e);
     await registrarExecucao({ robo: 'budget-ia', acao: 'análise de budget', modelo: MODEL, status: 'erro', detalhe: String(e && e.message || e).slice(0, 500) });
     process.exit(1);
-  });
+  }).finally(() => rest?.fechar());
 }

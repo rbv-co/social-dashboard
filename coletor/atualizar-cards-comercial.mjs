@@ -15,31 +15,28 @@
 import { loginServico, robosNaApi, blingPedidos } from './lib/bling-comercial.mjs';
 import { realPorCanalDe, canaisFocoDe } from './lib/comercial-canais.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
+import { abrirRest } from './lib/rest-pg.mjs';
 
 const _t0 = Date.now(); // início da rodada (para medir duração no painel de status)
 
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 
 // Sem IA: não precisa da chave da Anthropic. Só Bling (conta de serviço) + Supabase.
-if (!SERVICE_KEY || (!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
-  console.error('✗ Faltam segredos: SUPABASE_SERVICE_KEY, GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
+if ((!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
+  console.error('✗ Faltam segredos: GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
   process.exit(1);
 }
 
-const REST = SUPABASE_URL + '/rest/v1';
-
-// ── Supabase REST (service key: ignora RLS, igual ao robô semanal) ──
-const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
+// Preenchidos em main() por abrirRest(): REST do Supabase (rollback) ou pg com o papel robo_cards (REST_VIA_PG=1).
+let rest, REST, sb;
 async function sbGet(path) {
-  const r = await fetch(REST + path, { headers: sb });
+  const r = await rest.fetch(REST + path, { headers: sb });
   if (!r.ok) throw new Error('REST GET ' + path + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
 }
 async function sbPatch(path, body) {
-  const r = await fetch(REST + path, { method: 'PATCH', headers: { ...sb, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
+  const r = await rest.fetch(REST + path, { method: 'PATCH', headers: { ...sb, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
   if (!r.ok && ![200, 201, 204].includes(r.status)) throw new Error('REST PATCH ' + path + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r;
 }
@@ -51,6 +48,8 @@ function hojeBR() {
 }
 
 async function main() {
+  rest = await abrirRest();   // banco fora: falha aqui, antes de qualquer escrita
+  ({ REST, sb } = rest);
   const hoje = hojeBR();
   const [y, m, d] = hoje.split('-').map(Number);
   const diasNoMes = new Date(y, m, 0).getDate();
@@ -110,4 +109,4 @@ main().catch(async (e) => {
     duracaoMs: Date.now() - _t0, status: 'erro', detalhe: e.message.slice(0, 500),
   });
   process.exit(1);
-});
+}).finally(() => rest?.fechar());
