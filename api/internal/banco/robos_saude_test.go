@@ -69,7 +69,9 @@ insert into robos_esperados (robo, horas_sem_sucesso_ate, critico, porque) value
   ('morto-nunca', 24, false, 'x'),           -- só histórico antigo, nunca deu certo
   ('vazio', 24, false, 'x'),                 -- sem execução nenhuma
   ('saudavel', 24, false, 'x'),             -- viva e com sucesso recente
-  ('misto', 10, false, 'x');                 -- uma variante viva e ok, outra viva sem sucesso, uma morta
+  ('misto', 10, false, 'x'),                -- uma variante viva e ok, outra viva sem sucesso, uma morta
+  ('a_b', 24, false, 'x'),                  -- _ é curinga do like: casa com 'axb-1' nas duas regras
+  ('ok-nulo', 24, false, 'x');              -- execução com ok NULL (não conta como sucesso nem falha)
 insert into robos_execucoes (robo, disparado_em, ok) values
   ('coleta',          now() - interval '1 hour',  true),
   ('coleta-a',        now() - interval '30 hours', true),   -- viva, sucesso atrasado para o teto de 24 h
@@ -84,6 +86,8 @@ insert into robos_execucoes (robo, disparado_em, ok) values
   ('misto-sem',       now() - interval '1 hour',  false),
   ('misto-velha',     now() - interval '300 hours', true),
   ('saudavel-1',      now() - interval '2 hours', true),
+  ('axb-1',          now() - interval '1 hour',  true),
+  ('ok-nulo',        now() - interval '1 hour',  null),
   ('fora-de-ficha',   now() - interval '1 hour',  true);`); err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +98,8 @@ insert into robos_execucoes (robo, disparado_em, ok) values
 			t.Fatalf("o cenário não cobre a situação %s:\n%s", s, situacoes)
 		}
 	}
-	if len(antes) != 8 {
-		t.Fatalf("linhas = %d, esperava 8 (uma por ficha)", len(antes))
+	if len(antes) != 10 {
+		t.Fatalf("linhas = %d, esperava 10 (uma por ficha)", len(antes))
 	}
 
 	for range 2 { // Up duas vezes: a segunda não muda nada
@@ -105,12 +109,56 @@ insert into robos_execucoes (robo, disparado_em, ok) values
 		if depois := saudeDosRobos(t, p); !slices.Equal(depois, antes) {
 			t.Fatalf("a view nova devolve outra coisa.\nantes:  %v\ndepois: %v", antes, depois)
 		}
+		exigirSecurityInvoker(t, p, "depois do Up")
 	}
 	if _, err := p.Exec(ctx, trechoDe00010(t, false)); err != nil {
 		t.Fatal(err)
 	}
 	if depois := saudeDosRobos(t, p); !slices.Equal(depois, antes) {
 		t.Fatalf("o Down não restaurou a view.\nantes:  %v\ndepois: %v", antes, depois)
+	}
+	exigirSecurityInvoker(t, p, "depois do Down")
+}
+
+// `create or replace view` zera as opções da view: sem o `alter view ... set (security_invoker)` ela leria com o
+// papel dono e furaria o RLS de quem consulta.
+func exigirSecurityInvoker(t *testing.T, p *pgxpool.Pool, quando string) {
+	t.Helper()
+	var ok bool
+	if err := p.QueryRow(context.Background(), `select coalesce(reloptions::text, '') like '%security_invoker=true%' from pg_class where oid = 'robos_saude'::regclass`).Scan(&ok); err != nil || !ok {
+		t.Fatalf("robos_saude sem security_invoker %s (%v)", quando, err)
+	}
+}
+
+// O passo do restaurar.sh: o `migrar` roda antes do schema.sql (00004/00008/00010 viram no-op); depois dos dados o
+// script reaplica o Up delas. Aqui: o estado "recém-restaurado" (fichas e view antigas) vira o estado final certo,
+// e repetir não muda nada.
+func TestRestaurarReaplicaAsMigrationsDeRobos(t *testing.T) {
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	testebanco.TabelasDosPaineis(t, p)
+	if _, err := p.Exec(ctx, `insert into robos_esperados (robo, horas_sem_sucesso_ate, critico) values ('estoque-do-site', 2, true), ('vessel-rd-station', 2, false)`); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		for _, m := range []string{"00004_robos_esperados_do_worker", "00008_espelho_no_lugar_da_rd", "00010_robos_saude_por_variante"} {
+			b, err := os.ReadFile("migracoes/" + m + ".sql")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Exec(ctx, strings.SplitN(string(b), "-- +goose Down", 2)[0]); err != nil {
+				t.Fatalf("%s: %v", m, err)
+			}
+		}
+		var fichas string
+		if err := p.QueryRow(ctx, `select string_agg(robo, ',' order by robo) from robos_esperados where robo in ('estoque-do-site','vessel-rd-station','vessel-espelhar-lista')`).Scan(&fichas); err != nil || fichas != "vessel-espelhar-lista" {
+			t.Fatalf("fichas = %q (%v), esperava só vessel-espelhar-lista", fichas, err)
+		}
+		var nova bool
+		if err := p.QueryRow(ctx, `select pg_get_viewdef('robos_saude'::regclass) like '%por_variante%'`).Scan(&nova); err != nil || !nova {
+			t.Fatalf("a view continua a antiga (%v)", err)
+		}
+		exigirSecurityInvoker(t, p, "depois de reaplicar")
 	}
 }
 

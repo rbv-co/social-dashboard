@@ -3,10 +3,14 @@
 -- 2026-09-22 juntava cada ficha a todas as execuções por prefixo e só depois agrupava: com 130 mil execuções
 -- levava 774 ms; agregando primeiro (uma passada por robos_execucoes) leva 23-28 ms. Mesma saída: colunas, tipos
 -- e linhas idênticos (conferido com EXCEPT nos dois sentidos numa cópia de produção, e de novo em Go pelo teste
--- desta migration), por isso `create or replace` basta e o comment, as permissões e quem depende da view ficam.
+-- desta migration), por isso `create or replace` basta: o comment, as permissões e quem depende da view ficam.
+-- As OPÇÕES não: `create or replace` zera `security_invoker`, então ela é religada logo depois (sem isso a view
+-- passaria a ler com o papel dono e furaria o RLS de quem consulta).
 --
 -- A view e as tabelas vêm do dump do Supabase (DDL em db/migrations/2026-07-31 e 2026-09-22): num banco sem
--- elas (testes, instalação nova) a migration não faz nada, e por isso não cria nenhuma.
+-- elas (testes, instalação nova) a migration não faz nada, e por isso não cria nenhuma. Na VIRADA ela também seria
+-- no-op (o schema.sql chega depois do `migrar`): por isso ops/migracao/restaurar.sh reaplica o Up desta migration
+-- (e da 00004 e da 00008) depois dos dados.
 -- +goose StatementBegin
 do $$
 begin
@@ -55,6 +59,7 @@ begin
           x.porque, r.quem_falhou, coalesce(r.vivas, 0) as variantes_vivas
      from robos_esperados x left join resumo r on r.esperado = x.robo
     order by x.critico desc, x.robo;
+  alter view robos_saude set (security_invoker = true);
 end
 $$;
 -- +goose StatementEnd
@@ -109,6 +114,7 @@ begin
           x.porque, r.quem_falhou, coalesce(r.vivas, 0::bigint) as variantes_vivas
      from robos_esperados x left join resumo r on r.esperado = x.robo
     order by x.critico desc, x.robo;
+  alter view robos_saude set (security_invoker = true);
 end
 $$;
 -- +goose StatementEnd
