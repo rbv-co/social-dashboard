@@ -8,14 +8,14 @@ set -eu
 RAIZ=$(cd "$(dirname "$0")/../.." && pwd)
 NA_VPS=${NA_VPS:-ssh -o BatchMode=yes ${VPS:-op}}
 SAIDA=$(mktemp); trap 'rm -f "$SAIDA"' EXIT
-git -C "$RAIZ" fetch -q origin 2> /dev/null || true
+FETCH=ok; git -C "$RAIZ" fetch -q origin 2> /dev/null || FETCH=falhou
 
 $NA_VPS sh -s > "$SAIDA" << 'NO_ALVO' || true
 V=/root/virada
 ok() { echo "OK $*"; }
 falta() { echo "FALTA $*"; }
 dono() { echo "DONO $*"; }
-tem() { grep -q "^$2=." "$1" 2> /dev/null; }   # variável presente e não vazia
+tem() { grep -qE "^$2=[^'\"]" "$1" 2> /dev/null; }   # variável presente e não vazia (nem '' nem "")
 
 # A. P4 e P7
 c=$(curl -4 -s -o /dev/null -w '%{http_code}' --max-time 10 https://fcm.googleapis.com/fcm/send || true)
@@ -100,6 +100,7 @@ rm -f /tmp/.t16.pf
 # I. api-db
 [ "$(docker inspect -f '{{.State.Health.Status}}' api-db 2> /dev/null)" = healthy ] && ok "I api-db saudável" || falta "I api-db não está healthy"
 [ ! -e /root/api-db/PRODUCAO ] && ok "I api-db sem a marca PRODUCAO (o T+1 pode recriar)" || falta "I /root/api-db/PRODUCAO existe: o ensaio e o T+1 recusam"
+echo "FIM"
 echo "IP_API_DB $(docker inspect -f '{{(index .NetworkSettings.Networks "api_net").IPAddress}}' api-db 2> /dev/null)"
 NO_ALVO
 # imagem x main (do lado do Mac, que tem o git)
@@ -117,7 +118,9 @@ if [ "${TUNEL:-1}" = 1 ]; then
     ssh -S "$S" -O exit "${VPS:-op}" > /dev/null 2>&1 || true
   else echo "FALTA I não consegui abrir o túnel do Mac até o api-db" >> "$SAIDA"; fi
 fi
-grep -vE '^(VERSAO|IP_API_DB) ' "$SAIDA"
+grep -qx FIM "$SAIDA" || echo "FALTA o ssh caiu antes do fim da conferência na VPS (seções depois da última linha acima não rodaram)" >> "$SAIDA"
+[ "$FETCH" = ok ] || echo "FALTA git fetch origin falhou: a comparação da imagem com a main pode estar velha" >> "$SAIDA"
+grep -vE '^(VERSAO|IP_API_DB|FIM)( |$)' "$SAIDA"
 N=$(grep -c '^FALTA ' "$SAIDA" || true)
 D=$(grep '^DONO ' "$SAIDA" | sed 's/^DONO //' | tr '\n' ' ')
 [ -n "$D" ] && echo "(passos do dono, não bloqueiam: $D)"

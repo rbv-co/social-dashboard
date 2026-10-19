@@ -67,13 +67,13 @@ case $modo in
 esac
 
 # 2. API Go: log_format, snippets e includes (cada include só se ainda não estiver)
-install -m 644 "$V/nginx-semquery.conf" "$NGINX_DIR/conf.d/semquery.conf"
-install -m 644 "$V/nginx-central-api.conf" "$NGINX_DIR/snippets/central-api.conf"
-install -m 644 "$V/api-arquivos-e-storage.conf" "$NGINX_DIR/snippets/api-arquivos-e-storage.conf"
+install -m 644 "$V/nginx-semquery.conf" "$NGINX_DIR/conf.d/semquery.conf" || volta "install semquery"
+install -m 644 "$V/nginx-central-api.conf" "$NGINX_DIR/snippets/central-api.conf" || volta "install central-api"
+install -m 644 "$V/api-arquivos-e-storage.conf" "$NGINX_DIR/snippets/api-arquivos-e-storage.conf" || volta "install api-arquivos-e-storage"
 for inc in "$INC_API" "$INC_ARQ"; do
   grep -qxF "$inc" "$SITE" && continue
-  cp "$SITE" "$SITE.novo"
-  awk -v seg="$SEG" -v inc="$inc" '{print} $0 == seg {print inc}' "$SITE.novo" > "$SITE"
+  cp "$SITE" "$SITE.novo" || volta "cp do site"
+  awk -v seg="$SEG" -v inc="$inc" '{print} $0 == seg {print inc}' "$SITE.novo" > "$SITE" || volta "awk do include"
   rm -f "$SITE.novo"
 done
 for inc in "$INC_API" "$INC_ARQ"; do [ "$(grep -cxF "$inc" "$SITE")" = 1 ] || volta "include não ficou único: $inc"; done

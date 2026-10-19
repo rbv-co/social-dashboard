@@ -20,7 +20,12 @@ case $URL in *'?token='*) TOKEN=${URL#*\?token=} ;; *) echo "FALHOU: a URL atual
 case $TOKEN in ''|*[!A-Za-z0-9._~-]*) echo "FALHOU: token vazio ou com caractere fora de [A-Za-z0-9._~-]" >&2; exit 1 ;; esac
 NOVA="$NOVO_BASE/api/receber-webhook-chatwoot?token=$TOKEN"
 host() { printf '%s' "$1" | sed -E 's#(://[^/?]+).*#\1#'; }
-if [ "$URL" = "$NOVA" ]; then echo "já na central ($(host "$URL")): nada a fazer"; exit 0; fi
+if [ "$URL" = "$NOVA" ]; then
+  for c in chatwoot-rails-1 chatwoot-sidekiq-1; do
+    docker exec "$c" printenv CRM_EVENT_WEBHOOK_URL 2> /dev/null | grep -qxF "$NOVA" || { echo "FALHOU: o .env já está na central mas $c ainda não (execução anterior interrompida?): recrie rails e sidekiq" >&2; exit 1; }
+  done
+  echo "já na central ($(host "$URL")): nada a fazer"; exit 0
+fi
 echo "CRM_EVENT_WEBHOOK_URL: $(host "$URL") -> $(host "$NOVA")"
 [ "${1:-}" = --imprimir ] && exit 0
 
@@ -31,8 +36,10 @@ cp -p "$ENV" "$V/chatwoot/env.$TS"
 exec 9> "$DIR/.deploy.lock"
 flock -n 9 || { echo "FALHOU: deploy do Chatwoot em andamento ($DIR/.deploy.lock)" >&2; exit 1; }
 cd "$DIR"
-IMAGE_TAG=$(sed -n 's/^IMAGE_TAG=//p' .image_tag)
-[ -n "$IMAGE_TAG" ] || { echo "FALHOU: .image_tag sem IMAGE_TAG" >&2; exit 1; }
+# a imagem que ESTÁ rodando (o .image_tag é gravado pelo deploy.sh antes da migration e dos testes de saúde: depois de um
+# deploy que falhou ele aponta para uma imagem ruim)
+IMAGE_TAG=$(docker inspect -f '{{.Config.Image}}' chatwoot-rails-1 | sed 's/.*://')
+[ -n "$IMAGE_TAG" ] || { echo "FALHOU: não li a imagem do chatwoot-rails-1" >&2; exit 1; }
 export IMAGE_TAG
 sobe() { docker compose -f docker-compose.deploy.yml up -d --no-deps rails sidekiq; }
 saudavel() { # rails healthy em até 3 min

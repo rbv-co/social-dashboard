@@ -25,4 +25,9 @@ g '"segredo":"s-chk"'; g '"segredo":"s-abd"'
 g "META_HOSTS_MIDIA=x.supabase.co,central.rbvcompany.com"
 g "CADASTRO_SUPABASE_URL=https://central.rbvcompany.com"; g "CADASTRO_SUPABASE_CHAVE=chave-interna"; g "CADASTRO_ACEITA_P_TESTE=false"
 [ "$(stat -f %Lp "$D/core.env.go" 2> /dev/null || stat -c %a "$D/core.env.go")" = 600 ]
+# com supabase_pedido já existente: ele (e não um central_pedidos) vai para a rota de pedidos do Go
+sed 's#{"nome":"pdv"#{"nome":"supabase_pedido","url":"http://127.0.0.1:9/","topicos":["orders/create"],"segredo":"s-ped","ativo":true},{"nome":"pdv"#' "$D/core.env" > "$D/core2.env"
+API_ENV="$D/api.env" SEGREDO_PEDIDOS_ARQ="$D/seg" python3 -I gerar-core-env-go.py "$D/core2.env" "$D/core2.go"
+grep -qF '"nome":"supabase_pedido","url":"https://central.rbvcompany.com/api/receber-webhook-pedido-shopify"' "$D/core2.go"
+! grep -qF central_pedidos "$D/core2.go"
 echo "gerar-core-env-go: OK"

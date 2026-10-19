@@ -74,7 +74,7 @@ for l in open(sys.argv[1]).read().splitlines():
         k, v = l.split("=", 1); d[k] = v
 l = [x.strip().strip("'\"") for x in d.get("SHOPIFY_WEBHOOK_SECRETS", "").split(",") if x.strip()]
 for x in json.loads(d["CORE_SHOPIFY_DESTINOS"].strip("'")):
-    if x["nome"] in ("supabase_checkout", "supabase_abandono"):
+    if x["nome"] in ("supabase_checkout", "supabase_abandono", "supabase_pedido"):
         l.append(x["segredo"])
 l.append(open(sys.argv[2]).read().strip())
 print(",".join(dict.fromkeys(l)))

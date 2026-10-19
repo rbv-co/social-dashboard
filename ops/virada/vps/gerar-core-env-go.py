@@ -17,6 +17,7 @@ HOST = BASE.split("://", 1)[1]
 SEGREDO_PEDIDOS = os.environ.get("SEGREDO_PEDIDOS_ARQ", "/root/virada/segredo-central-pedidos")
 API_ENV = os.environ.get("API_ENV", "/root/secrets/api.env")
 URLS = {"supabase_checkout": "/api/receber-webhook-checkout", "supabase_abandono": "/api/receber-webhook-abandono"}
+ROTA_PEDIDOS = "/api/receber-webhook-pedido-shopify"
 PEDIDOS = {"nome": "central_pedidos", "topicos": ["orders/create", "orders/paid", "orders/updated"], "ativo": True}
 
 
@@ -32,12 +33,13 @@ def destinos(texto):
     for d in l:
         if d["nome"] in URLS:
             d["url"] = BASE + URLS[d["nome"]]
-    if not any(d["nome"] == "central_pedidos" for d in l):
-        l.append(dict(PEDIDOS, url=BASE + "/api/receber-webhook-pedido-shopify", segredo=open(SEGREDO_PEDIDOS).read().strip()))
-    else:
-        for d in l:
-            if d["nome"] == "central_pedidos":
-                d["url"] = BASE + "/api/receber-webhook-pedido-shopify"
+    # supabase_pedido (se o webhook de pedidos já passa por ele; o core-destinos.sh o segura na janela) e
+    # central_pedidos vão para a rota de pedidos do Go; sem nenhum dos dois, nasce central_pedidos
+    existentes = [d for d in l if d["nome"] in ("supabase_pedido", "central_pedidos")]
+    for d in existentes:
+        d["url"] = BASE + ROTA_PEDIDOS
+    if not existentes:
+        l.append(dict(PEDIDOS, url=BASE + ROTA_PEDIDOS, segredo=open(SEGREDO_PEDIDOS).read().strip()))
     for n in URLS:
         assert any(d["nome"] == n for d in l), f"destino {n} sumiu do CORE_SHOPIFY_DESTINOS"
     return json.dumps(l, separators=(",", ":"), ensure_ascii=False)
