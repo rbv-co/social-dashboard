@@ -1,4 +1,6 @@
 import { calcularModoEntrarComo } from './modo-entrar-como.js'
+import { areaNaApi } from './api.js'
+import { opcoesDoSupabase } from './opcoes-do-supabase.js'
 
 export const SUPABASE_URL = 'https://kounqtdoioootxqegkij.supabase.co'
 export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM'
@@ -29,4 +31,4 @@ function _storageDestaAba() {
 const _storageEspecial = _storageDestaAba()
 export const emModoEntrarComo = !!_storageEspecial
 export const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY,
-  _storageEspecial ? { auth: { storage: _storageEspecial } } : undefined)
+  opcoesDoSupabase(areaNaApi('conta'), _storageEspecial))
