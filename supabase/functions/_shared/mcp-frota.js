@@ -24,7 +24,7 @@ const COLUNAS = {
     'seguro_seguradora,seguro_vence_em,oficina_nome,observacao',
   frota_uso: `id,veiculo_id,${CARRO},tipo,pessoa_nome,saida_em,volta_em,km_saida,km_volta,tanque_quartos,destino,finalidade,observacao`,
   frota_requisicoes: `id,veiculo_id,${CARRO},situacao,pessoa_nome,departamento,destino,finalidade,retirada_prevista,` +
-    'devolucao_prevista,motivo_decisao,encerrada_motivo,observacao,criada_em,decidida_em',
+    'devolucao_prevista,motivo_decisao,encerrada_motivo,observacao,criada_em,decidida_em,uso_id',
   frota_abastecimentos: `id,veiculo_id,${CARRO},abastecido_em,km,litros,total_centavos,tanque_depois,combustivel,posto,pessoa_nome,observacao`,
   frota_revisoes: `id,veiculo_id,${CARRO},manutencao_id,item,km,feita_em,oficina,custo_centavos,observacao`,
   frota_plano_revisao: 'id,item,a_cada_km,ativo,ordem,observacao',
@@ -34,6 +34,7 @@ export const limparBusca = (s) => String(s).replace(/[,()*%\\"]/g, ' ').trim().s
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SITUACOES_DO_CARRO = ['ativo', 'em_manutencao', 'alienado', 'inativo']
+const TIPOS_DE_USO = ['viagem', 'posse'] // CHECK de frota_uso.tipo
 const SITUACOES_DO_PEDIDO = ['pendente', 'aprovada', 'recusada', 'cancelada', 'revogada', 'usada']
 const centavos = (reais) => Math.round(reais * 100)
 
@@ -221,15 +222,21 @@ export const FERRAMENTAS = [
       situacao: (v) => (!SITUACOES_DO_CARRO.includes(v) && recusar('situacao deve ser ' + SITUACOES_DO_CARRO.join(', ')), ['situacao', 'eq', v]),
     }, 100) },
   { nome: 'listar_usos', titulo: 'Listar retiradas e posses', leitura: true,
-    descricao: 'Retiradas e posses dos carros (quem pegou, saída/volta, km), das mais novas para as mais antigas. ' +
-      'aberta=true mostra só os carros que estão fora agora.',
-    esquema: obj({ veiculo_id: pVeiculo, aberta: { type: 'boolean' }, limite: pLimite }),
+    descricao: 'Retiradas e posses dos carros, das mais novas para as mais antigas. São duas coisas diferentes: ' +
+      'tipo=viagem é uma retirada (alguém pegou o carro, tem km de saída e, ao voltar, km de volta); tipo=posse é o ' +
+      'carro FIXO com uma pessoa (o responsável dele), que fica aberta enquanto ela for a responsável e não tem km ' +
+      'nem devolução prevista — posse aberta antiga é normal, não é carro esquecido na rua. aberta=true mostra o que ' +
+      'está em aberto; para "quais carros estão fora agora", use aberta=true com tipo=viagem.',
+    esquema: obj({ veiculo_id: pVeiculo, tipo: { type: 'string', enum: TIPOS_DE_USO }, aberta: { type: 'boolean' }, limite: pLimite }),
     rodar: listar('frota_uso', ['saida_em', true], {
       ...porVeiculo,
+      tipo: (v) => (!TIPOS_DE_USO.includes(v) && recusar('tipo deve ser viagem ou posse'), ['tipo', 'eq', v]),
       aberta: (v) => (typeof v !== 'boolean' && recusar('aberta deve ser true ou false'), ['volta_em', v ? 'is_null' : 'not_null']),
     }) },
   { nome: 'listar_requisicoes', titulo: 'Listar pedidos de carro', leitura: true,
-    descricao: 'Pedidos (reservas) de carro, das retiradas previstas mais novas para as mais antigas.',
+    descricao: 'Pedidos (reservas) de carro, das retiradas previstas mais novas para as mais antigas. uso_id preenchido ' +
+      '= o carro foi retirado por esse pedido. Aprovado com retirada prevista já passada e sem uso_id = não foi ' +
+      'retirado; o sistema não encerra sozinho: aponte isso e pergunte à pessoa se deve cancelar (decidir_requisicao).',
     esquema: obj({ veiculo_id: pVeiculo, situacao: { type: 'string', enum: SITUACOES_DO_PEDIDO }, limite: pLimite }),
     rodar: listar('frota_requisicoes', ['retirada_prevista', true], {
       ...porVeiculo,
