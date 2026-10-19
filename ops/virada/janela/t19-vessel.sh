@@ -15,7 +15,7 @@ AQUI=$(cd "$(dirname "$0")" && pwd)
 SEG=${SEG:-/root/secrets}; SBIN=${SBIN:-/usr/local/sbin}; SYSTEMCTL=${SYSTEMCTL:-systemctl}; BANCO=${BANCO:-api}
 UNITS=${DESTINO_UNITS:-/etc/systemd/system}; CRONS=${DESTINO_CRON:-/etc/cron.d}; ENV_ROBOS=${ENV_ROBOS:-/etc/robos.env}
 UMA_VEZ=${UMA_VEZ:---uma-vez}; REPO=${REPO:-/opt/robos/social-dashboard}; export REPO
-VENV="$SEG/vessel-servicos.env"
+VENV="$SEG/vessel-servicos.env"; export VESSEL_ENV="$VENV"   # o wrapper lê este arquivo (em produção é o padrão dele)
 say() { echo "[t19-vessel] $*"; }
 psql_api() { docker exec api-db psql -U api -d "$BANCO" -XAtc "$1"; }
 

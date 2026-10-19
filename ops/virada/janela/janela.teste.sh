@@ -31,10 +31,11 @@ sh "$AQUI/t29-vps.sh" fase-a > "$T/o1"; [ ! -e "$CRON" ] && cmp -s "$T/cron" "$V
 sh "$AQUI/t29-vps.sh" fase-a > /dev/null || fail "fase-a não é idempotente"
 # 2. desfazer: cron de volta idêntico, serviço ativo
 sh "$AQUI/t29-vps.sh" desfazer > /dev/null; cmp -s "$T/cron" "$CRON" && [ "$(cat "$T/estado/cartoes-ean")" = active ] || fail "desfazer"
-# 3. alguém mexeu no cron depois do backup: a fase A recusa (não apaga trabalho alheio)
-echo '# mexeram' >> "$CRON"; rm -f "$VIRADA/robos-social-dashboard"; cp "$T/cron" "$VIRADA/robos-social-dashboard"
-sh "$AQUI/t29-vps.sh" fase-a >/dev/null 2>&1 && fail "aceitou cron alterado"; [ -e "$CRON" ] || fail "apagou cron alterado"
-mkdir -p "$T/cron.d"; cp "$T/cron" "$CRON"
+# 3. já havia uma cópia DIFERENTE em /root/virada (P12 de antes): a Fase A guarda o cron de AGORA e deixa a velha como .anterior
+echo '# velho' >> "$VIRADA/robos-social-dashboard"
+sh "$AQUI/t29-vps.sh" fase-a >/dev/null || fail "fase-a com cópia diferente"
+cmp -s "$T/cron" "$VIRADA/robos-social-dashboard" && [ -e "$VIRADA/robos-social-dashboard.anterior" ] && [ ! -e "$CRON" ] || fail "cópia diferente não foi tratada"
+cp "$T/cron" "$CRON"
 # 4. t29-fase-a.sh (Mac): só desliga o que estava ativo e está na lista; ensaio não muda nada
 D="$T/D"; : > "$T/gh.log"
 sh "$AQUI/t29-fase-a.sh" "$T/repo" "$D" --ensaio >/dev/null; grep -q 'workflow disable' "$T/gh.log" && fail "ensaio mudou algo"

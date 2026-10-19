@@ -18,7 +18,10 @@ VIRADA="$E/virada" sh "$J/instalar-pacote.sh" "$OPS" || exit 1
 
 sec "1. papéis no clone $BANCO (as senhas reais; mesmo loop do LEIA-ME)"
 S=/root/secrets; SQL="$OPS/ops/vps/api-db"
-SENHA_COPIA="$(cat $S/copia.senha)" docker exec -i -e SENHA_COPIA api-db psql -U api -d $BANCO -Xq -v ON_ERROR_STOP=1 < "$SQL/papel-copia.sql" > /dev/null || { echo "FALHOU papel-copia"; exit 1; }
+# o copia-do-banco.sh lê SEMPRE o banco `api` (URL fixa): o papel `copia` precisa estar nos dois bancos de ensaio
+for b in $BANCO api; do
+  SENHA_COPIA="$(cat $S/copia.senha)" docker exec -i -e SENHA_COPIA api-db psql -U api -d $b -Xq -v ON_ERROR_STOP=1 < "$SQL/papel-copia.sql" > /dev/null || { echo "FALHOU papel-copia em $b"; exit 1; }
+done
 SENHA_CONTEUDO="$(cat $S/conteudo.senha)" docker exec -i -e SENHA_CONTEUDO api-db psql -U api -d $BANCO -Xq -v ON_ERROR_STOP=1 < "$SQL/papel-conteudo.sql" > /dev/null || { echo "FALHOU papel-conteudo"; exit 1; }
 for r in reporte selo pedidos-vessel shopify metaads-zoho vigia-meta notas relatorios cards gestor interesses opr budget noticias faxina cartoes; do
   V=SENHA_ROBO_$(echo $r | tr 'a-z-' 'A-Z_')

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Lado da VPS da Fase A (T-29) e do desfazer. Roda NA VPS como root; t29-fase-a.sh / t29-desfazer.sh o chamam por ssh.
 # Uso: sh t29-vps.sh <fase-a|desfazer>
-#   fase-a   guarda o cron.d atual em $VIRADA/robos-social-dashboard (nunca sobrescreve), tira o cron.d e para o serviço de Cartões
+#   fase-a   guarda o cron.d atual em $VIRADA/robos-social-dashboard (se já havia uma cópia diferente, ela vira .anterior), tira o cron.d e para o serviço de Cartões
 #            (o serviço se chama `cartoes-ean`; `cartoes-ean-vigia` NÃO existe como unit: é o nome do script).
 #   desfazer devolve o cron.d (cp, não mv: idempotente) e sobe o serviço. Não mexe em robos.env (isso é do t17-robos.sh).
 # Variáveis só para o ensaio com diretórios falsos: CRON, VIRADA, SYSTEMCTL, UNIDADE, LOCKS.
@@ -12,7 +12,11 @@ ACAO=${1:-}; NOME=$(basename "$CRON"); GUARDA="$VIRADA/$NOME"
 case "$ACAO" in
 fase-a)
   mkdir -p "$VIRADA"
-  if [ -e "$CRON" ]; then [ -e "$GUARDA" ] || cp -p "$CRON" "$GUARDA"; cmp -s "$CRON" "$GUARDA" || { echo "FALHOU: $CRON difere de $GUARDA (alguém mexeu: confira antes de seguir)" >&2; exit 1; }; rm -f "$CRON"
+  if [ -e "$CRON" ]; then
+    # o cron.d de AGORA é o que o rollback tem de devolver: se já havia cópia diferente (P12 do plano 08, de antes), ela vira .anterior
+    if [ -e "$GUARDA" ] && ! cmp -s "$CRON" "$GUARDA"; then mv "$GUARDA" "$GUARDA.anterior"; fi
+    [ -e "$GUARDA" ] || cp -p "$CRON" "$GUARDA"
+    cmp -s "$CRON" "$GUARDA" || { echo "FALHOU: não consegui guardar $CRON em $GUARDA" >&2; exit 1; }; rm -f "$CRON"
   elif [ ! -e "$GUARDA" ]; then echo "FALHOU: sem $CRON e sem $GUARDA (nada guardado para desfazer)" >&2; exit 1; fi
   $SYSTEMCTL stop "$UNIDADE"
   [ "$($SYSTEMCTL is-active "$UNIDADE" 2>/dev/null || true)" != active ] || { echo "FALHOU: $UNIDADE continua ativo" >&2; exit 1; }
