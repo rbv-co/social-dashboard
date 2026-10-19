@@ -1,0 +1,6 @@
+# Serviços da Vessel na VPS, no lugar dos pg_cron `vessel-lembretes` e `vessel-log-de-carocos` do Supabase (PR #381). UTC, como o resto.
+# Um processo por vez (flock). Instalado como /etc/cron.d/vessel-servicos por t19-vessel.sh.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 12 * * * root flock -n /var/lock/vessel-lembretes.lock /usr/local/sbin/vessel-servico lembretes >> /var/log/robos/vessel-lembretes.log 2>&1
+*/10 * * * * root flock -n /var/lock/vessel-carocos.lock /usr/local/sbin/vessel-servico carocos >> /var/log/robos/vessel-carocos.log 2>&1
