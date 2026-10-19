@@ -38,5 +38,12 @@ sh "$AQUI/pg17.sh" pg_restore --data-only --disable-triggers --single-transactio
 # desfazendo DISABLE / ENABLE REPLICA / ENABLE ALWAYS do schema: reaplica os estados do schema.sql.
 grep -E '^ALTER TABLE .* (DISABLE|ENABLE (REPLICA|ALWAYS)) TRIGGER ' "$DUMP/schema.sql" > "$ESTADOS" || true   # grep sai 1 se não houver nenhum: ok
 if [ -s "$ESTADOS" ]; then pq "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$ESTADOS" > /dev/null || { echo "reaplicar estados de triggers falhou" >&2; exit 1; }; fi
+# O `migrar` rodou ANTES do schema.sql: as migrations guardadas por to_regclass de objetos do dump (a view
+# robos_saude, a tabela robos_esperados) foram no-op. Reaplica o Up delas agora, com os objetos no lugar
+# (todas idempotentes; goose só trata `-- +goose ...` como comentário SQL, então o texto roda direto no psql).
+for m in 00004_robos_esperados_do_worker 00008_espelho_no_lugar_da_rd 00010_robos_saude_por_variante; do
+  sed '/^-- +goose Down/,$d' "$RAIZ/api/internal/banco/migracoes/$m.sql" | pq "$ALVO" -X -q -v ON_ERROR_STOP=1 -f - > /dev/null \
+    || { echo "reaplicar a migration $m falhou" >&2; exit 1; }
+done
 pq "$ALVO" -X -q -c "analyze" > /dev/null
 echo "dados restaurados (rode importar-usuarios e conferir-orfaos.sh em seguida)"

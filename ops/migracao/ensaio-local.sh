@@ -63,6 +63,20 @@ alter table public.profiles enable always trigger t_sempre;    -- A
 alter table public.profiles disable trigger t_desligado;       -- D
 SQL
 
+# 1b) robos_saude: fichas, execuções e a view ANTIGA (verbatim de 2026-09-22), com as fichas que as migrations
+# 00004/00008 mexem (estoque-do-site e vessel-rd-station saem; vessel-espelhar-lista entra). No alvo, o `migrar`
+# roda antes do schema.sql (no-op nessas migrations): só o passo pós-restauração do restaurar.sh as aplica.
+psql "$URL_O" -X -q -v ON_ERROR_STOP=1 <<'SQL'
+create table public.robos_esperados (robo text primary key, horas_sem_sucesso_ate int not null, critico boolean not null default false, porque text);
+create table public.robos_execucoes (id bigserial primary key, robo text not null, request_id bigint, disparado_em timestamptz not null default now(), status_code int, ok boolean, resposta text, conferido_em timestamptz);
+-- 7 fichas na origem = 7 no alvo depois das migrations (que trocam 2 e acrescentam 2): as contagens batem sem exceção
+insert into public.robos_esperados values ('estoque-do-site', 2, true, 'x'), ('vessel-rd-station', 2, false, 'x'), ('coleta', 2, true, 'x'),
+  ('enviar-push-frota', 80, false, 'x'), ('fabrica-purga', 30, false, 'x'), ('abandono-de-checkout', 2, false, 'x'), ('conferir-robos', 1, false, 'x');
+insert into public.robos_execucoes (robo, ok) values ('coleta-a', true), ('coleta-b', false);
+SQL
+{ sed -n '/create or replace view public.robos_saude as/,/x\.robo;/p' "$AQUI/../../db/migrations/2026-09-22-vigia-dos-robos-cada-um-no-seu-teto.sql"; } | psql "$URL_O" -X -q -v ON_ERROR_STOP=1 -f -
+psql "$URL_O" -X -q -c "alter view public.robos_saude set (security_invoker = true)"
+
 # 2) dump -> limpeza -> restore -> contagens
 t=$(date +%s); sh "$AQUI/dump-supabase.sh" "$URL_O" "$OUT/dump" >/dev/null; echo "dump: $(( $(date +%s) - t ))s"
 t=$(date +%s); sh "$AQUI/restaurar.sh" "$URL_A" "$OUT/dump" >/dev/null; echo "restore: $(( $(date +%s) - t ))s"
@@ -87,6 +101,11 @@ falha() { echo "FALHOU: $1" >&2; exit 1; }
 [ "$(psql "$URL_A" -X -Atc "select set_config('app.usuario_id','11111111-1111-1111-1111-111111111111',false); select public.quem()::text" | tail -1)" = 11111111-1111-1111-1111-111111111111 ] || falha "auth.uid() não lê app.usuario_id"
 [ "$(psql "$URL_A" -X -Atc "select count(*) from pg_proc where proname='cria_policy_dinamica'")" = 1 ] || falha "a função com 'create policy' no corpo foi removida"
 [ "$(psql "$URL_A" -X -Atc "select count(*) from public.notas")" = 100 ] || falha "dados não bateram"
+# robos_saude: o passo pós-restauração aplicou 00004/00008/00010 (view nova, security_invoker religado, fichas certas)
+[ "$(psql "$URL_A" -X -Atc "select pg_get_viewdef('public.robos_saude'::regclass) like '%por_variante%'")" = t ] || falha "robos_saude no alvo continua com o texto antigo (passo pós-restauração não rodou)"
+[ "$(psql "$URL_A" -X -Atc "select coalesce(reloptions::text, '') like '%security_invoker=true%' from pg_class where oid='public.robos_saude'::regclass")" = t ] || falha "robos_saude no alvo perdeu o security_invoker"
+[ "$(psql "$URL_A" -X -Atc "select string_agg(robo, ',' order by robo) from public.robos_esperados where robo in ('estoque-do-site','vessel-rd-station','vessel-espelhar-lista')")" = vessel-espelhar-lista ] || falha "fichas de robos_esperados no alvo: esperava só vessel-espelhar-lista"
+[ "$(psql "$URL_A" -X -Atc "select situacao from public.robos_saude where robo='coleta'")" = 'nunca deu certo' ] || falha "robos_saude no alvo não agregou as variantes da coleta (coleta-b só falhou, coleta-a deu certo: esperava a pior viva)"
 # triggers: nada de negócio disparou, e os estados (D/R/A/O) da origem foram preservados
 [ "$(psql "$URL_A" -X -Atc "select count(*) from public.auditoria")" = 0 ] || falha "a trilha de auditoria tem linhas: trigger de negócio disparou na carga"
 [ "$(psql "$URL_A" -X -Atc "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and t.tgisinternal and t.tgenabled='D'")" = 0 ] || falha "trigger interno (FK) ficou desabilitado"
