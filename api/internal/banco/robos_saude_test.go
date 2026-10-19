@@ -172,7 +172,7 @@ func TestRobosSaudePorVarianteSemAViewNaoFazNada(t *testing.T) {
 		}
 	}
 	var n int
-	if err := p.QueryRow(ctx, `select count(*) from pg_class where relname in ('robos_saude','robos_esperados')`).Scan(&n); err != nil || n != 0 {
+	if err := p.QueryRow(ctx, `select count(*) from pg_class where relname in ('robos_saude','robos_esperados') and relnamespace = current_schema()::regnamespace`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("a migration criou algo (%d, %v)", n, err)
 	}
 }
