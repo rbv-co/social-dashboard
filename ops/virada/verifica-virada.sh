@@ -62,7 +62,7 @@ v8() {
   printf '%s\n' "$o" | sed 's/^/   /'
   if [ $r != 0 ]; then res 8 falhou "$(printf '%s' "$o" | tail -n 1)"; return; fi
   s=$(printf '%s\n' "$o" | grep -ci '^shopify'); c=$(printf '%s\n' "$o" | grep -ci '^chatwoot')
-  echo "   spool: $(sh "$V/ops/virada/spool-replay.sh" go 2>&1 | oculta | tail -n 3 | tr '\n' ' ')"
+  echo "   spool (só leitura): $(vps_b1 spool-estado 2>&1 | tr '\n' ' ')"
   echo "   Core: $(sh "$V/ops/virada/core-destinos.sh" contar 2>&1 | oculta | tail -n 4 | tr '\n' ' ')"
   if [ "$s" -ge 1 ] && [ "$c" -ge 1 ]; then res 8 ok "uma origem shopify e uma chatwoot depois da troca"
   else res 8 pendente "DONO: carrinho de teste no site e mensagem de teste numa conversa do Chatwoot; depois repita 'verifica-virada.sh V8' (shopify=$s chatwoot=$c)"; fi
@@ -81,7 +81,7 @@ alvos=
 for a in "$@"; do
   case $a in
     antes) alvos="$alvos V1 V2 V3 V4 V5 V6 V7" ;;
-    depois) alvos="$alvos V7p V8 V9 V10" ;;
+    depois) alvos="$alvos V6 V7p V8 V9 V10" ;;
     todos) alvos="$alvos V1 V2 V3 V4 V5 V6 V7 V8 V9 V10" ;;
     V[0-9]|V10) alvos="$alvos $a" ;;
     *) sed -n '2,9p' "$0" >&2; exit 2 ;;
