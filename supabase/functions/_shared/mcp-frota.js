@@ -4,14 +4,17 @@
 //     ('ilike_qualquer': valor = { coluna: texto já limpo }; casa se QUALQUER coluna contém o texto)
 //   inserir(tabela, linha | linhas) -> linhas      editar(tabela, id, campos) -> linhas (vazio = não achou)
 //   apagar(tabela, id)      maiorKm(veiculoId) -> número | null      avisar(requisicaoId) -> { ok, ... }
+//   pessoas() -> [{ id, nome, status }] (RPC pessoas_para_escolher: o cadastro de colaboradores)
 // Erro do banco sobe como Error com a frase do gatilho/RLS; aqui vira isError para o modelo repassar.
 // É o mesmo catálogo da versão na API Go (api/internal/mcp/ferramentas.go), que fica no lugar desta na virada.
+import { quemEstaComOCarro } from './posse.js'
 
 export const VERSOES = ['2025-06-18', '2025-03-26', '2024-11-05']
 
 export const INSTRUCOES = 'Ferramentas da Frota da RBV (carros da empresa). Valores em reais; datas em ISO 8601 com fuso ' +
   '(ex.: 2026-10-20T14:00:00-03:00). Para agir sobre um carro, ache o id dele com listar_veiculos usando busca ' +
-  '(nome ou placa), em vez de listar a frota toda; nas outras listas, filtre por veiculo_id. As listas trazem o ' +
+  '(nome ou placa), em vez de listar a frota toda; nas outras listas, filtre por veiculo_id. Carro livre é ' +
+  'listar_veiculos com estado=livre: carro com dono fixo NÃO é livre. As listas trazem o ' +
   'carro (nome e placa) em cada linha e omitem campos vazios. Antes de gravar, confirme com a pessoa os números ' +
   'que ela disse. Erro de regra volta com a frase do sistema: repasse-a, não tente contornar.'
 
@@ -20,8 +23,10 @@ export const INSTRUCOES = 'Ferramentas da Frota da RBV (carros da empresa). Valo
 // de outra rodada só para saber de que carro é. Resposta menor = o ChatGPT lê e responde mais rápido.
 const CARRO = 'veiculo:frota_veiculos(nome,placa)'
 const COLUNAS = {
-  frota_veiculos: 'id,nome,placa,marca,ano,cor,combustivel,situacao,local_texto,contato_nome,contato_telefone,' +
-    'seguro_seguradora,seguro_vence_em,oficina_nome,observacao',
+  // todo campo que editar_veiculo grava, para dar para conferir; pessoa_id só para o estado (sai da resposta)
+  frota_veiculos: 'id,nome,placa,marca,ano,cor,combustivel,tipo_oleo,situacao,local_texto,contrato,categoria_comercial,' +
+    'contato_nome,contato_telefone,contato_papel,seguro_seguradora,seguro_apolice,seguro_vence_em,tag_pedagio,' +
+    'rastreador,oficina_nome,oficina_telefone,observacao,pessoa_id',
   frota_uso: `id,veiculo_id,${CARRO},tipo,pessoa_nome,saida_em,volta_em,km_saida,km_volta,tanque_quartos,destino,finalidade,observacao`,
   frota_requisicoes: `id,veiculo_id,${CARRO},situacao,pessoa_nome,departamento,destino,finalidade,retirada_prevista,` +
     'devolucao_prevista,motivo_decisao,encerrada_motivo,observacao,criada_em,decidida_em,uso_id',
@@ -49,7 +54,8 @@ function exigirUuid(v, frase) { if (typeof v !== 'string' || !UUID.test(v)) recu
 // ---- leitura ----
 
 function listar(tabela, ordem, filtros = {}, padrao = 20) {
-  return async (args, { db }) => {
+  // consulta(args) confere e monta sem ir ao banco: quem junta outras leituras recusa antes de disparar alguma
+  const consulta = (args) => {
     soConhecidos(args, ['limite', ...Object.keys(filtros)])
     let limite = padrao
     if (args.limite !== undefined) {
@@ -58,8 +64,11 @@ function listar(tabela, ordem, filtros = {}, padrao = 20) {
     }
     const f = []
     for (const [k, montar] of Object.entries(filtros)) if (args[k] !== undefined) f.push(montar(args[k]))
-    return db.listar(tabela, { colunas: COLUNAS[tabela], filtros: f, ordem, limite })
+    return { colunas: COLUNAS[tabela], filtros: f, ordem, limite }
   }
+  const rodar = async (args, { db }) => db.listar(tabela, consulta(args))
+  rodar.consulta = consulta
+  return rodar
 }
 const porVeiculo = { veiculo_id: (v) => (exigirUuid(v, 'veiculo_id deve ser o uuid do carro (use listar_veiculos)'), ['veiculo_id', 'eq', v]) }
 
@@ -187,6 +196,88 @@ async function lancarManutencao(args, { db, usuario }) {
   }
 }
 
+// ---- veículos com o estado da tela ----
+
+// O selo do cartão (seloDoVeiculo em src/ferramentas/frota/cartao-do-veiculo.js, sobre estadoDoVeiculo e
+// reservaSegurando): livre = ativo, sem viagem aberta, sem ninguém com ele (dono fixo ou posse) e sem reserva
+// aprovada valendo agora. O teste confere contra as funções da tela; a edge não importa de src/.
+export const ESTADOS_DO_CARRO = ['livre', 'fixo', 'na_rua', 'reservado', 'oficina', 'parado', 'fora_da_frota']
+const DIA = 24 * 3600e3
+export function estadoDoCarro(v, usos, reservas, pessoas, agora) {
+  if (v.situacao === 'alienado') return { estado: 'fora_da_frota' }
+  if (v.situacao === 'em_manutencao') return { estado: 'oficina' }
+  if (v.situacao === 'inativo') return { estado: 'parado' }
+  const viagem = usos.find((u) => u.veiculo_id === v.id && !u.volta_em && (u.tipo || 'viagem') === 'viagem')
+  if (viagem) return { estado: 'na_rua', com_quem: viagem.pessoa_nome || null }
+  const nome = (pessoas.find((p) => p.id === v.pessoa_id) || {}).nome || null
+  const quem = quemEstaComOCarro({ ...v, pessoa_nome: nome }, usos, pessoas)
+  if (quem.pessoaId || quem.pessoaNome) return { estado: 'fixo', com_quem: quem.pessoaNome, ...(quem.porPosse ? { por_posse: true } : {}) }
+  const t = agora.getTime()
+  const r = reservas.find((x) => {
+    const ini = Date.parse(x.retirada_prevista)
+    if (x.veiculo_id !== v.id || isNaN(ini)) return false
+    const fim = x.devolucao_prevista ? Date.parse(x.devolucao_prevista) : ini + DIA
+    return t >= ini && t <= fim
+  })
+  if (r) return { estado: 'reservado', reservado_para: r.pessoa_nome || null, ate: r.devolucao_prevista || null }
+  return { estado: 'livre' }
+}
+
+const carros = listar('frota_veiculos', ['nome', false], {
+  busca: (v) => {
+    const t = typeof v === 'string' ? limparBusca(v) : ''
+    if (!t) recusar('busca deve ser parte do nome ou da placa')
+    return ['nome|placa', 'ilike_qualquer', { nome: t, placa: t.toUpperCase().replace(/[^A-Z0-9]/g, '') || t }]
+  },
+  situacao: (v) => (!SITUACOES_DO_CARRO.includes(v) && recusar('situacao deve ser ' + SITUACOES_DO_CARRO.join(', ')), ['situacao', 'eq', v]),
+}, 100)
+
+async function listarVeiculos(args, { db, agora }) {
+  const { estado, ...resto } = args
+  if (estado !== undefined && !ESTADOS_DO_CARRO.includes(estado)) recusar('estado deve ser ' + ESTADOS_DO_CARRO.join(', '))
+  const q = carros.consulta(resto)
+  const [lista, usos, reservas, pessoas] = await Promise.all([
+    db.listar('frota_veiculos', q),
+    db.listar('frota_uso', { colunas: 'veiculo_id,tipo,pessoa_id,pessoa_nome,volta_em', filtros: [['volta_em', 'is_null']], ordem: ['saida_em', true], limite: 200 }),
+    db.listar('frota_requisicoes', { colunas: 'veiculo_id,pessoa_nome,retirada_prevista,devolucao_prevista', filtros: [['situacao', 'eq', 'aprovada']], ordem: ['retirada_prevista', true], limite: 200 }),
+    db.pessoas(),
+  ])
+  // ponytail: o filtro de estado vem depois do limite; a frota tem 14 carros e o padrão é 100
+  const saida = lista.map(({ pessoa_id, ...v }) => ({ ...v, ...estadoDoCarro({ ...v, pessoa_id }, usos, reservas, pessoas, agora) }))
+  return estado ? saida.filter((v) => v.estado === estado) : saida
+}
+
+// ---- pedido de carro: sempre para alguém (motoristaParaGravar em src/ferramentas/frota/nomes-de-fora.js) ----
+
+const normalizar = (s) => String(s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim()
+const gravarPedido = gravar('frota_requisicoes', { obrigatorios: ['veiculo_id', 'retirada_prevista'], autor: 'criada_por',
+  permitidos: ['veiculo_id', 'retirada_prevista', 'devolucao_prevista', 'pessoa_id', 'pessoa_nome', 'departamento', 'destino', 'finalidade', 'observacao'] })
+
+// Colaborador vira { pessoa_id, pessoa_nome } do cadastro: é pelo pessoa_id que a tela mostra de quem é a reserva
+// e que o aviso de aprovação chega no celular de quem vai dirigir. Gente de fora vira só o nome.
+async function pedirCarro(args, ctx) {
+  soConhecidos(args, ['veiculo_id', 'retirada_prevista', 'devolucao_prevista', 'pessoa_nome', 'de_fora', 'departamento', 'destino', 'finalidade', 'observacao'])
+  for (const k of ['veiculo_id', 'retirada_prevista']) if (args[k] === undefined) recusar('falta ' + k)
+  const { pessoa_nome: nome, de_fora: deFora, ...resto } = args
+  const quem = typeof nome === 'string' ? nome.trim() : ''
+  if (!quem) recusar('Falta para quem é o carro (pessoa_nome). Pergunte à pessoa quem vai usar; não presuma que é quem está falando.')
+  if (deFora === true) {
+    if (quem.length < 3) recusar('O nome de quem é de fora está curto demais: escreva nome e sobrenome.')
+    return gravarPedido({ ...resto, pessoa_id: null, pessoa_nome: quem }, ctx)
+  }
+  const ativas = (await ctx.db.pessoas()).filter((p) => p && p.status !== 'desligado')
+  const n = normalizar(quem)
+  const exatas = ativas.filter((p) => normalizar(p.nome) === n)
+  const achadas = exatas.length ? exatas : ativas.filter((p) => normalizar(p.nome).includes(n))
+  if (!achadas.length) {
+    recusar(`Não achei "${quem}" entre os colaboradores. Confirme o nome com a pessoa; se ela é de fora da empresa, mande de_fora=true com nome e sobrenome.`)
+  }
+  if (achadas.length > 1) {
+    recusar(`Mais de um colaborador casa com "${quem}": ${achadas.slice(0, 10).map((p) => p.nome).join('; ')}. Pergunte qual é e mande o nome completo.`)
+  }
+  return gravarPedido({ ...resto, pessoa_id: achadas[0].id, pessoa_nome: achadas[0].nome }, ctx)
+}
+
 // ---- o catálogo ----
 
 const pLimite = { type: 'integer', minimum: 1, maximum: 200, description: 'Quantas linhas (padrão 50).' }
@@ -207,20 +298,18 @@ const esquemaPlano = { item: texto, a_cada_km: { type: 'integer', minimum: 1 }, 
 
 export const FERRAMENTAS = [
   { nome: 'listar_veiculos', titulo: 'Listar veículos', leitura: true,
-    descricao: 'Lista os carros da frota com placa, nome, situação (ativo, em_manutencao, alienado, inativo), local, ' +
-      'seguro e contatos. Use busca (parte do nome ou da placa) para achar o id de um carro.',
+    descricao: 'Lista os carros da frota com placa, nome, situação de cadastro (ativo, em_manutencao, alienado, inativo), ' +
+      'local, seguro, contatos e o estado de agora, com a mesma regra da tela: livre (ativo, sem viagem aberta, sem ' +
+      'dono fixo nem posse, sem reserva aprovada valendo agora), fixo (com_quem: o dono fixo ou quem está com ele por ' +
+      'posse), na_rua (viagem aberta), reservado (reservado_para, ate), oficina, parado, fora_da_frota. "Carros ' +
+      'livres" = estado=livre; situacao=ativo inclui os fixos. Use busca (parte do nome ou da placa) para achar o id de um carro.',
     esquema: obj({
       busca: { type: 'string', description: 'Parte do nome ou da placa (com ou sem hífen).' },
-      situacao: { type: 'string', enum: SITUACOES_DO_CARRO }, limite: { ...pLimite, description: 'Quantas linhas (padrão 100).' },
+      situacao: { type: 'string', enum: SITUACOES_DO_CARRO, description: 'Situação do cadastro (não diz se está livre).' },
+      estado: { type: 'string', enum: ESTADOS_DO_CARRO, description: 'Estado de agora; livre = pode pegar.' },
+      limite: { ...pLimite, description: 'Quantas linhas (padrão 100).' },
     }),
-    rodar: listar('frota_veiculos', ['nome', false], {
-      busca: (v) => {
-        const t = typeof v === 'string' ? limparBusca(v) : ''
-        if (!t) recusar('busca deve ser parte do nome ou da placa')
-        return ['nome|placa', 'ilike_qualquer', { nome: t, placa: t.toUpperCase().replace(/[^A-Z0-9]/g, '') || t }]
-      },
-      situacao: (v) => (!SITUACOES_DO_CARRO.includes(v) && recusar('situacao deve ser ' + SITUACOES_DO_CARRO.join(', ')), ['situacao', 'eq', v]),
-    }, 100) },
+    rodar: listarVeiculos },
   { nome: 'listar_usos', titulo: 'Listar retiradas e posses', leitura: true,
     descricao: 'Retiradas e posses dos carros, das mais novas para as mais antigas. São duas coisas diferentes: ' +
       'tipo=viagem é uma retirada (alguém pegou o carro, tem km de saída e, ao voltar, km de volta); tipo=posse é o ' +
@@ -270,13 +359,17 @@ export const FERRAMENTAS = [
     }, ['veiculo_id', 'km', 'litros', 'total_reais', 'tanque_depois', 'combustivel']),
     rodar: registrarAbastecimento },
   { nome: 'pedir_carro', titulo: 'Pedir carro (criar requisição)',
-    descricao: 'Cria um pedido de carro, que nasce pendente de aprovação.',
+    descricao: 'Cria um pedido de carro, que nasce pendente de aprovação. ANTES de chamar, pergunte para quem é o ' +
+      'carro (quem vai dirigir) se a pessoa não disse; nunca presuma que é quem está falando. O nome é conferido no ' +
+      'cadastro de colaboradores (fica no nome dessa pessoa, que recebe o aviso da aprovação); para alguém de fora ' +
+      'da empresa, mande de_fora=true com nome e sobrenome.',
     esquema: obj({
       veiculo_id: pVeiculo, retirada_prevista: { type: 'string', format: 'date-time' }, devolucao_prevista: { type: 'string', format: 'date-time' },
-      pessoa_nome: { type: 'string', description: 'Quem vai usar.' }, departamento: texto, destino: texto, finalidade: texto, observacao: texto,
-    }, ['veiculo_id', 'retirada_prevista']),
-    rodar: gravar('frota_requisicoes', { obrigatorios: ['veiculo_id', 'retirada_prevista'], autor: 'criada_por',
-      permitidos: ['veiculo_id', 'retirada_prevista', 'devolucao_prevista', 'pessoa_nome', 'departamento', 'destino', 'finalidade', 'observacao'] }) },
+      pessoa_nome: { type: 'string', description: 'Quem vai usar o carro (nome do colaborador). Obrigatório: pergunte.' },
+      de_fora: { type: 'boolean', description: 'true só se quem vai usar não é colaborador.' },
+      departamento: texto, destino: texto, finalidade: texto, observacao: texto,
+    }, ['veiculo_id', 'retirada_prevista', 'pessoa_nome']),
+    rodar: pedirCarro },
   { nome: 'decidir_requisicao', titulo: 'Decidir pedido de carro',
     descricao: 'Aprova, recusa, cancela ou revoga um pedido de carro. Recusar, cancelar e revogar exigem motivo. ' +
       'Aprovar e recusar avisam no celular de quem pediu.',

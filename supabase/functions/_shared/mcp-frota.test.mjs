@@ -1,11 +1,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { responder, gestorDaFrota, clienteOAuth, FERRAMENTAS } from './mcp-frota.js'
+import { responder, gestorDaFrota, clienteOAuth, FERRAMENTAS, estadoDoCarro } from './mcp-frota.js'
+import { quemEstaComOCarro } from './posse.js'
+import { estadoDoVeiculo } from '../../../src/ferramentas/frota/estado-do-veiculo.js'
+import { seloDoVeiculo } from '../../../src/ferramentas/frota/cartao-do-veiculo.js'
+import { reservaSegurando } from '../../../src/ferramentas/frota/requisicoes.js'
 
 const V = '11111111-1111-4111-8111-111111111111'
 const R = '22222222-2222-4222-8222-222222222222'
 const EU = '33333333-3333-4333-8333-333333333333'
 const AGORA = new Date('2026-10-19T15:00:00Z')
+const PESSOAS = [
+  { id: 'p-ana', nome: 'Ana Souza', status: 'ativo' }, { id: 'p-ana2', nome: 'Ana Lima', status: 'ativo' },
+  { id: 'p-joao', nome: 'João Pereira', status: 'ativo' }, { id: 'p-joao2', nome: 'João Pereira Neto', status: 'ativo' },
+  { id: 'p-caio', nome: 'Caio Ramos', status: 'desligado' },
+]
 
 function bancoFalso({ km = 25000, falharTrocas = false, editadas = 1 } = {}) {
   const feito = []
@@ -21,6 +30,7 @@ function bancoFalso({ km = 25000, falharTrocas = false, editadas = 1 } = {}) {
     async apagar(t, id) { feito.push(['apagar', t, id]) },
     async maiorKm() { return km },
     async avisar(id) { feito.push(['avisar', id]); return { ok: true, enviados: 1 } },
+    async pessoas() { return PESSOAS },
   }
   return db
 }
@@ -55,18 +65,68 @@ test('listar: filtros, ordem, limite e argumento desconhecido', async () => {
 
 test('listar: padrão de linhas, busca por nome ou placa e campos nulos fora da resposta', async () => {
   const db = bancoFalso()
-  db.listar = async (t, o) => { db.feito.push([t, o]); return [{ id: V, nome: 'Gol', observacao: null }] }
+  db.listar = async (t, o) => { db.feito.push([t, o]); return t === 'frota_veiculos' ? [{ id: V, nome: 'Gol', observacao: null, situacao: 'ativo', pessoa_id: null }] : [] }
   const r = await chamar(db, 'listar_veiculos', { busca: ' abc-1d2(3), ' })
   assert.deepEqual(db.feito[0][1].filtros, [['nome|placa', 'ilike_qualquer', { nome: 'abc-1d2 3', placa: 'ABC1D23' }]])
   assert.equal(db.feito[0][1].limite, 100)
-  assert.equal(texto(r), `[{"id":"${V}","nome":"Gol"}]`)
+  assert.match(db.feito[0][1].colunas, /tag_pedagio/) // todo campo que editar_veiculo grava dá para conferir
+  assert.equal(texto(r), `[{"id":"${V}","nome":"Gol","situacao":"ativo","estado":"livre"}]`) // pessoa_id não sai
+  db.feito.length = 0
   await chamar(db, 'listar_abastecimentos', {})
-  assert.equal(db.feito[1][1].limite, 20)
+  assert.equal(db.feito[0][1].limite, 20)
   await chamar(db, 'listar_usos', { aberta: true, tipo: 'viagem' })
-  assert.deepEqual(db.feito[2][1].filtros, [['tipo', 'eq', 'viagem'], ['volta_em', 'is_null']])
+  assert.deepEqual(db.feito[1][1].filtros, [['tipo', 'eq', 'viagem'], ['volta_em', 'is_null']])
   assert.equal((await chamar(db, 'listar_usos', { tipo: 'emprestimo' })).isError, true)
   assert.equal((await chamar(db, 'listar_veiculos', { busca: ' (),* ' })).isError, true)
   assert.equal((await chamar(db, 'listar_veiculos', { situacao: 'quebrado' })).isError, true)
+  db.feito.length = 0
+  assert.equal((await chamar(db, 'listar_veiculos', { estado: 'disponivel' })).isError, true)
+  assert.equal((await chamar(db, 'listar_veiculos', { placa: 'x' })).isError, true)
+  assert.equal(db.feito.length, 0) // recusa antes de qualquer leitura
+})
+
+test('estado do carro = o selo da tela (cartao-do-veiculo + estado-do-veiculo + reservaSegurando)', () => {
+  const SELO = { LIVRE: 'livre', FIXO: 'fixo', 'NA RUA': 'na_rua', RESERVADO: 'reservado', OFICINA: 'oficina', PARADO: 'parado', 'FORA DA FROTA': 'fora_da_frota' }
+  const agoraIso = AGORA.toISOString()
+  const daTela = (v, usos, reqs) => {
+    const seg = reservaSegurando({ requisicoes: reqs, veiculoId: v.id, agoraIso })
+    const dono = { ...v, pessoa_nome: (PESSOAS.find((p) => p.id === v.pessoa_id) || {}).nome || null, reservada: !!seg, reservada_por: seg ? seg.pessoa_nome : null }
+    const quem = quemEstaComOCarro(dono, usos, PESSOAS)
+    return SELO[seloDoVeiculo(estadoDoVeiculo({ ...dono, pessoa_nome: quem.pessoaNome }, usos, [], [], [])).texto]
+  }
+  const carro = (x) => ({ id: V, situacao: 'ativo', pessoa_id: null, ...x })
+  const viagem = { veiculo_id: V, tipo: 'viagem', pessoa_nome: 'Ana Souza', volta_em: null }
+  const posse = { veiculo_id: V, tipo: 'posse', pessoa_id: 'p-joao', pessoa_nome: null, volta_em: null }
+  const reserva = (ini, fim) => ({ veiculo_id: V, situacao: 'aprovada', pessoa_nome: 'Ana Lima', retirada_prevista: ini, devolucao_prevista: fim })
+  const casos = [
+    ['livre', carro(), [], []],
+    ['dono fixo', carro({ pessoa_id: 'p-ana' }), [], []],
+    ['posse sem dono fixo', carro(), [posse], []],
+    ['posse fechada', carro(), [{ ...posse, volta_em: '2026-10-01T10:00:00Z' }], []],
+    ['viagem com dono fixo', carro({ pessoa_id: 'p-ana' }), [viagem], []],
+    ['viagem de outro carro', carro(), [{ ...viagem, veiculo_id: R }], []],
+    ['reserva valendo agora', carro(), [], [reserva('2026-10-19T12:00:00Z', '2026-10-19T20:00:00Z')]],
+    ['reserva sem devolução, no dia', carro(), [], [reserva('2026-10-19T08:00:00Z', null)]],
+    ['reserva de amanhã', carro(), [], [reserva('2026-10-20T12:00:00Z', '2026-10-20T20:00:00Z')]],
+    ['reserva vencida', carro(), [], [reserva('2026-10-15T12:00:00Z', '2026-10-15T20:00:00Z')]],
+    ['oficina com viagem', carro({ situacao: 'em_manutencao' }), [viagem], []],
+    ['inativo', carro({ situacao: 'inativo', pessoa_id: 'p-ana' }), [], []],
+    ['alienado', carro({ situacao: 'alienado' }), [], []],
+  ]
+  for (const [nome, v, usos, reqs] of casos) {
+    assert.equal(estadoDoCarro(v, usos, reqs, PESSOAS, AGORA).estado, daTela(v, usos, reqs), nome)
+  }
+  assert.deepEqual(estadoDoCarro(carro({ pessoa_id: 'p-ana' }), [], [], PESSOAS, AGORA), { estado: 'fixo', com_quem: 'Ana Souza' })
+  assert.deepEqual(estadoDoCarro(carro(), [posse], [], PESSOAS, AGORA), { estado: 'fixo', com_quem: 'João Pereira', por_posse: true })
+})
+
+test('listar_veiculos com estado=livre não traz o carro fixo', async () => {
+  const db = bancoFalso()
+  db.listar = async (t) => t === 'frota_veiculos'
+    ? [{ id: V, nome: 'Kwid', situacao: 'ativo', pessoa_id: 'p-ana' }, { id: R, nome: 'Doblo', situacao: 'ativo', pessoa_id: null }]
+    : []
+  const r = JSON.parse(texto(await chamar(db, 'listar_veiculos', { estado: 'livre' })))
+  assert.deepEqual(r.map((c) => c.nome), ['Doblo'])
 })
 
 test('abastecimento: grava em centavos, com autor; barra km menor e data futura sem gravar', async () => {
@@ -101,11 +161,28 @@ test('editar_veiculo: só os campos permitidos; não achou = erro', async () => 
   assert.match(texto(await chamar(db, 'editar_veiculo', { id: V })), /nada para gravar/)
 })
 
-test('pedir_carro grava quem pediu', async () => {
-  const db = bancoFalso()
-  await chamar(db, 'pedir_carro', { veiculo_id: V, retirada_prevista: '2026-10-20T08:00:00-03:00' })
-  assert.equal(db.feito[0][2].criada_por, EU)
-  assert.match(texto(await chamar(db, 'pedir_carro', { veiculo_id: V })), /falta retirada_prevista/)
+test('pedir_carro: sempre para alguém do cadastro (ou de fora, com nome), e grava quem pediu', async () => {
+  const pedido = { veiculo_id: V, retirada_prevista: '2026-10-20T08:00:00-03:00' }
+  let db = bancoFalso()
+  await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: ' joao pereira ' })
+  assert.deepEqual([db.feito[0][1], db.feito[0][2].pessoa_id, db.feito[0][2].pessoa_nome, db.feito[0][2].criada_por],
+    ['frota_requisicoes', 'p-joao', 'João Pereira', EU]) // exato vence o "Neto"; nome do cadastro
+  db = bancoFalso()
+  await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: 'souza' })
+  assert.equal(db.feito[0][2].pessoa_id, 'p-ana')
+  db = bancoFalso()
+  await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: 'Felipe Modelista', de_fora: true })
+  assert.deepEqual([db.feito[0][2].pessoa_id, db.feito[0][2].pessoa_nome], [null, 'Felipe Modelista'])
+
+  db = bancoFalso()
+  assert.match(texto(await chamar(db, 'pedir_carro', pedido)), /Falta para quem é o carro/)
+  assert.match(texto(await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: '  ' })), /Falta para quem/)
+  assert.match(texto(await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: 'Ana' })), /Mais de um colaborador.*Ana Lima; Ana Souza|Mais de um colaborador.*Ana Souza; Ana Lima/)
+  assert.match(texto(await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: 'Caio Ramos' })), /Não achei.*de_fora=true/) // desligado não conta
+  assert.match(texto(await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: 'Lu', de_fora: true })), /curto demais/)
+  assert.match(texto(await chamar(db, 'pedir_carro', { ...pedido, pessoa_nome: 'Ana Souza', pessoa_id: 'x' })), /argumento desconhecido: pessoa_id/)
+  assert.match(texto(await chamar(db, 'pedir_carro', { veiculo_id: V, pessoa_nome: 'Ana Souza' })), /falta retirada_prevista/)
+  assert.equal(db.feito.length, 0)
 })
 
 test('decidir_requisicao: motivo obrigatório, aviso só em aprovar/recusar, falha do aviso não desfaz', async () => {
