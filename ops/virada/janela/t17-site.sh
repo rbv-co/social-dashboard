@@ -59,8 +59,8 @@ paginas_no_ar() {   # 0 se as 9 páginas estão trocadas no release no ar
 reverter() {
   [ -s "$MARCA" ] || falha "sem $MARCA (o sha do aplicar): faça o revert à mão (ver o cabeçalho)"
   ( clonar; git config user.email "virada@rbvcompany.com"; git config user.name "Virada"
-    git revert --no-edit "$(cat "$MARCA")" >/dev/null; git push -q origin HEAD:main
-    echo "revert no main: $(git rev-parse --short HEAD)" )
+    git revert --no-edit "$(cat "$MARCA")" >/dev/null && git push -q origin HEAD:main \
+      && echo "revert no main: $(git rev-parse --short HEAD)" ) || falha "o revert/push falhou: faça à mão (ver o cabeçalho); o site continua com as páginas da Central"
   ssh "$HOSTV" /usr/local/sbin/deploy-vesselbrasil | tail -3
   echo "REVERTIDO: páginas de volta ao Supabase (confira com: sh t17-site.sh conferir)"
 }
@@ -75,8 +75,12 @@ aplicar)
   git pull -q --rebase origin main; git push -q origin HEAD:main
   printf '%s\n' "$(git rev-parse HEAD)" > "$MARCA"; ok "commit no main: $(git rev-parse --short HEAD) (reversão: sh t17-site.sh reverter)"
   ssh "$HOSTV" /usr/local/sbin/deploy-vesselbrasil | tail -4
-  # o deploy sai 0 sem publicar se o cron do site está publicando (flock): espera até ~90 s pelas 9 páginas no ar
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do paginas_no_ar >/dev/null 2>&1 && break; sleep 5; done
+  # o deploy sai 0 SEM publicar se o cron do site está publicando (flock) e o cron pode ter buscado o main ANTES do nosso push:
+  # repete o deploy a cada ~20 s por até ~7 min (o cron roda de 5 em 5) até as 9 páginas estarem no ar
+  for i in $(seq 1 21); do
+    paginas_no_ar >/dev/null 2>&1 && break
+    sleep 20; ssh "$HOSTV" /usr/local/sbin/deploy-vesselbrasil | tail -2
+  done
   paginas_no_ar || { echo "páginas não ficaram trocadas no ar: REVERTENDO"; reverter; exit 1; }
   echo "T+17 SITE OK: 9 páginas no ar apontando para $CENTRAL" ;;
 reverter) reverter ;;
