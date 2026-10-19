@@ -28,6 +28,7 @@ var tabelasSoDoTeste = map[string]string{
 	"usuarios": "API (migração 00001)", "sessoes": "API (migração 00001)", "webhooks_recebidos": "API (00002)",
 	"envios_feitos": "API (00003)", "disparos_pendentes": "API (00007)", "tokens_de_senha": "API (00005)",
 	"tokens_de_servico": "API (00006)", "goose_db_version": "goose",
+	"oauth_clientes": "API (00012)", "oauth_codigos": "API (00012)", "oauth_refresh": "API (00012)",
 }
 
 // divergenciasDeProposito: coluna que o esquema de teste mantém DIFERENTE da produção, com o motivo.
