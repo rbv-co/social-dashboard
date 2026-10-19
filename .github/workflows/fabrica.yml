@@ -43,6 +43,13 @@ jobs:
           FABRICA_JOB_ID: ${{ github.event.inputs.job_id }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # VIRADA (plano 04): com os dois abaixo as tabelas fabrica_* vão pela API Go (token srv_ do usuário
+          # robo-fabrica, lib/fabrica-banco.mjs); sem eles o robô segue no Supabase (rollback). Storage, gc_* e o
+          # login Supabase seguem lá (fase 2). Depois da virada, a variável FABRICA_EXIGE_API=1 (Settings → Variables)
+          # faz o job FALHAR em vez de gravar calado no banco congelado se o token faltar.
+          CENTRAL_API_URL: ${{ secrets.CENTRAL_API_URL }}
+          CENTRAL_API_TOKEN: ${{ secrets.CENTRAL_API_TOKEN }}
+          FABRICA_EXIGE_API: ${{ vars.FABRICA_EXIGE_API }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_TRAFEGO }}
           # loginServico() (usado por gerar/subir/ativar) autentica como usuário de serviço —
           # precisa do email/senha do gestor, senão dá "missing email or phone" (400).

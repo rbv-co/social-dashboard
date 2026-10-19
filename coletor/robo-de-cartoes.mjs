@@ -19,15 +19,15 @@ import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { listarPasta, acharOuCriarPasta, uploadArquivo, baixarArquivo } from './lib/zoho-workdrive.mjs';
-import { conexaoZoho } from './lib/zoho-da-central.mjs';
+import { abrirDados } from './lib/cartoes-dados.mjs';
 import { agruparPorSku, nomeDaSubpasta, planoDeDevolucao, rotuloDoCartao, arquivosDoCartao } from './lib/cartoes-da-fila.js';
 import { fazerCartao } from './lib/cartao-de-uma-peca.mjs';
 import { emParalelo, sincronizarPasta, podarPastas, versaoDoTratamento } from './lib/espelho-de-fotos.mjs';
 import { comTrava } from './lib/trava-de-arquivo.mjs';
 
 const SECO = process.argv.includes('--seco');
-const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) { console.error('faltam SUPABASE_URL e SUPABASE_SERVICE_KEY'); process.exit(1); }
+// O banco (api-db por pg, ou o REST do Supabase como rollback) fica todo em lib/cartoes-dados.mjs.
+const dados = await abrirDados().catch((e) => { console.error(e.message); process.exit(1); });
 
 const VESSEL = resolve(process.env.VESSEL_DIR || 'vessel-brasil');
 // "Fotos por SKU (coletor)", no Zoho; dentro dela ficam "Vessel Brasil" e, dentro desta, "Cartões com EAN".
@@ -44,33 +44,17 @@ function curto(e) {
   return (linhas.at(-1) || 'erro sem mensagem').slice(0, 160);
 }
 
-const cab = { apikey: SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY };
-
 // ⚠️ O ZOHO É O DA CENTRAL (Acessos → Zoho, tabela `acessos_conexoes`), e NÃO os segredos ZOHO_* do GitHub: em
 // 06/10/2026 os dois deram `inactive_client` (o aplicativo do Zoho tinha caído) e renovar em dois lugares é pedir
 // para um ficar velho. Assim há UM lugar para reconectar. O cliente de coletor/lib/zoho-workdrive.mjs lê o
 // ambiente na hora de usar, então basta preenchê-lo aqui. Sem conexão, para ANTES de pegar pedido: ele fica na fila.
 {
-  const z = await conexaoZoho(`${SUPABASE_URL}/rest/v1`, cab);
+  const z = await dados.conexaoZoho();
   process.env.ZOHO_CLIENT_ID = z.client_id;
   process.env.ZOHO_CLIENT_SECRET = z.client_secret;
   process.env.ZOHO_REFRESH_TOKEN = z.refresh_token;
   process.env.ZOHO_DC = String(z.data_center || '.com').replace(/^\./, '');
 }
-async function rpc(nome, corpo = {}) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${nome}`, {
-    method: 'POST', headers: { ...cab, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo),
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`${nome} -> ${r.status} ${txt.slice(0, 200)}`);
-  return txt ? JSON.parse(txt) : null;
-}
-async function ler(caminho) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${caminho}`, { headers: cab });
-  if (!r.ok) throw new Error(`${caminho.split('?')[0]} -> ${r.status} ${(await r.text()).slice(0, 200)}`);
-  return r.json();
-}
-
 /**
  * Grava onde está cada arquivo no Zoho (`vessel_cartao_arquivos`): a edge `vessel-baixar-cartao` baixa direto pelo id em vez de
  * procurar dias -> pastas -> arquivo a cada clique. ⚠️ Falhar aqui NÃO derruba o cartão (já está no Zoho e confirmado): sem a
@@ -78,23 +62,8 @@ async function ler(caminho) {
  */
 async function guardarOsIds(linhas) {
   if (!linhas.length) return;
-  try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/vessel_cartao_arquivos?on_conflict=codigo,nome`, {
-      method: 'POST', headers: { ...cab, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(linhas),
-    });
-    if (!r.ok) console.log(`  aviso: não gravei os ids dos arquivos (${r.status}): ${(await r.text()).slice(0, 120)}`);
-  } catch (e) { console.log('  aviso: não gravei os ids dos arquivos: ' + curto(e)); }
-}
-
-/** vessel_pecas com o SKU do lote, em lotes de 100 códigos (limite de tamanho da URL). */
-async function buscarPecas(codigos) {
-  const linhas = [];
-  for (let i = 0; i < codigos.length; i += 100) {
-    const lista = codigos.slice(i, i + 100).map((c) => `"${String(c).replace(/"/g, '')}"`).join(',');
-    linhas.push(...await ler(`vessel_pecas?select=codigo,numero_na_serie,vessel_lotes(sku)&codigo=in.(${encodeURIComponent(lista)})`));
-  }
-  return linhas;
+  try { await dados.guardarIds(linhas); }
+  catch (e) { console.log('  aviso: não gravei os ids dos arquivos: ' + curto(e)); }
 }
 
 // ── O QUE O ZOHO NÃO MUDA DE UM PEDIDO PARA O OUTRO (só com FOTOS_CACHE, na VPS) ──────────────────────────────────────
@@ -213,7 +182,7 @@ async function espelharFotos(pastas, skus, raiz) {
 async function processar(pedido, estado, ctx) {
   const t0 = Date.now(); let t = t0;
   const tempos = {}; const marca = (e) => { tempos[e] = (tempos[e] || 0) + (Date.now() - t) / 1000; t = Date.now(); }; // soma entre SKUs
-  const { porSku, semDados } = agruparPorSku(pedido.pecas, await buscarPecas(pedido.pecas));
+  const { porSku, semDados } = agruparPorSku(pedido.pecas, await dados.pecas(pedido.pecas));
   for (const x of semDados) estado.falhas.push({ rotulo: x.codigo, motivo: x.motivo });
 
   let { vbId, pastas, doCache } = await pastasDeFotos();
@@ -286,11 +255,11 @@ async function processar(pedido, estado, ctx) {
 }
 
 async function secoMode() {
-  const fila = await ler('vessel_cartao_pedidos?situacao=in.(na_fila,rodando)&select=id,situacao,criado_em,pecas&order=criado_em');
+  const fila = await dados.pedidosAbertos();
   console.log(`pedidos na fila: ${fila.length}`);
   const { pastas } = await pastasDeFotos();
   for (const p of fila) {
-    const { porSku, semDados } = agruparPorSku(p.pecas, await buscarPecas(p.pecas));
+    const { porSku, semDados } = agruparPorSku(p.pecas, await dados.pecas(p.pecas));
     console.log(`\npedido ${p.id.slice(0, 8)} (${p.situacao}, ${p.criado_em.slice(0, 16)}): ${p.pecas.length} peças em ${porSku.size} SKUs`);
     for (const x of semDados) console.log(`  ✗ ${x.codigo}: ${x.motivo}`);
     for (const [sku, pecas] of porSku) {
@@ -305,11 +274,11 @@ if (SECO) { await secoMode(); process.exit(0); }
 
 // Pedido que ficou `rodando` porque o robô anterior foi morto volta para a fila. Se a função ainda não existe no
 // banco (migration pendente), segue sem ela: é a retaguarda, não o caminho principal.
-await rpc('vessel_cartao_recolocar_travados', { p_minutos: 150 }).catch((e) => console.log('aviso: ' + e.message));
+await dados.rpc('vessel_cartao_recolocar_travados', { p_minutos: 150 }).catch((e) => console.log('aviso: ' + e.message));
 
 let feitos = 0;
 for (;;) {
-  const { pedido } = await rpc('vessel_cartao_pegar_da_fila');
+  const { pedido } = await dados.rpc('vessel_cartao_pegar_da_fila');
   if (!pedido) break;
   console.log(`\npedido ${pedido.id.slice(0, 8)}: ${pedido.pecas.length} peças`);
   const trabalho = mkdtempSync(join(tmpdir(), 'cartoes-'));
@@ -319,7 +288,7 @@ for (;;) {
   finally { rmSync(trabalho, { recursive: true, force: true }); }
   if (estado.falhas.length) esquecerOsIds(); // pasta guardada que o Zoho já não tem derrubaria o próximo pedido também
   for (const c of planoDeDevolucao({ pedidas: pedido.pecas, confirmadas: estado.confirmadas, falhas: estado.falhas, pasta: estado.pasta })) {
-    const r = await rpc('vessel_cartao_pedido_terminou', { p_pedido: pedido.id, p_ok: c.ok, p_pasta: c.pasta, p_erro: c.erro, p_pecas: c.pecas });
+    const r = await dados.rpc('vessel_cartao_pedido_terminou', { p_pedido: pedido.id, p_ok: c.ok, p_pasta: c.pasta, p_erro: c.erro, p_pecas: c.pecas });
     console.log(`  devolvido: ok=${c.ok} marcadas=${r?.marcadas ?? 0}${c.erro ? ' erro=' + c.erro.slice(0, 120) : ''}`);
   }
   feitos++;

@@ -2335,8 +2335,7 @@
    },
    "vessel_cartao_arquivos": {
     "arquivos": [
-     "coletor/preencher-arquivos-dos-cartoes.mjs",
-     "coletor/robo-de-cartoes.mjs"
+     "coletor/preencher-arquivos-dos-cartoes.mjs"
     ]
    },
    "vessel_cartao_pedidos": {

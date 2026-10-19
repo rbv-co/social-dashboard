@@ -182,6 +182,7 @@ prova em `papel-robos.teste.sh`). Sem RLS aqui, o GRANT é a única tranca. Colu
 | faxina-storage | `robo_faxina` | `ROBO_FAXINA_STORAGE_DATABASE_URL` | `robo-faxina.senha` |
 | copia-do-banco | `copia` | `COPIA_DB_SENHA` (seção acima) | `copia.senha` |
 | conteudo-vigia | `conteudo_robo` | `CONTEUDO_DB_SENHA` (`papel-conteudo.sql`) | `conteudo.senha` |
+| cartoes-ean (serviço `systemd`, não passa pelo `rodar-robo.sh`) | `robo_cartoes` | `CARTOES_DB_SENHA` no `/etc/cartoes-ean.env` (o vigia monta a URL) | `robo-cartoes.senha` |
 
 **Contrato (o que o `rodar-robo.sh` faz):**
 
@@ -214,13 +215,23 @@ prova em `papel-robos.teste.sh`). Sem RLS aqui, o GRANT é a única tranca. Colu
 ```sh
 scp ops/vps/api-db/papel-robo-*.sql op:/root/api-db/
 ssh op
-for r in reporte selo pedidos-vessel shopify metaads-zoho vigia-meta notas relatorios cards gestor interesses opr budget noticias faxina; do
+for r in reporte selo pedidos-vessel shopify metaads-zoho vigia-meta notas relatorios cards gestor interesses opr budget noticias faxina cartoes; do
   [ -e /root/secrets/robo-$r.senha ] || ( umask 077; openssl rand -hex 24 > /root/secrets/robo-$r.senha )
   V=SENHA_ROBO_$(echo $r | tr 'a-z-' 'A-Z_')
   # export é builtin: a senha não aparece no argv (ps) de nenhum processo; `-e VAR` sem valor repassa do ambiente
   ( export "$V=$(cat /root/secrets/robo-$r.senha)"; docker exec -i -e "$V" api-db psql -U api -d api < /root/api-db/papel-robo-$r.sql ) || break
 done
 ```
+
+**Cartões EAN (serviço, não cron).** Roda como root em `/opt/cartoes-ean` e lê só `/etc/cartoes-ean.env`. Depois do passo acima:
+```sh
+( umask 077; echo "CARTOES_DB_SENHA=$(cat /root/secrets/robo-cartoes.senha)" >> /etc/cartoes-ean.env )
+cd /opt/cartoes-ean/social-dashboard && git pull --ff-only   # o vigia só puxa quando há fila: o 1º deploy do vigia novo é manual
+systemctl restart cartoes-ean && journalctl -u cartoes-ean -n 20 --no-pager
+```
+Com `CARTOES_DB_SENHA` o vigia exporta `PGPASSWORD`, monta `CARTOES_DATABASE_URL` com o IP do `api-db` e **descarta** `SUPABASE_*`.
+**Rollback:** apagar a linha `CARTOES_DB_SENHA` do `/etc/cartoes-ean.env` e `systemctl restart cartoes-ean` (volta ao REST do Supabase, que precisa das `SUPABASE_*` no mesmo arquivo).
+Pedido em andamento no restart volta à fila por `vessel_cartao_recolocar_travados`.
 
 Os papéis morrem num `docker compose down -v` (volume novo): refazer depois do restore, no mesmo passo do `papel-copia.sql`.
 Quem grava `ROBO_*_DATABASE_URL` no `/etc/robos.env` é o `ops/virada/robos-troca-env.sh` (backup e reversão; só no corte).

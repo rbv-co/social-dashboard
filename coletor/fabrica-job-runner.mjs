@@ -124,6 +124,7 @@ export function estadoTerminalExcluir(res) {
 async function main() {
   const jobId = process.env.FABRICA_JOB_ID || (process.argv.includes('--job') ? process.argv[process.argv.indexOf('--job') + 1] : null);
   if (!jobId) throw new Error('FABRICA_JOB_ID ausente (env FABRICA_JOB_ID ou --job <uuid>)');
+  if (process.env.FABRICA_EXIGE_API === '1' && !fabricaNaApi()) throw new Error('FABRICA_EXIGE_API=1 mas faltam CENTRAL_API_URL e CENTRAL_API_TOKEN (secrets do repositório): não grava no Supabase');
 
   const job = (await sbGet(`/fabrica_jobs?select=*&id=eq.${jobId}`))[0];
   if (!job) throw new Error('job não encontrado: ' + jobId);
