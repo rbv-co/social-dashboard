@@ -34,3 +34,19 @@ test('⚠️ C5 — o insert monta a lista de colunas dinamicamente (não faz um
   assert.ok(!/insert into vessel_pedidos[\s\S]{0,400}observacoes, observacoes_internas\)/.test(FONTE),
     'o insert não pode listar observacoes/observacoes_internas fixo — tem de montar a lista de colunas conforme colunasExistem');
 });
+
+test('o robô grava quem vendeu no cache do ranking (bling_pedido_vendedor), com o vendedor que vessel_pedidos guardou', () => {
+  const pos = FONTE.indexOf('insert into bling_pedido_vendedor');
+  assert.ok(pos > -1, 'sem isto o ranking por vendedor depende do navegador de quem abre a tela (Letícia, 18/10/2026)');
+  assert.match(FONTE, /returning id, vendedor_id`/,
+    'o vendedor do cache tem de ser o do upsert (coalesce): o Bling passa a devolver vendedor.id=0 depois (2745/2746)');
+  assert.match(FONTE.slice(pos - 200, pos), /if \(linha\.vendedor_id\)/,
+    'sem vendedor nenhum não vira linha do cache');
+  assert.match(FONTE.slice(pos, pos + 500), /\[p\.id, linha\.vendedor_id,/);
+  assert.match(FONTE.slice(pos, pos + 300), /on conflict \(pedido_id\) do update/);
+});
+
+test('o robô de vendedores grava o nome em bling_vendedores (o que o ranking mostra)', () => {
+  const vend = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'trazer-vendedores-do-bling.mjs'), 'utf8');
+  assert.match(vend, /insert into public\.bling_vendedores \(vendor_id, nome, updated_at\)[\s\S]{0,120}on conflict \(vendor_id\) do update/);
+});

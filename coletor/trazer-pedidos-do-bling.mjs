@@ -324,8 +324,29 @@ try {
           total_do_bling = excluded.total_do_bling, total_corrigido = excluded.total_corrigido,
           situacao_id = excluded.situacao_id${setObservacoes}${setLead},
           atualizado_em = now()
-       returning id`,
+       returning id, vendedor_id`,
       valores);
+
+    // ── quem vendeu, no cache que o ranking por vendedor lê ──────────────────
+    // ⚠️ A Gestão à Vista monta o ranking com `bling_pedido_vendedor`, que só o
+    // navegador de quem abria a tela preenchia — e desde 13/10/2026 não
+    // preenchia mais: a venda da Letícia (18/10) caiu em "Sem vendedor".
+    // ⚠️ O VENDEDOR VEM DE `vessel_pedidos`, NÃO DO DETALHE DE AGORA. O Bling
+    // passou a devolver vendedor.id=0 nos pedidos 2745/2746 depois de os ter
+    // entregado com a Letícia (medido em 19/10/2026). O upsert acima já guarda
+    // o último vendedor de verdade (coalesce: 0 não apaga, outro id troca);
+    // sem vendedor nenhum, não grava. O ajuste manual mora em
+    // bling_pedido_ajuste_vendedor e a tela o aplica por cima deste cache.
+    if (linha.vendedor_id) {
+      await cli.query(
+        `insert into bling_pedido_vendedor (pedido_id, vendor_id, pedido_data, qtd_itens, loja_id, updated_at)
+         values ($1, $2, $3, $4, $5, now())
+         on conflict (pedido_id) do update set vendor_id = excluded.vendor_id,
+           pedido_data = excluded.pedido_data, qtd_itens = excluded.qtd_itens,
+           loja_id = excluded.loja_id, updated_at = now()`,
+        [p.id, linha.vendedor_id, String(p.data).slice(0, 10),
+         detalhe.itens?.length || 1, detalhe.loja?.id ?? p.loja?.id ?? null]);
+    }
 
     // ── forma de pagamento desta venda, linha por linha ──────────────────────
     // Só roda se o catálogo desta rodada veio ok (ver bloco 0 no topo do

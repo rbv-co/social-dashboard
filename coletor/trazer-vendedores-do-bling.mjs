@@ -93,6 +93,15 @@ try {
              loja_id = excluded.loja_id, situacao = excluded.situacao,
              atualizado_em = now()`,
       [v.id, nome, v.loja?.id ?? 0, v.situacao || v.contato?.situacao || null]);
+    // ⚠️ O NOME QUE O RANKING DA GESTÃO À VISTA MOSTRA SAI DE `bling_vendedores`,
+    // não daqui de cima. Até 19/10/2026 só o navegador de quem abria a tela
+    // gravava nela — e parou de gravar: a Letícia (vendedora nova) vendeu no
+    // dia 18 e caiu em "Sem vendedor". Quem lê o Bling de hora em hora grava.
+    await cli.query(
+      `insert into public.bling_vendedores (vendor_id, nome, updated_at)
+       values ($1, $2, now())
+       on conflict (vendor_id) do update set nome = excluded.nome, updated_at = now()`,
+      [v.id, nome]);
     gravados++;
   }
 
