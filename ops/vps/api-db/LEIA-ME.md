@@ -153,6 +153,7 @@ O PDV lê o número de série de `vessel_pecas`/`vessel_lotes` (`pdv-backend`, `
 0. **Antes**: `papel-copia.sql` já aplicado (ele tira o EXECUTE de PUBLIC; o `papel-pdv.sql` recusa se ainda houver).
 1. `ssh op 'umask 077; openssl rand -hex 24 > /root/secrets/pdv.senha'`; aplicar: `SENHA_PDV="$(cat /root/secrets/pdv.senha)" docker exec -i -e SENHA_PDV api-db psql -U api -d api < /root/api-db/papel-pdv.sql`.
 2. Contêiner do PDV na rede `api_net` (o `api-db` não publica porta; o compose a declara `external`: ela tem de existir, o plano 09 recria o `api-db` sem derrubá-la): branch `feat/rev06-origem-sem-tls` do `pdv-backend` (compose + `sslmode=disable`), deploy pelo `deploy-com-reversao.sh`.
+(Os passos 2 e 3 estão no `ops/virada/janela/t17-pdv.sh`: `ensaio` contra o `api_corte` sem tocar o PDV, `aplicar` com backup do `.env`, prova do papel antes, conferência dentro do contêiner e reversão sozinha; `reverter` devolve o `.env`.)
 3. `/root/pdv-backend/.env`: `SUPABASE_DATABASE_URL="postgres://pdv_leitura:<senha>@api-db:5432/api?sslmode=disable"`. Conferir no log do PDV que NÃO aparece "Sem SUPABASE_DATABASE_URL" e que a busca por número de série acha uma peça (`ABXCKN5PZA`).
 
 ## Robôs da VPS: um papel por robô (plano 02 da virada, só com ok do dono)
