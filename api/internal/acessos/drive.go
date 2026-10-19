@@ -101,7 +101,7 @@ func gravarOverride(p *pgxpool.Pool) http.HandlerFunc {
 			dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
 			return
 		}
-		campos["external_id"] = chi.URLParam(r, "external_id")
+		campos["external_id"] = dados.Param(r, "external_id")
 		campos["atualizado_em"] = time.Now().UTC().Format(time.RFC3339Nano)
 		var linha []byte
 		err = banco.ComUsuario(r.Context(), p, e.ID, func(tx pgx.Tx) (err error) {
@@ -127,7 +127,7 @@ func apagarOverridesDoSetor(p *pgxpool.Pool) http.HandlerFunc {
 		}
 		ctx := r.Context()
 		err := banco.ComUsuario(ctx, p, e.ID, func(tx pgx.Tx) error {
-			rows, err := tx.Query(ctx, `select external_id from acessos_drive_overrides where setor_chave = $1 order by external_id`, chi.URLParam(r, "chave"))
+			rows, err := tx.Query(ctx, `select external_id from acessos_drive_overrides where setor_chave = $1 order by external_id`, dados.Param(r, "chave"))
 			if err != nil {
 				return err
 			}
@@ -138,7 +138,7 @@ func apagarOverridesDoSetor(p *pgxpool.Pool) http.HandlerFunc {
 			if len(ids) == 0 {
 				// sem override: 204 só para quem pode apagar o setor (sem poder ou setor que não existe = 404);
 				// senão a rota diria "ok" a quem a policy recusa.
-				return autz.Producao.PodeApagarPor(ctx, tx, e, "acessos_drive_setores", "chave", chi.URLParam(r, "chave"))
+				return autz.Producao.PodeApagarPor(ctx, tx, e, "acessos_drive_setores", "chave", dados.Param(r, "chave"))
 			}
 			for _, id := range ids {
 				if err := tabelaDriveOverrides.Apagar(ctx, tx, autz.Producao, e, id); err != nil {

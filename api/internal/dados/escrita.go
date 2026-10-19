@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
@@ -469,7 +470,7 @@ func RotaEditar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.Handl
 		if !ok {
 			return
 		}
-		id := chi.URLParam(r, "id")
+		id := Param(r, "id")
 		var linha []byte
 		err := banco.ComUsuario(r.Context(), p, e.ID, func(tx pgx.Tx) (err error) {
 			linha, err = t.Editar(r.Context(), tx, cat, e, id, campos)
@@ -493,7 +494,7 @@ func RotaApagar(p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc 
 		if e == nil {
 			return
 		}
-		id := chi.URLParam(r, "id")
+		id := Param(r, "id")
 		err := banco.ComUsuario(r.Context(), p, e.ID, func(tx pgx.Tx) error {
 			return t.Apagar(r.Context(), tx, cat, e, id)
 		})
@@ -507,3 +508,15 @@ func RotaApagar(p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc 
 
 // Responder escreve um corpo JSON já montado (pelo Postgres) com o status.
 func Responder(w http.ResponseWriter, status int, corpo []byte) { escrever(w, status, corpo) }
+
+// Param é chi.URLParam já decodificado: com RawPath (a barra ou o % escapados por encodeURIComponent) o chi
+// devolve o trecho ainda codificado, e a chave não seria achada.
+func Param(r *http.Request, nome string) string {
+	v := chi.URLParam(r, nome)
+	if r.URL.RawPath != "" {
+		if d, err := url.PathUnescape(v); err == nil {
+			return d
+		}
+	}
+	return v
+}
