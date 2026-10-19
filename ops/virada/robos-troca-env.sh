@@ -12,6 +12,7 @@
 # Senha nunca vai à tela, ao log nem à linha de comando (só entra no arquivo, modo 600). Saída: 0 ok; 1 falhou; 2 uso.
 set -eu
 ACAO=${1:-}; DIR=${2:-}; ENV=${3:-/etc/robos.env}; SEG=${4:-/root/secrets}
+BANCO=${BANCO:-api}   # só o ensaio troca (api_corte, o clone); na virada é sempre `api`
 [ -n "$DIR" ] && { [ "$ACAO" = aplicar ] || [ "$ACAO" = reverter ]; } || { sed -n '5,6p' "$0" >&2; exit 2; }
 umask 077; mkdir -p "$DIR"
 # variável de URL | arquivo da senha (em SEGREDOS) | papel
@@ -30,6 +31,9 @@ ROBO_OPR_DIARIO_DATABASE_URL robo-opr robo_opr
 ROBO_BUDGET_IA_DATABASE_URL robo-budget robo_budget
 ROBO_COLETOR_NOTICIAS_DATABASE_URL robo-noticias robo_noticias
 ROBO_FAXINA_STORAGE_DATABASE_URL robo-faxina robo_faxina'
+# variável | arquivo da senha: serviços que montam a URL sozinhos (copia-do-banco.sh, conteudo-vigia.sh) leem só a senha
+EXTRAS='COPIA_DB_SENHA copia
+CONTEUDO_DB_SENHA conteudo'
 ANTES="$DIR/robos.env.antes"
 soma() { sha256sum "$1" | cut -d' ' -f1; }
 
@@ -46,16 +50,21 @@ echo "$TABELA" | while read -r v arq papel; do
   [ -s "$SEG/$arq.senha" ] || { echo "falta a senha $SEG/$arq.senha ($papel): aplique o papel antes" >&2; exit 1; }
   case "$(cat "$SEG/$arq.senha")" in *[!A-Za-z0-9._~-]*) echo "senha de $papel com caractere fora de [A-Za-z0-9._~-] (quebraria a URL): gere com openssl rand -hex 24" >&2; exit 1 ;; esac
 done
+echo "$EXTRAS" | while read -r v arq; do
+  [ -s "$SEG/$arq.senha" ] || { echo "falta a senha $SEG/$arq.senha ($v): aplique o papel antes" >&2; exit 1; }
+  case "$(cat "$SEG/$arq.senha")" in *[!A-Za-z0-9._~-]*) echo "senha de $v com caractere fora de [A-Za-z0-9._~-]: gere com openssl rand -hex 24" >&2; exit 1 ;; esac
+done
 cp -p "$ENV" "$ANTES"
 NOVO="$ENV.novo"
 # tira as chaves que este script grava (e SAIU_DO_SUPABASE), mantém o resto intacto, e acrescenta as novas
-grep -Ev '^(export[[:space:]]+)?(SAIU_DO_SUPABASE|STORAGE_SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_KEY|REPORTAR_DATABASE_URL|VIGIA_DATABASE_URL|ROBO_[A-Z0-9_]*_DATABASE_URL)=' "$ANTES" > "$NOVO" || true
+grep -Ev '^(export[[:space:]]+)?(SAIU_DO_SUPABASE|STORAGE_SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_KEY|COPIA_DB_SENHA|CONTEUDO_DB_SENHA|REPORTAR_DATABASE_URL|VIGIA_DATABASE_URL|ROBO_[A-Z0-9_]*_DATABASE_URL)=' "$ANTES" > "$NOVO" || true
 {
   echo 'SAIU_DO_SUPABASE=1'
   # Storage (fase 2): a chave do Supabase muda de nome, guardada, não entregue (opr-diario e faxina-storage recusados; ver rodar-robo.sh)
   sed -n 's/^\(export[[:space:]]\{1,\}\)\{0,1\}SUPABASE_SERVICE_KEY=/STORAGE_SUPABASE_SERVICE_KEY=/p' "$ANTES" | tail -1
+  echo "$EXTRAS" | while read -r v arq; do printf '%s=%s\n' "$v" "$(cat "$SEG/$arq.senha")"; done
   echo "$TABELA" | while read -r v arq papel; do
-    printf '%s=postgres://%s:%s@api-db:5432/api?sslmode=disable\n' "$v" "$papel" "$(cat "$SEG/$arq.senha")"
+    printf '%s=postgres://%s:%s@api-db:5432/%s?sslmode=disable\n' "$v" "$papel" "$(cat "$SEG/$arq.senha")" "$BANCO"
   done
 } >> "$NOVO"
 chmod --reference="$ANTES" "$NOVO" 2>/dev/null || chmod 600 "$NOVO"

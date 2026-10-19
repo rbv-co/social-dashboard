@@ -1,0 +1,17 @@
+[Unit]
+Description=Espelho da planilha da Vessel (fila disparos_pendentes -> Zoho), no lugar da edge vessel-espelhar-lista
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/vessel-servico espelho
+Restart=always
+RestartSec=15
+Nice=10
+CPUWeight=20
+MemoryHigh=384M
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
