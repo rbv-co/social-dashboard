@@ -102,6 +102,10 @@ export const ROTAS = {
     area: 'meta', rota: '/redes/leituras-de-seguidores',
     filtros: { account_id: eq('account_id'), lido_em: { gte: ['lido_em_de', instante] } }, ordens: ['lido_em'],
   },
+  chatwoot_eventos: {
+    area: 'meta', rota: '/redes/chatwoot-eventos',
+    filtros: { dia_br: { gte: 'dia_br_de', lte: 'dia_br_ate' } }, ordens: ['dia_br'],
+  },
   engagement_snapshots: {
     area: 'meta', rota: '/redes/engajamento',
     filtros: { account_id: eq('account_id'), period_days: eq('period_days'), captured_at: faixa('captured_at') }, ordens: ['captured_at'],
@@ -260,6 +264,18 @@ export const ROTAS = {
   },
   acessos_termos: { area: 'acessos', rota: '/acessos/termos', filtros: { pessoa_id: eq('pessoa_id'), id: eq('id') }, ordens: [] }, // `id`: baixar/excluir leem o caminho pelo id (Plano 12)
   acessos_log: { area: 'acessos', rota: '/acessos/log', filtros: {}, ordens: [], autoria: ['quem'] }, // só escreve; `quem` é da sessão
+  // Aba Drive do Acessos (ACHADO 02-1). Marca apaga por id; setor apaga pela `chave`; override é upsert por `external_id`.
+  acessos_drive_marcas: { area: 'acessos', rota: '/acessos/drive/marcas', filtros: {}, ordens: ['ordem'] },
+  acessos_drive_setores: {
+    area: 'acessos', rota: '/acessos/drive/setores', filtros: {}, ordens: ['ordem', 'label'],
+    apagarPor: { chave: (v) => ({ metodo: 'DELETE', caminho: `/acessos/drive/setores/${encodeURIComponent(v)}` }) },
+  },
+  acessos_drive_overrides: {
+    area: 'acessos', rota: '/acessos/drive/overrides', filtros: {}, ordens: [],
+    autoria: ['atualizado_em'], // posto pelo servidor
+    upsert: (linhas) => linhas.map((l) => ({ metodo: 'PUT', caminho: `/acessos/drive/overrides/${encodeURIComponent(l.external_id)}`, corpo: { setor_chave: l.setor_chave, nome: l.nome ?? null } })),
+    apagarPor: { setor_chave: (v) => ({ metodo: 'DELETE', caminho: `/acessos/drive/setores/${encodeURIComponent(v)}/overrides` }) },
+  },
   // ── Plano 12 — leituras da Vessel (`/vessel/*`). Sem permissão = 200 [] (a tela decide a frase). Ordem fixa na rota.
   // `paginaAteOLimite`: a Base de Leads pede 2000 e a rota para em 1000 por pedido; o `.limit(2000)` lê em páginas
   // (`contar=1`, `X-Total-Count`) e o aviso de corte da tela segue valendo ──

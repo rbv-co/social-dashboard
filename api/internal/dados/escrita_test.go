@@ -354,3 +354,15 @@ func TestCriarSemColunaDaRegra(t *testing.T) {
 		t.Errorf("linhas gravadas = %d, esperava 1", n)
 	}
 }
+
+func TestParamDecodificado(t *testing.T) {
+	for _, c := range []struct{ caminho, quer string }{{"/x/a%2Fb", "a/b"}, {"/x/c_vendas", "c_vendas"}} {
+		r := httptest.NewRequest("GET", c.caminho, nil)
+		rc := chi.NewRouteContext()
+		rc.URLParams.Add("id", c.caminho[len("/x/"):])
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rc))
+		if got := Param(r, "id"); got != c.quer {
+			t.Errorf("Param(%s) = %q, esperava %q", c.caminho, got, c.quer)
+		}
+	}
+}

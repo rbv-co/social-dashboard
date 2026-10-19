@@ -151,3 +151,10 @@ do $$ declare c text; begin
   execute format('alter table public.vessel_stylists drop constraint %I', c);
 end $$;
 alter table public.vessel_stylists add check ((whatsapp is not null) or (nullif(btrim(coalesce(instagram, ''::text)), ''::text) is not null) or sem_contato);
+-- chatwoot_eventos: só o webhook grava; o relatório OPR lê (/redes/chatwoot-eventos)
+create table if not exists public.chatwoot_eventos (id bigint generated always as identity primary key,
+  tipo text not null check (tipo in ('lead_novo', 'lead_quente', 'qualified_lead')),
+  chatwoot_account_id integer, conversation_id bigint not null, conversation_display_id bigint, contact_id bigint,
+  contact_name text, contact_phone_number text, loja text, classificacao_ia text,
+  criado_em_chatwoot timestamptz not null, dia_br date not null, recebido_em timestamptz not null default now(),
+  unique (conversation_id, tipo));

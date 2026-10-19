@@ -43,6 +43,9 @@ var pessoas = []mundoteste.Pessoa{
 // vazamento. A campanha 9000 não tem conta (pode_ver_conta(null) = verdadeiro: visível a todos).
 const linhasDasRedes = `
 update profiles set permissions = '{"meta.hora": ["ver"]}' where id = '` + idHoraA1 + `';
+update profiles set permissions = '{"meta.opr": ["ver"]}' where id = '` + idSemModulo + `';
+insert into chatwoot_eventos (conversation_id, tipo, criado_em_chatwoot, dia_br, contact_phone_number) values
+  (1, 'lead_novo', '2026-10-10T12:00:00Z', '2026-10-10', '5511SEGREDO'), (2, 'lead_quente', '2026-10-11T12:00:00Z', '2026-10-11', '5511SEGREDO');
 insert into accounts (id, name, username, instagram_id, ad_account_id, access_token, accent_color, persona, publicacao_automatica) values
   ('` + A1 + `', 'Vessel', 'vessel', '1784', '111', 'SEGREDO-token-A1', '#1A3A6B', 'Mulheres 30+', true),
   ('` + A2 + `', 'Mantova', 'mantova', '1785', 'act_222', 'SEGREDO-token-A2', '#7A1F1F', null, false);

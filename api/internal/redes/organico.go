@@ -46,9 +46,19 @@ var consultaConteudo = dados.Consulta{Tabela: "content_snapshots", Alias: "t",
 	Ordens:      map[string]string{"captured_at": "t.captured_at", "period_days": "t.period_days"},
 	OrdemPadrao: "t.captured_at, t.account_id", Desempate: "t.period_days"}
 
+// GET /redes/chatwoot-eventos (chatwoot_eventos): relatório OPR (tela-de-relatorio-opr.vue:310), ?dia_br_de=&dia_br_ate=
+// (ACHADO 02-2). A regra é chatwoot_eventos_leitura (admin, superadmin ou a permissão meta.opr); só o webhook grava.
+var consultaChatwootEventos = dados.Consulta{Tabela: "chatwoot_eventos", Alias: "t",
+	SQL: `select t.id, t.tipo, t.dia_br from chatwoot_eventos t`,
+	Filtros: []dados.Filtro{
+		{Param: "dia_br_de", SQL: "t.dia_br >= @dia_br_de::date", Tipo: "data"},
+		{Param: "dia_br_ate", SQL: "t.dia_br <= @dia_br_ate::date", Tipo: "data"}},
+	Ordens: map[string]string{"dia_br": "t.dia_br"}, OrdemPadrao: "t.dia_br", Desempate: "t.id"}
+
 func montarOrganico(r chi.Router, p *pgxpool.Pool) {
 	r.Get("/redes/seguidores", consultaSeguidores.Handler(p, autz.Producao))
 	r.Get("/redes/leituras-de-seguidores", consultaLeituras.Handler(p, autz.Producao))
+	r.Get("/redes/chatwoot-eventos", consultaChatwootEventos.Handler(p, autz.Producao))
 	r.Get("/redes/engajamento", consultaEngajamento.Handler(p, autz.Producao))
 	r.Get("/redes/conteudo", consultaConteudo.Handler(p, autz.Producao))
 }

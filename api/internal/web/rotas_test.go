@@ -247,7 +247,7 @@ var soSessao = map[string]bool{
 	// `TestSegredoDaContaNuncaSai`.
 	"GET /redes/contas": true, "PATCH /redes/contas/{id}": true, "GET /redes/seguidores": true,
 	"GET /redes/leituras-de-seguidores": true, "GET /redes/engajamento": true, "GET /redes/conteudo": true,
-	"GET /redes/campanhas": true, "GET /redes/conjuntos": true, "GET /redes/anuncios": true,
+	"GET /redes/campanhas": true, "GET /redes/chatwoot-eventos": true, "GET /redes/conjuntos": true, "GET /redes/anuncios": true,
 	"GET /redes/insights-de-campanha": true, "GET /redes/insights-da-conta": true,
 	"GET /redes/campanhas-por-hora": true, "GET /redes/anuncios-por-hora": true, "GET /redes/visitas-por-hora": true,
 	"GET /redes/metas": true, "PUT /redes/metas": true, "GET /redes/filtros-de-campanha": true,
@@ -324,7 +324,7 @@ var rotas59 = []string{
 	"GET /conteudo/jobs",
 }
 
-// Plano 5.4 (+ Plano 12: POST e DELETE de termo): as 18 rotas de acessos.Montar (6 leituras, 12 escritas), no grupo de DOMÍNIO. Portão = catálogo,
+// Plano 5.4 (+ Plano 12: POST e DELETE de termo): as 27 rotas de acessos.Montar (9 leituras, 18 escritas), no grupo de DOMÍNIO. Portão = catálogo,
 // provado pela matriz de cada rota em `internal/acessos`; vazamento, impersonado e segredos por
 // `TestNadaVazaParaQuemNaoTemAcessos`, `TestEscritasRecusamImpersonado` e `TestConexoesNuncaSaem`.
 var rotas54 = []string{
@@ -334,6 +334,10 @@ var rotas54 = []string{
 	"GET /acessos/setores", "POST /acessos/setores", "DELETE /acessos/setores/{id}",
 	"GET /acessos/recursos", "GET /acessos/vinculos", "POST /acessos/vinculos", "GET /acessos/termos",
 	"POST /acessos/termos", "DELETE /acessos/termos/{id}",
+	// ACHADO 02-1: aba Drive do Acessos (3 tabelas)
+	"GET /acessos/drive/marcas", "POST /acessos/drive/marcas", "DELETE /acessos/drive/marcas/{id}",
+	"GET /acessos/drive/setores", "POST /acessos/drive/setores", "DELETE /acessos/drive/setores/{id}", "DELETE /acessos/drive/setores/{chave}/overrides",
+	"GET /acessos/drive/overrides", "PUT /acessos/drive/overrides/{external_id}",
 }
 
 // Plano 12: as 7 leituras de atendimentos.Montar (Atendimentos, Base de Leads, Abandono de carrinho), no grupo de

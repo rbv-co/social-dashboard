@@ -44,6 +44,58 @@
    "paginaAteOLimite": false,
    "escritas": []
   },
+  "acessos_drive_marcas": {
+   "area": "acessos",
+   "rota": "/acessos/drive/marcas",
+   "params": [],
+   "ordens": [
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
+  "acessos_drive_overrides": {
+   "area": "acessos",
+   "rota": "/acessos/drive/overrides",
+   "params": [],
+   "ordens": [],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "PUT",
+     "caminho": "/acessos/drive/overrides/{}"
+    },
+    {
+     "metodo": "DELETE",
+     "caminho": "/acessos/drive/setores/{}/overrides"
+    }
+   ]
+  },
+  "acessos_drive_setores": {
+   "area": "acessos",
+   "rota": "/acessos/drive/setores",
+   "params": [],
+   "ordens": [
+    "label",
+    "ordem"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": [
+    {
+     "metodo": "DELETE",
+     "caminho": "/acessos/drive/setores/{}"
+    }
+   ]
+  },
   "acessos_log": {
    "area": "acessos",
    "rota": "/acessos/log",
@@ -441,6 +493,22 @@
    "linhaUnica": false,
    "chave": "id",
    "paginaAteOLimite": true,
+   "escritas": []
+  },
+  "chatwoot_eventos": {
+   "area": "meta",
+   "rota": "/redes/chatwoot-eventos",
+   "params": [
+    "dia_br_ate",
+    "dia_br_de"
+   ],
+   "ordens": [
+    "dia_br"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
    "escritas": []
   },
   "checkout_abandono": {

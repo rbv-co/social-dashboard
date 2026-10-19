@@ -13,4 +13,5 @@ func Montar(r chi.Router, p *pgxpool.Pool) {
 	montarAcoesDaPessoa(r, p)
 	montarEstrutura(r, p)
 	montarPastas(r, p)
+	montarDrive(r, p)
 }

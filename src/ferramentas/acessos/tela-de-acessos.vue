@@ -956,9 +956,11 @@ async function _acDriveAddSetor(){
 async function _acDriveDelSetor(chave){
   const s=_acDriveCustomSecs.find(x=>x.chave===chave);if(!s)return;
   if(!confirm('Remover o setor "'+s.label+'"? As pastas dele voltam à classificação automática.'))return;
+  // overrides primeiro: se o setor fosse apagado antes e esta etapa falhasse, sobrariam pastas apontando para um setor que não existe
+  const{error:eOv}=await deOnde(sbClient).from('acessos_drive_overrides').delete().eq('setor_chave',chave);
+  if(eOv){adminToast('Erro: '+eOv.message,false);return;}
   const{error}=await deOnde(sbClient).from('acessos_drive_setores').delete().eq('chave',chave);
   if(error){adminToast('Erro: '+error.message,false);return;}
-  try{await deOnde(sbClient).from('acessos_drive_overrides').delete().eq('setor_chave',chave);}catch(e){}
   Object.keys(_acDriveOverrides).forEach(k=>{if(_acDriveOverrides[k]===chave)delete _acDriveOverrides[k];});
   _acDriveCustomSecs=_acDriveCustomSecs.filter(x=>x.chave!==chave);
   await _acLog('drive.setor.del','setor:'+s.label,'ok',null);adminToast('Setor removido');_acDriveRepaint();

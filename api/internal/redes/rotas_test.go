@@ -45,12 +45,13 @@ func varrer(t *testing.T, m *mundoteste.Mundo, f func(metodo, rota, caminho, cor
 
 // A2 nunca aparece para quem não a vê — em NENHUMA leitura de Montar, sem filtro, filtrando por A2 ou
 // contando; o impersonado vê o que o ALVO (soA1) vê, não o que o super veria. /redes/contas é a exceção
-// declarada (a tabela não tem a restritiva em produção: Ruling 5.6-3). Toda leitura projeta account_id
+// declarada (a tabela não tem a restritiva em produção: Ruling 5.6-3); /redes/chatwoot-eventos também
+// (sem account_id: a regra é o papel, admin ou meta.opr). Toda leitura projeta account_id
 // (Ruling 5.6-10), por isso o uuid de A2 na resposta é vazamento.
 func TestNadaVazaEntreContas(t *testing.T) {
 	m := novoMundo(t, Montar)
 	l, g := varrer(t, m, func(metodo, rota, _, _ string) {
-		if metodo != http.MethodGet || rota == "/redes/contas" {
+		if metodo != http.MethodGet || rota == "/redes/contas" || rota == "/redes/chatwoot-eventos" {
 			return
 		}
 		for _, quem := range []string{"soA1", "emailA1", "horaA1", "impersonado", "nenhuma"} {
@@ -71,8 +72,8 @@ func TestNadaVazaEntreContas(t *testing.T) {
 			t.Errorf("adminA1 não viu A2 em %s (a rota projeta account_id?): %s", rota, b)
 		}
 	})
-	if l != 15 || g != 3 {
-		t.Errorf("rotas = %d leituras e %d escritas, esperava 15 e 3", l, g)
+	if l != 16 || g != 3 {
+		t.Errorf("rotas = %d leituras e %d escritas, esperava 16 e 3", l, g)
 	}
 }
 

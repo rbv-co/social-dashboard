@@ -76,3 +76,21 @@ func TestOrganico(t *testing.T) {
 		}
 	}
 }
+
+// /redes/chatwoot-eventos (OPR): a regra é o papel (admin, super ou meta.opr), não a conta. Quem não tem
+// recebe [] (nunca 403 nem linha); o telefone do contato nunca sai.
+func TestChatwootEventos(t *testing.T) {
+	m := novoMundo(t, montarOrganico)
+	const cam = "/redes/chatwoot-eventos"
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "admin vê", Quem: "adminA1", Metodo: "GET", Caminho: cam, Status: 200, Tem: `"lead_quente"`, NaoTem: "SEGREDO"},
+		{Nome: "super vê", Quem: "superA1", Metodo: "GET", Caminho: cam, Status: 200, Tem: `"lead_novo"`},
+		{Nome: "meta.opr vê", Quem: "semModulo", Metodo: "GET", Caminho: cam, Status: 200, Tem: `"lead_novo"`, NaoTem: "SEGREDO"},
+		{Nome: "filtro por dia", Quem: "adminA1", Metodo: "GET", Caminho: cam + "?dia_br_de=2026-10-11", Status: 200, Tem: `"lead_quente"`, NaoTem: `"lead_novo"`},
+		{Nome: "viewer comum", Quem: "todas", Metodo: "GET", Caminho: cam, Status: 200, Tem: "[]"},
+		{Nome: "só meta.hora", Quem: "horaA1", Metodo: "GET", Caminho: cam, Status: 200, Tem: "[]"},
+		{Nome: "desativado", Quem: "desativado", Metodo: "GET", Caminho: cam, Status: 401},
+		{Nome: "sem sessão", Metodo: "GET", Caminho: cam, Status: 401},
+		{Nome: "data inválida", Quem: "adminA1", Metodo: "GET", Caminho: cam + "?dia_br_de=x", Status: 400},
+	})
+}
