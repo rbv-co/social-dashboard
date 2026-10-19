@@ -41,4 +41,4 @@ Dinheiro entra em reais na ferramenta e vai em centavos para a rota.
 
 1. Merge e deploy da API (migration `00012` sobe junto) e do front.
 2. nginx: reinstalar `ops/vps/api/nginx-central-api.conf` (ganhou os dois `/.well-known/oauth-*` da raiz) em `/etc/nginx/snippets/central-api.conf`, `nginx -t` e `reload`.
-3. ChatGPT (Plus/Pro/Business): Settings → Apps → Advanced → Developer mode; criar app com URL `https://central.rbvcompany.com/api/mcp`, autenticação OAuth.
+3. ChatGPT (Plus/Pro/Business): Settings → Apps → Advanced → Developer mode; criar app com URL `https://socialdashboard.rbvcompany.com/api/mcp`, autenticação OAuth. O domínio tem de ser o da `API_URL_PUBLICA` do `/root/secrets/api.env` (hoje `socialdashboard.`): é o `issuer`, e o cliente recusa metadados de outro host.
