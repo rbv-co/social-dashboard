@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { SUPABASE_URL, SUPABASE_ANON_KEY, sbClient } from './conectar-no-banco-de-dados.js'
+import { apagarSessaoGuardadaDoSupabase } from './opcoes-do-supabase.js'
 import { classificarErro, ERRO_DE_REDE, CONTA_DESATIVADA } from './classificar-erro.js'
 import { lerPerfil, precisaPerguntarSeDesativou } from './leitura-de-perfil.js'
 import { RECURSOS, PERMISSION_TREE, chavesDoGrupo, podeAbrirRota } from './catalogo-de-ferramentas.js'
@@ -184,6 +185,7 @@ export async function carregarPerfilDaApi() {
 // depois de um login ou de um sair pela API. `scope: 'local'`: só apaga daqui.
 async function encerrarSessaoDoSupabase() {
   try { await sbClient.auth.signOut({ scope: 'local' }) } catch { /* sem sessão para encerrar */ }
+  try { apagarSessaoGuardadaDoSupabase(window.localStorage, window.sessionStorage) } catch { /* sem window/armazenamento */ }
 }
 
 /** Abre a sessão com um token da API (login, link de senha, "entrar como"). */
