@@ -152,10 +152,15 @@ func (h *Handlers) Eu(w http.ResponseWriter, r *http.Request) {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		return
 	}
+	// modulos = profiles.features (o Escritório 3D, HTML estático, decide o acesso por ele); lista vazia, nunca null.
+	modulos := a.Modulos
+	if modulos == nil {
+		modulos = []string{}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"id": a.ID, "tipo": a.Tipo, "papel": a.Papel, "superadmin": a.SuperAdmin,
 		"permissoes": a.Permissoes, "impersonador_id": a.ImpersonadorID,
-		"email": email, "nome": nome,
+		"email": email, "nome": nome, "modulos": modulos,
 	})
 }
