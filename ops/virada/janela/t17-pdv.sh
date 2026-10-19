@@ -46,8 +46,8 @@ conferir() {
 # PROVA do papel e do código novo contra o banco $1, de um contêiner na rede api_net. Sai 0 só se: lê o que o PDV
 # lê, e é NEGADO no resto (mínimo privilégio).
 prova_papel() {
-  export SUPABASE_DATABASE_URL; SUPABASE_DATABASE_URL=$(url_para "$1")
-  docker run --rm --network "$REDE" -e SUPABASE_DATABASE_URL "$IMG" node -e '
+  # a URL só existe no ambiente deste `docker run` (nada de export: não vaza para o deploy nem para o compose)
+  SUPABASE_DATABASE_URL=$(url_para "$1") docker run --rm --network "$REDE" -e SUPABASE_DATABASE_URL "$IMG" node -e '
 const { conexaoDaOrigem } = require("/app/dist/catalogo/tls-da-origem.js"); const { Pool } = require("pg");
 (async () => {
   const p = new Pool({ ...conexaoDaOrigem(process.env.SUPABASE_DATABASE_URL), max: 1, connectionTimeoutMillis: 8000 });
@@ -95,6 +95,7 @@ ensaio)
   echo "ENSAIO OK contra $ALVO_DB (o PDV no ar não foi tocado)" ;;
 aplicar)
   ALVO_DB=api; conferir
+  ! grep -q '^SUPABASE_DATABASE_URL=.*@api-db:' "$ENV_PDV" || falha "o .env do PDV já aponta para o api-db (aplicar já rodou? para voltar: reverter ou o backup P12 $V/pdv-backend.env)"
   docker image inspect "$IMG" >/dev/null 2>&1 || falha "imagem $IMG não existe"
   prova_papel api || falha "prova do papel contra o api (nada foi trocado)"
   mkdir -p "$BK"; ts=$(date -u +%Y%m%dT%H%M%SZ); cp -p "$ENV_PDV" "$BK/pdv-backend.env.t17-$ts"; chmod 600 "$BK/pdv-backend.env.t17-$ts"

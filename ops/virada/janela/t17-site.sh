@@ -38,7 +38,7 @@ conferir() {
 }
 
 ensaio_clone() {
-  clonar; git config user.name >/dev/null 2>&1 || git config user.email "virada@rbvcompany.com"; git config user.name >/dev/null 2>&1 || git config user.name "Virada"
+  clonar; git config user.email >/dev/null 2>&1 || git config user.email "virada@rbvcompany.com"; git config user.name >/dev/null 2>&1 || git config user.name "Virada"
   node ferramentas/trocar-base-da-central.mjs >/dev/null 2>&1 || falha "main do vessel-brasil sem ferramentas/trocar-base-da-central.mjs (PR #50 não mergeado)"
   n=$(node ferramentas/trocar-base-da-central.mjs --aplicar | tail -1); echo "$n"
   [ "$(git diff --name-only | wc -l | tr -d ' ')" = 9 ] || falha "esperava 9 páginas trocadas, mudaram $(git diff --name-only | wc -l | tr -d ' ')"
@@ -49,6 +49,22 @@ ensaio_clone() {
   ok "9 páginas trocadas, 0 com $SUPA, npm test verde (clone temporário $W)"
 }
 
+paginas_no_ar() {   # 0 se as 9 páginas estão trocadas no release no ar
+  for p in $PAGINAS; do
+    s=$(ssh "$HOSTV" "grep -c '$SUPA' /var/www/vesselbrasil/atual/$p/index.html || true"); c=$(ssh "$HOSTV" "grep -c 'central.rbvcompany.com' /var/www/vesselbrasil/atual/$p/index.html || true")
+    [ "$s" = 0 ] && [ "$c" -ge 1 ] || { echo "página $p no ar: supabase=$s central=$c"; return 1; }
+  done
+}
+
+reverter() {
+  [ -s "$MARCA" ] || falha "sem $MARCA (o sha do aplicar): faça o revert à mão (ver o cabeçalho)"
+  ( clonar; git config user.email "virada@rbvcompany.com"; git config user.name "Virada"
+    git revert --no-edit "$(cat "$MARCA")" >/dev/null; git push -q origin HEAD:main
+    echo "revert no main: $(git rev-parse --short HEAD)" )
+  ssh "$HOSTV" /usr/local/sbin/deploy-vesselbrasil | tail -3
+  echo "REVERTIDO: páginas de volta ao Supabase (confira com: sh t17-site.sh conferir)"
+}
+
 case "$modo" in
 conferir) conferir; echo "CONFERIR OK" ;;
 ensaio) ensaio_clone; echo "ENSAIO OK (nada foi enviado)" ;;
@@ -56,19 +72,13 @@ aplicar)
   [ "$(curl -s --max-time 8 "$CENTRAL/api/saude")" = ok ] || falha "$CENTRAL/api/saude não responde ok: o nginx do T+10 não está no ar; o site não pode apontar para lá"
   ensaio_clone
   git add -A && git commit -qm "feat(virada): páginas falam com a Central (API em Go) em vez do Supabase (T+17)"
-  sha=$(git rev-parse HEAD); git pull -q --rebase origin main; git push -q origin HEAD:main
+  git pull -q --rebase origin main; git push -q origin HEAD:main
   printf '%s\n' "$(git rev-parse HEAD)" > "$MARCA"; ok "commit no main: $(git rev-parse --short HEAD) (reversão: sh t17-site.sh reverter)"
   ssh "$HOSTV" /usr/local/sbin/deploy-vesselbrasil | tail -4
-  for p in $PAGINAS; do
-    s=$(ssh "$HOSTV" "grep -c '$SUPA' /var/www/vesselbrasil/atual/$p/index.html || true"); c=$(ssh "$HOSTV" "grep -c 'central.rbvcompany.com' /var/www/vesselbrasil/atual/$p/index.html || true")
-    [ "$s" = 0 ] && [ "$c" -ge 1 ] || { echo "página $p no ar: supabase=$s central=$c: REVERTENDO"; "$0" reverter; exit 1; }
-  done
+  # o deploy sai 0 sem publicar se o cron do site está publicando (flock): espera até ~90 s pelas 9 páginas no ar
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do paginas_no_ar >/dev/null 2>&1 && break; sleep 5; done
+  paginas_no_ar || { echo "páginas não ficaram trocadas no ar: REVERTENDO"; reverter; exit 1; }
   echo "T+17 SITE OK: 9 páginas no ar apontando para $CENTRAL" ;;
-reverter)
-  [ -s "$MARCA" ] || falha "sem $MARCA (o sha do aplicar): faça o revert à mão (ver o cabeçalho)"
-  clonar; git config user.email "virada@rbvcompany.com"; git config user.name "Virada"
-  git revert --no-edit "$(cat "$MARCA")" >/dev/null; git push -q origin HEAD:main
-  ssh "$HOSTV" /usr/local/sbin/deploy-vesselbrasil | tail -3
-  echo "REVERTIDO: páginas de volta ao Supabase ($(git rev-parse --short HEAD))" ;;
+reverter) reverter ;;
 *) echo "uso: sh t17-site.sh conferir|ensaio|aplicar|reverter" >&2; exit 2 ;;
 esac
