@@ -35,7 +35,9 @@ export function separarPorStatus(linhas) {
     // Pix/boleto: pedido criado e ainda não pago. NÃO está na fila de envio (o cliente ainda pode pagar).
     pagamentoPendente: de('pagamento_pendente').sort(porData('pedido_criado_em', -1)),
     filaEnvio: de('fila_envio').sort(porData('fila_envio_em', -1)),
-    compraram: de('comprou').sort(porData('comprou_em', -1)),
+    // Sem total nem link = linha que a compra criou sozinha (pedido pago antes do checkout; db/migrations/2026-10-19):
+    // existe só para barrar o aviso de recuperação tardio, nunca foi um carrinho abandonado.
+    compraram: de('comprou').filter((l) => l.total != null || l.url_de_recuperacao).sort(porData('comprou_em', -1)),
   }
 }
 
