@@ -10,7 +10,8 @@
 // Reexportado para quem já importava daqui não quebrar.
 export { PRECO, calcularUsd, ehModeloAnthropic, custoDaExecucao } from './lib/custo-da-execucao.mjs';
 import { custoDaExecucao } from './lib/custo-da-execucao.mjs';
-import { gravarExecucao } from './lib/conteudo-banco.mjs';
+import { gravarExecucao, abrirBanco } from './lib/conteudo-banco.mjs';
+import { modoPg } from './lib/rest-pg.mjs';
 import { fabricaNaApi, ROBOS_DA_FABRICA, registrarExecucaoNaApi } from './lib/fabrica-banco.mjs';
 
 // Registra uma execução. `usd` é opcional: se vier undefined, calcula de modelo+tokens.
@@ -27,7 +28,9 @@ export async function registrarExecucao({
     const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
     // Plano 7 (5.8): os robôs da Fábrica gravam pela rota do robô quando a API está ligada.
     const pelaApi = !db && fabricaNaApi() && ROBOS_DA_FABRICA.includes(robo);
-    if (!db && !pelaApi && !SERVICE_KEY) { console.error('aviso ia_execucoes: falta SUPABASE_SERVICE_KEY'); return; }
+    // Virada (plano 03): com REST_VIA_PG=1 grava pelo papel do robô no api-db, sem Supabase.
+    const pelPg = !db && !pelaApi && modoPg();
+    if (!db && !pelaApi && !pelPg && !SERVICE_KEY) { console.error('aviso ia_execucoes: falta SUPABASE_SERVICE_KEY'); return; }
     // NULO quando ninguém sabe (motor pago de fora), 0 só quando é zero mesmo.
     const custo = custoDaExecucao({ modelo, inputTokens, outputTokens, usd });
     const body = {
@@ -39,6 +42,11 @@ export async function registrarExecucao({
     };
     if (db) { await gravarExecucao(db, body); return; }
     if (pelaApi) { await registrarExecucaoNaApi(body); return; }
+    if (pelPg) {
+      const banco = await abrirBanco(process.env.DATABASE_URL);
+      try { await gravarExecucao(banco, body); } finally { await banco.fechar(); }
+      return;
+    }
     const r = await fetch(SUPABASE_URL + '/rest/v1/ia_execucoes', {
       method: 'POST',
       headers: {

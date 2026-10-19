@@ -35,5 +35,5 @@ grant usage on schema public to robo_notas;
 -- refaz do zero: reaplicar tira o que saiu deste arquivo
 revoke all on all tables in schema public from robo_notas;
 revoke all on all sequences in schema public from robo_notas;
-grant select, insert, update on bling_pedido_nota to robo_notas;
+grant select, insert, update, delete on bling_pedido_nota to robo_notas;
 grant select on bling_pedido_ajuste_valor to robo_notas;

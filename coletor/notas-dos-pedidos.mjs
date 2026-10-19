@@ -23,13 +23,12 @@
 import './lib/carregar-env.mjs';   // popula process.env ANTES de importar a lib
 import { pathToFileURL } from 'node:url';
 import { loginServico, blingProxy } from './lib/bling-comercial.mjs';
+import { abrirRest } from './lib/rest-pg.mjs';
 import { mesesRange } from './relatorios-comerciais.mjs';
 import { montarLinha, impactoPorMes, indiceDeNotas, notaPorId, idDaNota } from './lib/notas-bling.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const REST = SUPABASE_URL + '/rest/v1';
-const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
+// Preenchidos em main() por abrirRest(): REST do Supabase (rollback) ou pg com o papel robo_notas (REST_VIA_PG=1).
+let rest, REST, sb;
 
 const SITUACAO_ATENDIDO = 9;   // é o que a dashboard conta hoje; não mudamos essa régua aqui
 const brl = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -90,7 +89,7 @@ async function apagarOsQueNaoSaoMaisVenda(pedidos, previa) {
   let apagados = 0;
   for (let i = 0; i < ids.length; i += 200) {
     const lote = ids.slice(i, i + 200);
-    const r = await fetch(
+    const r = await rest.fetch(
       `${REST}/bling_pedido_nota?pedido_id=in.(${lote.join(',')})`,
       { method: 'DELETE', headers: { ...sb, Prefer: 'return=representation' } });
     if (!r.ok) {
@@ -120,7 +119,7 @@ async function upsert(rows, previa) {
   if (previa) return;
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
-    const r = await fetch(`${REST}/bling_pedido_nota?on_conflict=pedido_id`, {
+    const r = await rest.fetch(`${REST}/bling_pedido_nota?on_conflict=pedido_id`, {
       method: 'POST',
       headers: { ...sb, Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(chunk),
@@ -193,7 +192,8 @@ function mostrarImpacto(linhas) {
 }
 
 async function main() {
-  if (!SERVICE_KEY) { console.error('✗ Falta SUPABASE_SERVICE_KEY'); process.exit(1); }
+  rest = await abrirRest();   // banco fora: falha aqui, antes de qualquer escrita
+  ({ REST, sb } = rest);
   const arg = (nome) => (process.argv.find(a => a.startsWith(`--${nome}=`)) || '').split('=')[1];
   const backfill = Number(arg('backfill')) || 0;
   const dias = Number(arg('dias')) || 7;
@@ -245,5 +245,5 @@ async function main() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  main().catch(e => { console.error('Erro:', e.message); process.exit(1); });
+  main().catch(e => { console.error('Erro:', e.message); process.exit(1); }).finally(() => rest?.fechar());
 }

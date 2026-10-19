@@ -19,31 +19,30 @@
 // então o valor real aparece no painel Status do Claude, em reais.
 import { structured, SONNET, usageSummary } from './lib-llm.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
+import { abrirRest } from './lib/rest-pg.mjs';
 import { montarPedido, montarEscolha, MAXIMO_POR_OBJETIVO, termosDaMarca, juntarTermos, escolhidosValidos, linhaDaEscolha, nomesPropostos, colherDaBusca, linhaDosTermos, linhasDaPrevia, linhasDosLargos, linhasDosPequenos, linhasPorTermo, comCidadesResolvidas, rodadaFalhouInteira, OBJETIVOS } from './lib/interesses.mjs';
 // Login da conta de serviço (mesma usada por subir-estudio.mjs, ativar-estudio.mjs
 // etc.) — o meta-proxy chama auth.getUser() sobre o Authorization recebido, e uma
 // service key não é sessão de usuário: ela sempre daria 401 "nao autenticado" ali.
 import { loginServico, urlDaEdge, cabecalhosDaEdge } from './lib/bling-comercial.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 // Mesma anon key hardcoded (com override por env) que os outros scripts de
 // coletor/ usam para chamar o meta-proxy — não é segredo, é a chave pública
 // do projeto.
-const REST = SUPABASE_URL + '/rest/v1';
 const MODEL = process.env.INTERESSES_MODEL || SONNET;
 const DRY = process.argv.includes('--dry');
 
-const sbHeaders = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
+// REST do Supabase (rollback) ou pg com o papel robo_interesses (REST_VIA_PG=1); aberto em run() por abrirRest().
+let rest, REST, sbHeaders;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function sbGet(path) {
-  const r = await fetch(REST + path, { headers: sbHeaders });
+  const r = await rest.fetch(REST + path, { headers: sbHeaders });
   if (!r.ok) throw new Error(`GET ${path} ${r.status}`);
   return r.json();
 }
 async function sbPost(path, body, prefer) {
-  const r = await fetch(REST + path, {
+  const r = await rest.fetch(REST + path, {
     method: 'POST',
     headers: { ...sbHeaders, Prefer: prefer || 'return=minimal' },
     body: JSON.stringify(body),
@@ -200,7 +199,8 @@ const PAUSA_ENTRE_BUSCAS = 400;
 
 export async function run() {
   const t0 = Date.now();
-  if (!SERVICE_KEY) { console.error('falta SUPABASE_SERVICE_KEY'); process.exit(1); }
+  rest = await abrirRest();   // banco fora (ou falta a chave do REST): falha aqui, antes de qualquer escrita
+  ({ REST, sb: sbHeaders } = rest);
 
   // Login UMA VEZ antes de tocar em qualquer marca: se a conta de serviço não
   // loga, nenhuma validação na Meta vai funcionar mesmo — melhor falhar rápido
@@ -441,4 +441,4 @@ run().catch(async (e) => {
     status: 'erro', detalhe: String((e && e.message) || e).slice(0, 500),
   });
   process.exit(1);
-});
+}).finally(() => rest?.fechar());

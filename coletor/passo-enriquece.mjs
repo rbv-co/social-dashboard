@@ -4,17 +4,17 @@
 import fs from 'fs';
 import { structured, SONNET, OPUS, usageSummary } from './lib-llm.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
+import { abrirRest } from './lib/rest-pg.mjs';
 const _t0 = Date.now();
 
 const env = {};
 try { for (const l of fs.readFileSync(new URL('./.env', import.meta.url), 'utf8').split('\n')) { const m = l.match(/^([A-Z_]+)=(.*)$/); if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, ''); } } catch (e) {}
-const URL_SB = process.env.SUPABASE_URL || env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const KEY = process.env.SUPABASE_SERVICE_KEY || env.SUPABASE_SERVICE_KEY;
 if (!process.env.ANTHROPIC_API_KEY && env.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
 const RODADA = process.env.RODADA || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-const sbH = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
-async function rest(method, path, body) {
-  const r = await fetch(URL_SB + '/rest/v1/' + path, { method, headers: { ...sbH, Prefer: 'return=representation' }, body: body ? JSON.stringify(body) : undefined });
+// REST_VIA_PG=1 (plano 03 da virada): o mesmo caminho vira SQL no api-db; sem a flag segue o REST do Supabase.
+const R = await abrirRest({ ...env, ...process.env }).catch((e) => { console.error('✗ ' + e.message); process.exit(1); });
+async function rest(method, path, body, prefer = 'return=representation') {
+  const r = await R.fetch(R.REST + '/' + path, { method, headers: { ...R.sb, Prefer: prefer }, body: body ? JSON.stringify(body) : undefined });
   const t = await r.text(); if (!r.ok) throw new Error(method + ' ' + path + ' → ' + r.status + ' ' + t.slice(0, 160)); return t ? JSON.parse(t) : null;
 }
 const get = p => rest('GET', p);
@@ -125,12 +125,13 @@ const u = usageSummary();
 console.log(`Enriquecimento: A(hero) ${okA} · B(análises) ${okB} · C(resumos) ${okC} / ${marcas.length} marcas.`);
 console.log(`Custo LLM: ${u.text}`);
 try {
-  await rest('POST', 'coletor_log', [{ fase: 'enriquece-custo', encontradas: marcas.length, inseridas: okC, detalhe: `rodada ${RODADA} · A${okA} B${okB} C${okC} · ${u.text}` }]);
+  await rest('POST', 'coletor_log', [{ fase: 'enriquece-custo', encontradas: marcas.length, inseridas: okC, detalhe: `rodada ${RODADA} · A${okA} B${okB} C${okC} · ${u.text}` }], 'return=minimal'); // o papel só tem INSERT em coletor_log: sem RETURNING
 } catch (e) { console.log('aviso: falha ao logar custo:', String(e).slice(0, 100)); }
-if (!process.env.SUPABASE_SERVICE_KEY && KEY) process.env.SUPABASE_SERVICE_KEY = KEY;
+if (R.via === 'rest' && !process.env.SUPABASE_SERVICE_KEY) process.env.SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
 await registrarExecucao({
   robo: 'coletor-noticias', acao: 'enriquecimento', modelo: `${SONNET}+${OPUS}`,
   inputTokens: u.tin, outputTokens: u.tout, chamadas: u.calls, usd: u.usd,
   duracaoMs: Date.now() - _t0, itens: okC, unidade: 'notícias',
   status: 'ok', detalhe: `rodada ${RODADA} · A${okA} B${okB} C${okC}`,
 });
+await R.fechar();

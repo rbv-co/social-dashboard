@@ -1,4 +1,4 @@
--- Papel `robo_opr`: robô opr-diario: lê campanhas, seguidores e eventos para o relatório diário. Só leitura (o upload em Storage é fase 2).
+-- Papel `robo_opr`: robô opr-diario: lê campanhas, seguidores e eventos para o relatório diário. Lê tudo isso e grava só o cache visitas_perfil_dia (o upload da imagem em Storage é fase 2: em pg o robô a omite).
 -- Menor privilégio: só as tabelas/colunas que o código do robô toca (levantamento do plano 02, ver o quadro robô→papel→env no
 -- LEIA-ME.md). Nenhuma outra tabela, nenhuma função além das listadas no fim. No `api-db` não há RLS: o GRANT é a única tranca.
 -- Quem precisar de coluna nova pede GRANT novo (o robô falha alto: `permission denied`), nunca `grant ... on all tables`.
@@ -40,3 +40,5 @@ grant select (id, instagram_id) on accounts to robo_opr;
 grant select (campaign_id, name, objective) on campaigns to robo_opr;
 grant select on campaign_insights, followers_leituras to robo_opr;
 grant select (tipo, dia_br) on chatwoot_eventos to robo_opr;
+-- cache de visitas ao perfil: upsert por (account_id, dia) (salvarVisitasPerfilDoDia)
+grant select, insert, update on visitas_perfil_dia to robo_opr;

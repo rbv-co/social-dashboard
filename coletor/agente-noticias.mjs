@@ -1,37 +1,31 @@
 #!/usr/bin/env node
 // Agente coletor de notícias — roda no GitHub Actions (cron diário).
 // Cérebro: Claude (Sonnet 4.6) com a ferramenta de web search — pesquisa,
-// julga relevância/recência e resume por marca. Gravação: REST do Supabase.
+// julga relevância/recência e resume por marca. Gravação: REST do Supabase (ou pg com REST_VIA_PG=1, plano 03 da virada).
 // Observabilidade: grava início/fim na tabela public.coletor_log.
 //
-// Segredos (via env / GitHub Secrets): ANTHROPIC_API_KEY, SUPABASE_SERVICE_KEY.
-// Sem dependências externas — usa fetch nativo (Node 18+).
+// Segredos (via env): ANTHROPIC_API_KEY e, no caminho REST do Supabase, SUPABASE_SERVICE_KEY (em pg: DATABASE_URL).
+
+import { abrirRest } from './lib/rest-pg.mjs';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const MODEL = process.env.COLETOR_MODEL || 'claude-sonnet-4-6';
 
-if (!ANTHROPIC_API_KEY || !SUPABASE_SERVICE_KEY) {
-  console.error('✗ Faltam ANTHROPIC_API_KEY e/ou SUPABASE_SERVICE_KEY no ambiente.');
+if (!ANTHROPIC_API_KEY) {
+  console.error('✗ Falta ANTHROPIC_API_KEY no ambiente.');
   process.exit(1);
 }
 
 const MARCAS = ['Santa Lolla', 'Arezzo&Co', 'Schutz', 'Anacapri', 'Capodarte', 'Luz da Lua', 'Petite Jolie', 'Jorge Bischoff', 'Dumond', 'Carmen Steffens', 'Isla', 'Luiza Barcelos', 'Victor Hugo', "L'Occitane"];
 const CATEGORIAS = ['Campanha', 'Estratégia', 'Lançamento', 'Preço/Promo', 'Marketing', 'Design', 'Moda', 'Faturamento', 'Expansão', 'Tendência'];
 const HOJE = process.env.RODADA || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-const REST = SUPABASE_URL + '/rest/v1';
-const sbHeaders = {
-  apikey: SUPABASE_SERVICE_KEY,
-  Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY,
-  'Content-Type': 'application/json',
-};
+let R; // aberto no início do main(): banco fora = falha antes de qualquer trabalho
 
 // ── Supabase REST ──
 async function sbInsert(path, body, extraPrefer) {
-  const headers = { ...sbHeaders };
+  const headers = { ...R.sb };
   if (extraPrefer) headers.Prefer = extraPrefer;
-  const r = await fetch(REST + path, { method: 'POST', headers, body: JSON.stringify(body) });
+  const r = await R.fetch(R.REST + path, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!r.ok && r.status !== 201 && r.status !== 200 && r.status !== 204) {
     const t = await r.text();
     throw new Error('Supabase POST ' + path + ' -> ' + r.status + ' ' + t.slice(0, 300));
@@ -212,6 +206,7 @@ async function coletarMarca(marca) {
 }
 
 async function main() {
+  R = await abrirRest();
   console.log('== Coletor de notícias · rodada ' + HOJE + ' · modelo ' + MODEL + ' ==');
   await logColetor({ fase: 'inicio', detalhe: 'rodada ' + HOJE + ' (' + MODEL + ')' });
 
@@ -244,6 +239,7 @@ async function main() {
 
   console.log('== Total: ' + inseridas + ' enviadas (dedupe no banco) ==');
   await logColetor({ fase: 'fim', encontradas, inseridas, erro: null, detalhe: resumo.join(' · ') });
+  await R.fechar();
 }
 
 main().catch(async (e) => {

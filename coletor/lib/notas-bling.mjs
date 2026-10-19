@@ -170,3 +170,14 @@ export async function linhasDaJanela(supabaseUrl, chave, di, df, fetchImpl = fet
   }
   throw new Error('não deu para ler bling_pedido_nota: ' + (ultimoErro?.message || ultimoErro));
 }
+
+/** O mesmo que `linhasDaJanela`, pelo `pg` do robô (`db` = `abrirBanco`). Lança se não der para ler, como o REST. */
+export async function linhasDaJanelaPg(db, di, df) {
+  try {
+    return await db.linhas(
+      `select pedido_id, pedido_numero, data_pedido, data_da_venda, total, loja_id from public.bling_pedido_nota
+       where (data_da_venda >= $1 and data_da_venda <= $2) or (data_pedido >= $1 and data_pedido <= $2)`, [di, df]);
+  } catch (e) {
+    throw new Error('não deu para ler bling_pedido_nota: ' + (e?.message || e));
+  }
+}

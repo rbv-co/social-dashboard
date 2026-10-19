@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { montarLinha, impactoPorMes, indiceDeNotas, notaPorId, idDaNota, linhasDaJanela } from './notas-bling.mjs';
+import { montarLinha, impactoPorMes, indiceDeNotas, notaPorId, idDaNota, linhasDaJanela, linhasDaJanelaPg } from './notas-bling.mjs';
 
 test('nota id 0 do Bling significa SEM NOTA, não nota número zero', () => {
   assert.equal(idDaNota({ data: { notaFiscal: { id: 0 } } }), null, 'foi o caso real do pedido nº2372');
@@ -138,4 +138,13 @@ test('linhasDaJanela tenta de novo antes de desistir', async () => {
   };
   await linhasDaJanela('https://x.supabase.co', 'chave', '2026-08-01', '2026-08-31', fetchFalso);
   assert.equal(tentativas, 3, 'soluço de rede não pode derrubar a rodada');
+});
+
+test('linhasDaJanelaPg lê a janela pelo pg e lança (não devolve vazio) quando o banco falha', async () => {
+  const chamadas = [];
+  const db = { linhas: async (sql, v) => { chamadas.push([sql, v]); return [{ pedido_id: 1 }]; } };
+  assert.deepEqual(await linhasDaJanelaPg(db, '2026-10-01', '2026-10-31'), [{ pedido_id: 1 }]);
+  assert.deepEqual(chamadas[0][1], ['2026-10-01', '2026-10-31']);
+  assert.match(chamadas[0][0], /from public\.bling_pedido_nota/);
+  await assert.rejects(linhasDaJanelaPg({ linhas: async () => { throw new Error('ECONNREFUSED'); } }, 'a', 'b'), /não deu para ler bling_pedido_nota: ECONNREFUSED/);
 });

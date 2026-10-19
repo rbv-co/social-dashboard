@@ -2189,7 +2189,6 @@
    },
    "noticias_concorrentes": {
     "arquivos": [
-     "coletor/passo-faxina.mjs",
      "src/ferramentas/noticias/tela-de-noticias.vue"
     ]
    },

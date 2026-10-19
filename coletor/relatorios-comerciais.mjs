@@ -12,16 +12,15 @@
 
 import './lib/carregar-env.mjs';   // popula process.env do .env ANTES de importar a lib (que lê env no topo)
 import { pathToFileURL } from 'node:url';
+import { abrirRest } from './lib/rest-pg.mjs';
 import {
   loginServico, blingProxy, blingPedidos, blingProdutos, blingSaldoFoco,
   classificarItem, classificarItemDetalhado, categoriaDeEstoque, DEP_FOCO,
   blingDepositos,
 } from './lib/bling-comercial.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const REST = SUPABASE_URL + '/rest/v1';
-const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
+// Preenchidos em main() por abrirRest(): REST do Supabase (rollback) ou pg com o papel robo_relatorios (REST_VIA_PG=1).
+let rest, REST, sb;
 
 // ⚠️ ESTA LISTA DEIXOU DE SER A VERDADE em 05/09/2026, pelo mesmo motivo dos
 // depósitos: canal novo criado no Bling nunca aparecia, e todo pedido de canal
@@ -111,7 +110,7 @@ export function mesesRange(backfillN = 0, hoje = new Date()) {
 // ── Supabase REST leitura (service key) ──
 // A chave de servico passa por cima da RLS, como no resto deste robo.
 async function sbGetJson(caminho) {
-  const r = await fetch(`${REST}${caminho}`, { headers: sb });
+  const r = await rest.fetch(`${REST}${caminho}`, { headers: sb });
   if (!r.ok) throw new Error(`GET ${caminho} -> ${r.status} ${(await r.text()).slice(0, 160)}`);
   return r.json();
 }
@@ -121,7 +120,7 @@ async function upsert(table, conflict, rows) {
   if (!rows.length) return;
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
-    const r = await fetch(`${REST}/${table}?on_conflict=${conflict}`, {
+    const r = await rest.fetch(`${REST}/${table}?on_conflict=${conflict}`, {
       method: 'POST',
       headers: { ...sb, Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(chunk),
@@ -149,14 +148,15 @@ async function upsert(table, conflict, rows) {
 async function limparSobrasDoMes(mes, canalLojaId, carimbo) {
   const alvo = `${REST}/gc_vendas_item?mes=eq.${mes}&canal_loja_id=eq.${canalLojaId}` +
                `&atualizado_em=lt.${encodeURIComponent(carimbo)}`;
-  const r = await fetch(alvo, { method: 'DELETE', headers: { ...sb, Prefer: 'return=representation' } });
+  const r = await rest.fetch(alvo, { method: 'DELETE', headers: { ...sb, Prefer: 'return=representation' } });
   if (!r.ok) throw new Error(`limpar sobras ${mes}/${canalLojaId} -> ${r.status} ${(await r.text()).slice(0, 200)}`);
   const apagadas = await r.json().catch(() => []);
   if (apagadas.length) console.log(`      (${apagadas.length} linha(s) que deixaram de existir neste mês foram removidas)`);
 }
 
 async function main() {
-  if (!SERVICE_KEY) { console.error('✗ Falta SUPABASE_SERVICE_KEY'); process.exit(1); }
+  rest = await abrirRest();   // banco fora: falha aqui, antes de qualquer escrita
+  ({ REST, sb } = rest);
   const bf = Number((process.argv.find(a => a.startsWith('--backfill=')) || '').split('=')[1]) || 0;
   const meses = mesesRange(bf);
   console.log(`→ Relatórios comerciais: ${meses.length} mês(es) [${meses[0].mes}..${meses.at(-1).mes}]`);
@@ -305,5 +305,5 @@ async function main() {
 
 // só executa main() quando chamado direto (o teste importa agregarVendas sem rodar a coleta)
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  main().catch(e => { console.error('Erro:', e.message); process.exit(1); });
+  main().catch(e => { console.error('Erro:', e.message); process.exit(1); }).finally(() => rest?.fechar());
 }

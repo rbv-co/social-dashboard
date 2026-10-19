@@ -42,10 +42,12 @@ export function cabecalhosDaEdge(token) {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // A regra de qual dia a venda conta + o leitor das linhas. Ver notas-bling.mjs.
-import { ajustarPelaDataDaNota, linhasDaJanela } from './notas-bling.mjs';
+import { ajustarPelaDataDaNota, linhasDaJanela, linhasDaJanelaPg } from './notas-bling.mjs';
+import { abrirBanco } from './conteudo-banco.mjs';
+import { modoPg } from './rest-pg.mjs';
 // O valor real de venda que o Bling congelou errada. A regra é a MESMA das telas.
 import { aplicarValorCorrigido } from '../../supabase/functions/_shared/valor-corrigido.js';
-import { ajustesDeValor } from './ajustes-de-valor.mjs';
+import { ajustesDeValor, ajustesDeValorPg } from './ajustes-de-valor.mjs';
 import { catalogoDoCore, clienteDoAmbiente, escolherFonte } from '../../supabase/functions/_shared/core-leitura.js';
 
 // Depósito de cada canal foco (mapeado no Bling):
@@ -161,20 +163,30 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
     if (items.length < 100) break;
   }
 
-  // A chave de serviço passa por cima do RLS. Sem ela, a leitura iria pelo JWT
-  // da conta de serviço — que hoje enxerga tudo, mas passaria a enxergar nada se
-  // um dia alguém ligasse o escopo por equipe nessa conta, e o robô ficaria
-  // errado em silêncio. Com a chave, isso não depende de configuração de conta.
-  // O `srv_` da API nunca vai ao REST do Supabase (seria recusado e vazaria o token).
-  if (!process.env.SUPABASE_SERVICE_KEY && daApi(token)) throw new Error('falta SUPABASE_SERVICE_KEY para ler as notas e os ajustes');
-  const chave = process.env.SUPABASE_SERVICE_KEY || token;
-  // As duas leituras são independentes uma da outra (tabelas diferentes, nenhuma
-  // usa o resultado da outra) — em paralelo, não em série (code review, 12/09/2026).
-  // A ORDEM DE APLICAÇÃO continua a mesma de antes: data primeiro, valor depois.
-  const [linhas, ajustes] = await Promise.all([
-    linhasDaJanela(SUPABASE_URL, chave, dataInicial, dataFinal),
-    ajustesDeValor(SUPABASE_URL, chave),
-  ]);
+  // REST_VIA_PG=1 (plano 03 da virada): as duas leituras vão pelo papel do robô no api-db, não pelo Supabase.
+  let linhas; let ajustes;
+  if (modoPg()) {
+    const db = await abrirBanco(process.env.DATABASE_URL);
+    try {
+      linhas = await linhasDaJanelaPg(db, dataInicial, dataFinal);
+      ajustes = await ajustesDeValorPg({ query: db.rodar });
+    } finally { await db.fechar(); }
+  } else {
+    // A chave de serviço passa por cima do RLS. Sem ela, a leitura iria pelo JWT
+    // da conta de serviço — que hoje enxerga tudo, mas passaria a enxergar nada se
+    // um dia alguém ligasse o escopo por equipe nessa conta, e o robô ficaria
+    // errado em silêncio. Com a chave, isso não depende de configuração de conta.
+    // O `srv_` da API nunca vai ao REST do Supabase (seria recusado e vazaria o token).
+    if (!process.env.SUPABASE_SERVICE_KEY && daApi(token)) throw new Error('falta SUPABASE_SERVICE_KEY para ler as notas e os ajustes');
+    const chave = process.env.SUPABASE_SERVICE_KEY || token;
+    // As duas leituras são independentes uma da outra (tabelas diferentes, nenhuma
+    // usa o resultado da outra) — em paralelo, não em série (code review, 12/09/2026).
+    // A ORDEM DE APLICAÇÃO continua a mesma de antes: data primeiro, valor depois.
+    [linhas, ajustes] = await Promise.all([
+      linhasDaJanela(SUPABASE_URL, chave, dataInicial, dataFinal),
+      ajustesDeValor(SUPABASE_URL, chave),
+    ]);
+  }
   const pedidos = ajustarPelaDataDaNota(all, linhas, dataInicial, dataFinal).pedidos;
 
   // E O VALOR QUE O BLING CONGELOU ERRADO. Nota autorizada tranca o pedido: o

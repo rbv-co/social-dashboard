@@ -23,16 +23,17 @@ import {
 } from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
 import { visitasPerfilDoDiaMeta, salvarVisitasPerfilDoDia } from './lib/visitas-perfil-meta.mjs';
 import { metaDoColetor } from './lib/core-meta.mjs';
+import { abrirRest } from './lib/rest-pg.mjs';
 
 // CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token.
 const META = metaDoColetor();
 
 // Nome sem ser "URL" — o global `URL` (usado abaixo pra montar o caminho do
 // PNG em --dry) fica sombreado por um `const URL` no escopo do módulo.
+// Só o upload do PNG (Storage, fase 2 da virada) ainda usa o Supabase; em pg (REST_VIA_PG=1) a imagem é omitida.
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SK = process.env.SUPABASE_SERVICE_KEY;
-const REST = SUPABASE_URL + '/rest/v1';
-const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
+let rest, REST;
 const CONTA_VESSEL = 'b6883e82-07cb-4f21-9fd7-ea7626786174';
 // Mesmo grupo de teste do relatório por hora (enviar-relatorio-hora/index.ts).
 const GRUPO_WHATSAPP = '120363431546698175-group';
@@ -40,7 +41,7 @@ const GRUPO_WHATSAPP = '120363431546698175-group';
 const DRY = process.argv.includes('--dry');
 
 async function sbGet(p) {
-  const r = await fetch(REST + p, { headers: H });
+  const r = await rest.fetch(REST + p, { headers: rest.sb });
   if (!r.ok) throw new Error('GET ' + p + ' ' + r.status);
   return r.json();
 }
@@ -107,6 +108,8 @@ async function mandarTextoWhatsapp(mensagem) {
 }
 
 async function main() {
+  rest = await abrirRest();
+  ({ REST } = rest);
   const dia = ontemBR();
 
   // Busca + agregação num try/catch só: qualquer falha aqui (rede, coluna
@@ -144,7 +147,7 @@ async function main() {
     const visitasPerfilDoDia = await visitasPerfilDoDiaMeta(igId, token, dia);
     // Alimenta o cache que a tela do OPR lê pra qualquer período (fora de
     // --dry — dry é só preview, nunca escreve nada além do PNG local).
-    if (!DRY) await salvarVisitasPerfilDoDia(REST, H, CONTA_VESSEL, dia, visitasPerfilDoDia);
+    if (!DRY) await salvarVisitasPerfilDoDia(REST, rest.sb, CONTA_VESSEL, dia, visitasPerfilDoDia, rest.fetch);
 
     const leadsChatwoot = {
       novo: eventosChatwoot.filter((e) => e.tipo === 'lead_novo').length,
@@ -216,6 +219,12 @@ async function main() {
     }
   }
 
+  // pg: sem contrato de Storage ainda (fase 2) — a imagem não sobe; as duas mensagens de texto acima já saíram.
+  if (rest.via === 'pg') {
+    console.log('REST_VIA_PG: imagem do OPR omitida (Storage fica na fase 2).');
+    return;
+  }
+
   try {
     // Sobe pro Storage e manda o LINK, não o arquivo em base64 — ver
     // comentário de mandarImagemWhatsapp. Path com o dia: cada rodada
@@ -233,4 +242,4 @@ async function main() {
 main().catch((e) => {
   console.error(e);
   process.exitCode = 1;
-});
+}).finally(() => rest?.fechar());
