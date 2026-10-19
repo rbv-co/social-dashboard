@@ -125,14 +125,30 @@ func (x *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		responder(w, erro(http.StatusForbidden, "sem_permissao"))
 		return
 	}
+	// Quem entrou como outra pessoa só lê: pedido que não dá para ler como leitura (corpo ruim, ação desconhecida ou de
+	// escrita) é 403, não 400, para o impersonado não sondar as ações.
+	at := auth.AtorDoContexto(r.Context())
+	soLe := at == nil || at.ImpersonadorID != nil
+	recusa := func() {
+		responder(w, resposta{http.StatusForbidden, mapa{"error": "sem_permissao",
+			"mensagem": "Quem entrou como outra pessoa não grava em Colaboradores e Acessos."}})
+	}
 	bruto, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	var p pedido
 	if err != nil || json.Unmarshal(bruto, &p) != nil {
+		if soLe {
+			recusa()
+			return
+		}
 		responder(w, erro(http.StatusBadRequest, "json_invalido"))
 		return
 	}
 	a, existe := acoes[string(p.Action)]
 	if !existe {
+		if soLe {
+			recusa()
+			return
+		}
 		var nome any = string(p.Action)
 		if p.Action == "" {
 			nome = nil
@@ -140,9 +156,8 @@ func (x *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		responder(w, resposta{http.StatusBadRequest, mapa{"error": "acao_desconhecida", "action": nome}})
 		return
 	}
-	if at := auth.AtorDoContexto(r.Context()); a.escreve && (at == nil || at.ImpersonadorID != nil) {
-		responder(w, resposta{http.StatusForbidden, mapa{"error": "sem_permissao",
-			"mensagem": "Quem entrou como outra pessoa não grava em Colaboradores e Acessos."}})
+	if a.escreve && soLe {
+		recusa()
 		return
 	}
 	responder(w, a.f(x, r.Context(), e, p))
