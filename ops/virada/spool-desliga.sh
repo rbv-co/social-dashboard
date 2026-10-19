@@ -14,7 +14,7 @@ NA_VPS=${NA_VPS:-ssh -o BatchMode=yes ${VPS:-op}}
 
 # duas rodadas: a 1ª pode levar minutos (5/s); a 2ª pega o que chegou durante ela e deixa só segundos até o nginx
 for _ in 1 2; do
-  sh "$AQUI/spool-replay.sh" "$1" || { echo "spool-desliga: a fila não esvaziou em $1; spool continua ligado e recebendo" >&2; exit 1; }
+  sh "$AQUI/spool-replay.sh" "$1" || { echo "spool-desliga: a fila não esvaziou em $1 ou houve REJEITADO (ver acima e a pasta rejeitado/); spool continua ligado e recebendo" >&2; exit 1; }
 done
 sh "$AQUI/spool-nginx.sh" "$1" || { echo "spool-desliga: nginx não virou; spool continua ligado e recebendo" >&2; exit 1; }
 # ponytail: nos segundos entre a 2ª rodada e o nginx, um evento vivo pode chegar ao destino antes do último do

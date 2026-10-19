@@ -57,7 +57,7 @@ roda janela
 grep -q 'já na janela' "$T/saida" || falha "janela 2× não avisou"
 
 roda contar; [ $rc -eq 0 ] || falha "contar: rc $rc"
-grep -q "created_at >= '$(cat "$BK/inicio")' - INTERVAL 10 MINUTE" "$T/sql.log" || falha "contar sem o início da janela"
+grep -q "created_at >= '$(cat "$BK/inicio")' - INTERVAL 90 MINUTE" "$T/sql.log" || falha "contar sem o início da janela"
 
 roda restaurar
 [ $rc -eq 0 ] && [ "$(deploys)" = 2 ] && iguais_ao "$T/original" || falha "restaurar: rc $rc, deploys $(deploys)"

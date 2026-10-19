@@ -162,10 +162,10 @@ instala() {  # $1: env novo. Grava os dois arquivos e deploya; se falhar, volta 
   exit 1
 }
 
-retido() {  # $1: SQL; DESDE = início da janela - 10 min (sem início: 1 dia, e o falhou fica de fora)
+retido() {  # $1: SQL; DESDE = início da janela - 90 min: o Core tenta por ~81 min, então o que já vinha falhando antes da janela e virou falhou dentro dela também sai (sem início: 1 dia, e o falhou fica de fora)
   if [ -f "$BK/inicio" ]; then
     grep -qxE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' "$BK/inicio" || falha "$BK/inicio ilegível"
-    sql=$(printf '%s\n' "$1" | sed "s/DESDE/'$(cat "$BK/inicio")' - INTERVAL 10 MINUTE/g")
+    sql=$(printf '%s\n' "$1" | sed "s/DESDE/'$(cat "$BK/inicio")' - INTERVAL 90 MINUTE/g")
   else
     sql=$(printf '%s\n' "$1" | sed -e "s/ OR (status='falhou' AND created_at >= DESDE)//" -e "s/DESDE/UTC_TIMESTAMP() - INTERVAL 1 DAY/g")
   fi
