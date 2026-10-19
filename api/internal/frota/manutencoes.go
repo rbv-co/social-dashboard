@@ -17,11 +17,15 @@ const colunasRevisao = `t.id, t.veiculo_id, t.item, t.km, t.feita_em, t.oficina,
 const colunasAbastecimento = `t.id, t.veiculo_id, t.pessoa_id, t.pessoa_nome, t.abastecido_em, t.km, t.litros, t.total_centavos, ` +
 	`t.tanque_depois, t.combustivel, t.posto, t.observacao, t.criado_em, t.criado_por`
 
+// Filtro por veiculo_id nas duas: o recorte do MCP da Frota (a tela lê tudo).
+var porVeiculo = []dados.Filtro{{Param: "veiculo_id", SQL: "t.veiculo_id = @veiculo_id::uuid", Tipo: "uuid"}}
+
 var consultaRevisoes = dados.Consulta{Tabela: "frota_revisoes", Alias: "t", SQL: `select ` + colunasRevisao + ` from frota_revisoes t`,
-	Ordens: map[string]string{"criada_em": "t.criada_em"}, OrdemPadrao: "t.criada_em", Desempate: "t.id"}
+	Filtros: porVeiculo, Ordens: map[string]string{"criada_em": "t.criada_em"}, OrdemPadrao: "t.criada_em", Desempate: "t.id"}
 var consultaAbastecimentos = dados.Consulta{Tabela: "frota_abastecimentos", Alias: "t",
-	SQL:    `select ` + colunasAbastecimento + ` from frota_abastecimentos t`,
-	Ordens: map[string]string{"abastecido_em": "t.abastecido_em"}, OrdemPadrao: "t.abastecido_em desc", Desempate: "t.id"}
+	SQL:     `select ` + colunasAbastecimento + ` from frota_abastecimentos t`,
+	Filtros: porVeiculo,
+	Ordens:  map[string]string{"abastecido_em": "t.abastecido_em"}, OrdemPadrao: "t.abastecido_em desc", Desempate: "t.id"}
 
 var tabelaManutencoes = dados.Tabela{Nome: "frota_manutencoes", Resposta: colunasManutencao, Autor: "criada_por"}
 var tabelaRevisoes = dados.Tabela{Nome: "frota_revisoes", Resposta: colunasRevisao, Autor: "criada_por"}

@@ -31,15 +31,15 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { sbClient, emModoEntrarComo } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
-import { avaliarPedido } from './pedido-do-supabase.js'
+import { pedir } from '../../compartilhado/api.js'
 
-// O servidor OAuth do Supabase Auth (supabase/functions/mcp-frota, até a virada) manda a pessoa para cá com
-// ?authorization_id=: os detalhes e a decisão saem do sbClient.auth.oauth, e quem trava é pedido-do-supabase.js
-// (a edge confere o gestor de novo a cada chamada). Na API Go (PR #418) o pedido chega inteiro na URL.
+// O pedido do ChatGPT chega na URL (GET /api/oauth/autorizar redireciona para cá). A API confere tudo de novo
+// em /oauth/pedido e em /oauth/decidir: esta tela só mostra e repassa. Desenho:
+// docs/superpowers/specs/2026-10-19-mcp-frota-chatgpt-design.md
+const CAMPOS = ['client_id', 'redirect_uri', 'code_challenge', 'code_challenge_method', 'state', 'response_type', 'scope', 'resource']
+
 const route = useRoute()
-const idDoSupabase = typeof route.query.authorization_id === 'string' ? route.query.authorization_id : ''
+const pedido = Object.fromEntries(CAMPOS.filter((c) => typeof route.query[c] === 'string').map((c) => [c, route.query[c]]))
 
 const estado = ref('carregando') // carregando | pedido | erro
 const cliente = ref('')
@@ -47,47 +47,30 @@ const pode = ref(false)
 const mensagem = ref('')
 const enviando = ref(false)
 
-async function carregarDoSupabase() {
-  const { data, error } = await sbClient.auth.oauth.getAuthorizationDetails(idDoSupabase)
+onMounted(async () => {
+  const { data, error } = await pedir('GET', '/oauth/pedido', { params: pedido })
   if (error) {
     estado.value = 'erro'
-    mensagem.value = 'Não deu para abrir este pedido. Comece de novo pelo ChatGPT.'
+    mensagem.value = error.message
     return
   }
-  // já autorizado antes: o Supabase devolve direto o endereço de volta
-  if (!data.authorization_id && data.redirect_url) {
-    window.location.href = data.redirect_url
-    return
-  }
-  const r = avaliarPedido({ pode: (acao) => hasPermission('frota', acao), entrarComo: emModoEntrarComo, redirectUri: data.redirect_uri })
-  cliente.value = data.client?.name || 'Um aplicativo'
-  pode.value = r.pode
-  mensagem.value = r.mensagem
+  cliente.value = data.cliente
+  pode.value = !!data.pode
+  mensagem.value = data.mensagem || ''
   estado.value = 'pedido'
-}
+})
 
-async function decidirNoSupabase(permitir) {
-  const oauth = sbClient.auth.oauth
-  const op = { skipBrowserRedirect: true } // a saída é daqui, uma vez só, e só com resposta boa
-  const { data, error } = permitir ? await oauth.approveAuthorization(idDoSupabase, op) : await oauth.denyAuthorization(idDoSupabase, op)
-  if (error || !data?.redirect_url) {
+async function decidir(permitir) {
+  enviando.value = true
+  const { data, error } = await pedir('POST', '/oauth/decidir', { corpo: { ...pedido, permitir } })
+  if (error) {
     enviando.value = false
-    mensagem.value = 'Não deu para registrar a resposta. Comece de novo pelo ChatGPT.'
+    mensagem.value = error.message
     estado.value = 'erro'
     return
   }
-  window.location.href = data.redirect_url
-}
-
-onMounted(() => {
-  if (idDoSupabase) return carregarDoSupabase()
-  estado.value = 'erro'
-  mensagem.value = 'Pedido incompleto. Comece de novo pelo ChatGPT.'
-})
-
-function decidir(permitir) {
-  enviando.value = true
-  return decidirNoSupabase(permitir && pode.value)
+  // endereço já conferido pela API (redirect_uri registrada pelo cliente, host permitido)
+  window.location.href = data.redirect
 }
 </script>
 

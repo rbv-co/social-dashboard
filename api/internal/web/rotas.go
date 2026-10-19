@@ -29,6 +29,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/github"
 	"github.com/rbv-co/social-dashboard/api/internal/ia"
 	"github.com/rbv-co/social-dashboard/api/internal/mapa"
+	"github.com/rbv-co/social-dashboard/api/internal/mcp"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/microsoft"
 	"github.com/rbv-co/social-dashboard/api/internal/paineis"
@@ -67,6 +68,10 @@ const (
 	// ~7 s e o PDF a 600 dpi vem em fluxo; o de domínio (30 s) cortaria o download.
 	PrazoCartao = 60 * time.Second
 
+	// MCP da Frota: cada ferramenta tem o PrazoDominio dela (as internas são rotas de domínio); a folga cobre a
+	// sessão e o ator carregados antes.
+	PrazoMCP = PrazoDominio + 5*time.Second
+
 	// Plano 07a: o proxy do Acessos varre o Graph/WorkDrive (centenas de chamadas na Auditoria). Cabe sob o WriteTimeout.
 	PrazoAcessos = 120 * time.Second
 
@@ -87,6 +92,20 @@ var FuncoesRPC = slices.Concat(
 	frota.FuncoesRPC,        // Plano 5.3
 	atendimentos.FuncoesRPC, // Plano 5.11
 )
+
+// comEmissor: sem API_URL_PUBLICA não há issuer para o OAuth do MCP: ele fica desligado (404), em vez de publicar
+// metadados com endereço vazio.
+func comEmissor(emissor string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if emissor == "" {
+				http.Error(w, `{"error":"mcp_desligado"}`, http.StatusNotFound)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
 func comPrazo(d time.Duration) func(http.Handler) http.Handler {
@@ -160,6 +179,23 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		(&acessos.OAuth{Zoho: zc, MS: mc, APIPublica: cfg.APIURLPublica, Retorno: cfg.EnderecoPadrao + "/"}).Montar(r)
 	})
 	av := &meta.AoVivo{Pool: p, Core: cli}
+	reserva := &frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}
+
+	// MCP da Frota (ChatGPT): OAuth 2.1 próprio e POST /mcp. Públicas, com limite por IP: o registro e o token se
+	// defendem pelo PKCE e pelos hosts de retorno; /mcp exige o token de tipo 'mcp' lá dentro. Sem API_URL_PUBLICA
+	// (o issuer) respondem 404. Desenho: docs/superpowers/specs/2026-10-19-mcp-frota-chatgpt-design.md.
+	oa := &mcp.OAuth{Pool: p, Sessoes: s, Emissor: cfg.APIURLPublica, Front: cfg.EnderecoPadrao}
+	r.Group(func(r chi.Router) {
+		r.Use(auth.LimitarPorIP(120, time.Minute), comEmissor(cfg.APIURLPublica)) // o teto antes de tudo, até do 404
+		r.Get("/.well-known/oauth-protected-resource", oa.MetadadosDoRecurso)
+		r.Get("/.well-known/oauth-protected-resource/mcp", oa.MetadadosDoRecurso)
+		r.Get("/.well-known/oauth-authorization-server", oa.MetadadosDoServidor)
+		r.With(auth.LimitarPorIP(10, time.Hour), auth.LimitarGlobal(200, time.Hour)).Post("/oauth/registrar", oa.Registrar)
+		r.Get("/oauth/autorizar", oa.Autorizar)
+		r.With(comPrazo(30*time.Second)).Post("/oauth/token", oa.Token)
+		r.With(comPrazo(PrazoMCP)).Post("/mcp", mcp.NovoServidor(p, s, cfg.APIURLPublica, reserva).ServeHTTP)
+	})
+
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Exigir(p, s))
 		r.Post("/auth/sair", h.Sair)
@@ -173,7 +209,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		// Plano 4: o mesmo portão da edge (superadmin ou permissions['frota.aprovar'] com 'ver').
 		// Quem entrou como outra pessoa não dispara o aviso (push em nome do aprovador): dados.SoSessaoPropria.
 		r.With(auth.ExigirPermissao("frota.aprovar", "ver"), dados.SoSessaoPropria(dados.FraseEntrarComo)).Post("/avisar-decisao-de-reserva",
-			(&frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}).ServeHTTP)
+			reserva.ServeHTTP)
+		// MCP da Frota: a tela de consentimento. Só gestor da Frota (403 com a frase para a tela).
+		r.With(mcp.SoGestor, comEmissor(cfg.APIURLPublica)).Get("/oauth/pedido", oa.Pedido)
+		r.With(mcp.SoGestor, dados.SoSessaoPropria(dados.FraseEntrarComo), comEmissor(cfg.APIURLPublica)).Post("/oauth/decidir", oa.Decidir)
 
 		// Plano 5.7: proxies de IA (chave em ANTHROPIC_API_KEY_TRAFEGO) e de mapa (Nominatim). Portões = os das edges.
 		// No grupo de SESSÃO: o prazo do grupo de domínio (30 s) cortaria a IA.

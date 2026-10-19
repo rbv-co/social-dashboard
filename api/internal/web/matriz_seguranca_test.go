@@ -56,6 +56,16 @@ type linha struct {
 }
 
 var matriz = map[string]linha{
+	// MCP da Frota: o OAuth e o /mcp (token 'mcp' no handler) são públicos; a tela de consentimento é de gestor.
+	"GET /.well-known/oauth-protected-resource":                      {gPublica, rwL},
+	"GET /.well-known/oauth-protected-resource/mcp":                  {gPublica, rwL},
+	"GET /.well-known/oauth-authorization-server":                    {gPublica, rwL},
+	"POST /oauth/registrar":                                          {gPublica, rwE},
+	"GET /oauth/autorizar":                                           {gPublica, rwL},
+	"POST /oauth/token":                                              {gPublica, rwE},
+	"POST /mcp":                                                      {gPublica, rwE},
+	"GET /oauth/pedido":                                              {gModulo, rwL},
+	"POST /oauth/decidir":                                            {gModulo, rwE},
 	"DELETE /acessos/organizacoes/{id}":                              {gDominio, rwE},
 	"DELETE /acessos/pessoas/{id}":                                   {gDominio, rwE},
 	"GET /acessos/drive/marcas":                                      {gDominio, rwL},

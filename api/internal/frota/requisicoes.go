@@ -17,7 +17,12 @@ const colunasRequisicao = `t.id, t.veiculo_id, t.pessoa_id, t.pessoa_nome, t.dep
 
 // GET /frota/requisicoes (frota_req_ler: is_frota_admin() — quem vê a Frota vê a agenda inteira).
 var consultaRequisicoes = dados.Consulta{Tabela: "frota_requisicoes", Alias: "t",
-	SQL:    `select ` + colunasRequisicao + ` from frota_requisicoes t`,
+	SQL: `select ` + colunasRequisicao + ` from frota_requisicoes t`,
+	// veiculo_id e situacao: o recorte do MCP da Frota (a tela lê tudo).
+	Filtros: []dados.Filtro{
+		{Param: "veiculo_id", SQL: "t.veiculo_id = @veiculo_id::uuid", Tipo: "uuid"},
+		{Param: "situacao", SQL: "t.situacao = @situacao::text", Tipo: "texto"},
+	},
 	Ordens: map[string]string{"retirada_prevista": "t.retirada_prevista"}, OrdemPadrao: "t.retirada_prevista", Desempate: "t.id"}
 
 // POST /frota/requisicoes (frota_req_criar: is_frota_admin() AND criada_por = auth.uid()). criada_por vem
