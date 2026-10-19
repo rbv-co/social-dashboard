@@ -41,12 +41,29 @@ test('initialize, tools/list e método desconhecido', async () => {
 test('listar: filtros, ordem, limite e argumento desconhecido', async () => {
   const db = bancoFalso()
   await chamar(db, 'listar_usos', { veiculo_id: V, aberta: true, limite: 10 })
-  assert.deepEqual(db.feito[0], ['listar', 'frota_uso', { filtros: [['veiculo_id', 'eq', V], ['volta_em', 'is_null']], ordem: ['saida_em', true], limite: 10 }])
+  const [, tabela, o] = db.feito[0]
+  assert.equal(tabela, 'frota_uso')
+  assert.deepEqual({ ...o, colunas: undefined }, { colunas: undefined, filtros: [['veiculo_id', 'eq', V], ['volta_em', 'is_null']], ordem: ['saida_em', true], limite: 10 })
+  assert.doesNotMatch(o.colunas, /rabisco|\*/) // o desenho da assinatura não vai para o modelo
+  assert.match(o.colunas, /veiculo:frota_veiculos\(nome,placa\)/)
   assert.equal((await chamar(db, 'listar_requisicoes', { situacao: 'pendente' })).isError, false)
   for (const [n, a] of [['listar_veiculos', { placa: 'x' }], ['listar_usos', { limite: 500 }], ['listar_requisicoes', { situacao: 'x' }], ['listar_revisoes', { veiculo_id: 'x' }]]) {
     assert.equal((await chamar(db, n, a)).isError, true, n)
   }
   assert.equal(db.feito.length, 2) // as recusas não chegaram ao banco
+})
+
+test('listar: padrão de linhas, busca por nome ou placa e campos nulos fora da resposta', async () => {
+  const db = bancoFalso()
+  db.listar = async (t, o) => { db.feito.push([t, o]); return [{ id: V, nome: 'Gol', observacao: null }] }
+  const r = await chamar(db, 'listar_veiculos', { busca: ' abc-1d2(3), ' })
+  assert.deepEqual(db.feito[0][1].filtros, [['nome|placa', 'ilike_qualquer', { nome: 'abc-1d2 3', placa: 'ABC1D23' }]])
+  assert.equal(db.feito[0][1].limite, 100)
+  assert.equal(texto(r), `[{"id":"${V}","nome":"Gol"}]`)
+  await chamar(db, 'listar_abastecimentos', {})
+  assert.equal(db.feito[1][1].limite, 20)
+  assert.equal((await chamar(db, 'listar_veiculos', { busca: ' (),* ' })).isError, true)
+  assert.equal((await chamar(db, 'listar_veiculos', { situacao: 'quebrado' })).isError, true)
 })
 
 test('abastecimento: grava em centavos, com autor; barra km menor e data futura sem gravar', async () => {
