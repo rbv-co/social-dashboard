@@ -27,12 +27,18 @@ desfazer() {
   [ -f "$ESTADO" ] || { say "nada aplicado (sem $ESTADO)"; return 0; }
   dir=$(cat "$ESTADO")
   rm -f "$CRON"; $SYSTEMCTL stop cartoes-ean 2>/dev/null || true
-  [ -f "$dir/cartoes-ean.env" ] && cp -p "$dir/cartoes-ean.env" "$CART_ENV"
-  [ -f "$dir/troca/robos.env.antes" ] && sh "$VIRADA/robos-troca-env.sh" reverter "$dir/troca" "$ENV_ROBOS" "$SEG"
+  # erro aqui NÃO pode virar "DESFEITO": o estado fica guardado e o script sai 1 (o env novo ainda pode estar no lugar)
+  if [ -f "$dir/cartoes-ean.env" ]; then cp -p "$dir/cartoes-ean.env" "$CART_ENV" || { echo "[t17-robos] FALHOU ao restaurar $CART_ENV (backup em $dir)" >&2; return 1; }; fi
+  if [ -f "$dir/troca/robos.env.antes" ]; then sh "$VIRADA/robos-troca-env.sh" reverter "$dir/troca" "$ENV_ROBOS" "$SEG" || { echo "[t17-robos] FALHOU ao reverter $ENV_ROBOS (backup em $dir/troca)" >&2; return 1; }; fi
   rm -f "$ESTADO"; say "DESFEITO: robôs de volta à Fase A (cron fora, cartoes-ean parado, robos.env de antes)"
 }
 
-if [ "$ACAO" = reverter ]; then desfazer; exit 0; fi
+if [ "$ACAO" = reverter ]; then
+  # o t19 (conteudo-vigia/vessel-espelho) lê CONTEUDO_DB_SENHA do robos.env: reverter o env por baixo dele o deixaria em crash-loop
+  for u in conteudo-vigia vessel-espelho; do [ "$($SYSTEMCTL is-active $u 2>/dev/null || true)" != active ] || die "$u ativo: rode t19-vessel.sh reverter ANTES"; done
+  desfazer || exit 1; exit 0
+fi
+[ -n "${ENSAIO:-}" ] || [ "$BANCO" = api ] || die "BANCO=$BANCO no ambiente: só o ensaio (ENSAIO=1) pode apontar para outro banco"
 
 [ ! -f "$ESTADO" ] || die "já aplicado ($ESTADO): rode reverter antes"
 [ "$($SYSTEMCTL is-active cartoes-ean 2>/dev/null || true)" != active ] || die "cartoes-ean ainda ativo: a Fase A (t29) não rodou"
@@ -44,8 +50,15 @@ for s in reporte selo pedidos-vessel shopify metaads-zoho vigia-meta notas relat
   [ -s "$SEG/robo-$s.senha" ] || die "falta $SEG/robo-$s.senha (T+7 não criou o papel?)"; done
 for s in copia conteudo; do [ -s "$SEG/$s.senha" ] || die "falta $SEG/$s.senha"; done
 
+# o cron novo só difere do guardado pela faxina do Storage (linha que só existe na VPS sumiria calada)
+diff <(grep -v '^#' "$VIRADA/robos-social-dashboard" | grep -v faxina-storage) <(grep -v '^#' "$VIRADA/robos-social-dashboard.go" | grep -v faxina-storage) > /dev/null || die "o cron.d guardado em $VIRADA/robos-social-dashboard difere do cron novo além da faxina: confira a diferença antes"
+# Cartões e conteúdo rodam do clone /opt/cartoes-ean/social-dashboard: tem de estar na main com o vigia novo
+CART_REPO=${CART_REPO:-/opt/cartoes-ean/social-dashboard}
+[ -n "${ENSAIO:-}" ] || git -C "$CART_REPO" pull -q --ff-only || die "git pull em $CART_REPO"
+grep -q CARTOES_DB_SENHA "$CART_REPO/coletor/vps/cartoes-ean-vigia.sh" && [ -f "$CART_REPO/coletor/vps/conteudo-vigia.sh" ] || die "$CART_REPO sem o vigia novo (CARTOES_DB_SENHA): atualize o clone"
+
 dir="$BACKUP/t17-$(date -u +%Y%m%dT%H%M%SZ)"; ( umask 077; mkdir -p "$dir" )
-cp -p "$ENV_ROBOS" "$dir/robos.env"; cp -p "$CART_ENV" "$dir/cartoes-ean.env"
+cp -p "$ENV_ROBOS" "$dir/robos.env" && cp -p "$CART_ENV" "$dir/cartoes-ean.env" || die "backup dos envs"
 echo "$dir" > "$ESTADO"; say "backup em $dir"
 trap 'echo "[t17-robos] falhou: desfazendo" >&2; desfazer' EXIT
 

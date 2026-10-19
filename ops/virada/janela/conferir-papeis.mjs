@@ -64,4 +64,4 @@ async function main() {
   console.log(`${lista.length - ruins}/${lista.length} papéis conectam`);
   process.exit(ruins ? 1 : 0);
 }
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error('FALHOU:', e.code || e.name); process.exit(1); }); // nunca imprime e.message/input (poderia ter a senha)

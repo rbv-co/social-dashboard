@@ -14,9 +14,13 @@ HOST=${HOST:-op}; GH_REPO=${GH_REPO:-rbv-co/social-dashboard}; GH=${GH:-gh}
 mkdir -p "$D"
 [ -s "$D/workflows.txt" ] || (cd "$V" && git grep -l SUPABASE_SERVICE_KEY -- .github/workflows) > "$D/workflows.txt"
 n=$(wc -l < "$D/workflows.txt"); [ "$n" -ge 20 ] || { echo "FALHOU: $D/workflows.txt tem $n linhas (esperava ~22)" >&2; exit 1; }
-[ -s "$D/workflows-ativos-antes.txt" ] || $GH workflow list -R "$GH_REPO" --limit 200 --json path,state -q '.[] | select(.state=="active") | .path' > "$D/workflows-ativos-antes.txt"
-[ -s "$D/workflows-ativos-antes.txt" ] || { echo "FALHOU: lista de workflows ativos vazia (gh sem acesso?)" >&2; exit 1; }
-alvo=$(grep -Fxf "$D/workflows.txt" "$D/workflows-ativos-antes.txt" || true)
+# a lista "antes" é a do dia da janela: o ensaio NUNCA a grava (senão o desfazer reabilitaria um estado velho)
+ATIVOS="$D/workflows-ativos-antes.txt"; [ "$ENSAIO" = 0 ] || ATIVOS=$(mktemp)
+if [ "$ENSAIO" = 1 ] || [ ! -s "$ATIVOS" ]; then
+  $GH workflow list -R "$GH_REPO" --limit 200 --json path,state -q '.[] | select(.state=="active") | .path' > "$ATIVOS" || { echo "FALHOU: gh workflow list" >&2; exit 1; }
+fi
+[ -s "$ATIVOS" ] || { echo "FALHOU: lista de workflows ativos vazia (gh sem acesso?)" >&2; exit 1; }
+alvo=$(grep -Fxf "$D/workflows.txt" "$ATIVOS" || true)
 echo "workflows a desligar: $(printf %s "$alvo" | grep -c . || true) de $n (o resto já estava desligado ou não existe)"
 if [ "$ENSAIO" = 1 ]; then
   printf '%s\n' "$alvo" | while read -r w; do [ -n "$w" ] || continue; $GH workflow view "$(basename "$w")" -R "$GH_REPO" >/dev/null || { echo "FALHOU: gh não conhece $w" >&2; exit 1; }; done
@@ -24,6 +28,8 @@ if [ "$ENSAIO" = 1 ]; then
 fi
 if [ -n "${LOCAL:-}" ]; then sh -s fase-a < "$AQUI/t29-vps.sh"; else ssh "$HOST" sh -s fase-a < "$AQUI/t29-vps.sh"; fi
 printf '%s\n' "$alvo" | while read -r w; do [ -n "$w" ] || continue; $GH workflow disable "$(basename "$w")" -R "$GH_REPO"; done
-ativos=$($GH workflow list -R "$GH_REPO" --limit 200 --json path,state -q '.[] | select(.state=="active") | .path' | grep -Fxf "$D/workflows.txt" | grep -c . || true)
+agora=$($GH workflow list -R "$GH_REPO" --limit 200 --json path,state -q '.[] | select(.state=="active") | .path') || { echo "FALHOU: gh workflow list (conferência)" >&2; exit 1; }
+[ -n "$agora" ] || { echo "FALHOU: conferência com lista vazia (gh sem acesso?)" >&2; exit 1; }
+ativos=$(printf '%s\n' "$agora" | grep -Fxf "$D/workflows.txt" | grep -c . || true)
 [ "$ativos" -eq 0 ] || { echo "FALHOU: $ativos workflow(s) da lista ainda ativo(s)" >&2; exit 1; }
 echo "FASE A (robôs + Actions) OK"

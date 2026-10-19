@@ -53,7 +53,7 @@ echo "-- cron novo: $(grep -vc '^#\|^$\|^SHELL\|^PATH' "$CRON") linhas ativas; f
 cp "$E/robos.env" "$E/robos.env.go"; chmod 600 "$E/robos.env.go"
 
 sec "4. t19-vessel aplicar (só provas: espelho --ensaio, carocos --ensaio, lembretes sem token) contra o clone"
-SEG="$E/seg" SBIN="$E/sbin" DESTINO_UNITS="$E/units" DESTINO_CRON="$E/crond" ENV_ROBOS="$E/robos.env" BANCO=$BANCO UMA_VEZ=--ensaio SO_PROVAS=1 REPO="$REPO" \
+SEG="$E/seg" SBIN="$E/sbin" DESTINO_UNITS="$E/units" DESTINO_CRON="$E/crond" ENV_ROBOS="$E/robos.env" BANCO=$BANCO UMA_VEZ=--ensaio SO_PROVAS=1 ENSAIO=1 REPO="$REPO" \
   bash "$J/t19-vessel.sh" aplicar; echo "t19 aplicar (provas) saiu $?"
 ls "$E/units" "$E/crond" | tr '\n' ' '; echo
 SEG="$E/seg" SBIN="$E/sbin" DESTINO_UNITS="$E/units" DESTINO_CRON="$E/crond" BANCO=$BANCO bash "$J/t19-vessel.sh" reverter

@@ -27,6 +27,9 @@ desfazer() {
 if [ "$ACAO" = reverter ]; then desfazer; exit 0; fi
 fail() { echo "[t19-vessel] FALHOU: $*" >&2; desfazer; exit 1; }
 
+[ -n "${ENSAIO:-}${SO_PROVAS:-}" ] || [ -e /root/api-db/PRODUCAO ] || { echo "FALHOU: sem /root/api-db/PRODUCAO: o corte não aconteceu (o espelho gravaria no Zoho com dado velho)" >&2; exit 1; }
+[ -n "${ENSAIO:-}${SO_PROVAS:-}" ] || [ "$BANCO" = api ] || { echo "FALHOU: BANCO=$BANCO no ambiente (só ensaio)" >&2; exit 1; }
+[ "$($SYSTEMCTL is-active vessel-espelho 2>/dev/null || true)" != active ] || { echo "[t19-vessel] já aplicado (vessel-espelho ativo): nada a fazer; reverter antes de aplicar de novo"; exit 0; }
 [ "$(docker inspect -f '{{.State.Health.Status}}' api-db 2>/dev/null)" = healthy ] || { echo "api-db não está healthy" >&2; exit 1; }
 f=$(psql_api "select to_regprocedure('vessel_lembretes_a_enviar()') is not null and to_regprocedure('vessel_lembrete_marcar_enviado(uuid,integer)') is not null and to_regprocedure('vessel_carocos()') is not null and to_regclass('disparos_pendentes') is not null and to_regclass('robos_execucoes') is not null")
 [ "$f" = t ] || { echo "FALHOU: faltam funções/tabelas no api-db ($BANCO): to_regprocedure das 3 funções, disparos_pendentes, robos_execucoes" >&2; exit 1; }

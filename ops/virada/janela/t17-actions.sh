@@ -6,7 +6,7 @@
 #   são manuais, leem o Supabase congelado e não têm destino; cartoes-ean.yml (gerar a fila) também fica desligado (o robô de Cartões
 #   roda na VPS). Não apaga o secret SUPABASE_SERVICE_KEY (o rollback precisa dele; some em D+1).
 # Uso: sh t17-actions.sh <D=pasta de trabalho> [--ensaio]   (--ensaio: não muda nada, só confere acesso e nomes)
-# Reverter (rollback B5): sh t17-actions.sh <D> --reverter   (variáveis voltam: SAIU_DO_SUPABASE=nao, FABRICA_EXIGE_API apagada; workflows
+# Reverter (rollback B5): sh t17-actions.sh <D> --reverter   (as duas variáveis são APAGADAS (a trava do copia-do-banco.yml olha "não vazio"); workflows
 #   reabilitados são desligados de novo; o token fica revogado com `api servico revogar robo-fabrica`)
 # Conta do GitHub: a que já está ativa (NUNCA `gh auth switch`).
 set -eu
@@ -21,7 +21,7 @@ $GH secret list -R "$GH_REPO" >/dev/null || { echo "FALHOU: gh sem acesso aos se
 case "$MODO" in
 --ensaio) echo "ENSAIO OK: gh acessa o repositório e conhece $ENABLE; nada mudou"; exit 0 ;;
 --reverter)
-  $GH variable set SAIU_DO_SUPABASE --body nao -R "$GH_REPO"; $GH variable delete FABRICA_EXIGE_API -R "$GH_REPO" || true
+  $GH variable delete SAIU_DO_SUPABASE -R "$GH_REPO" || true; $GH variable delete FABRICA_EXIGE_API -R "$GH_REPO" || true   # copia-do-banco.yml recusa com QUALQUER valor não vazio
   for w in $ENABLE; do $GH workflow disable "$w" -R "$GH_REPO" || true; done
   ssh "$HOST" "$SERVICO revogar robo-fabrica" || echo "aviso: revogue o token à mão: $SERVICO revogar robo-fabrica" >&2
   echo "REVERTIDO (Actions)"; exit 0 ;;

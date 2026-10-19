@@ -39,7 +39,7 @@ cp "$T/cron" "$CRON"
 # 4. t29-fase-a.sh (Mac): só desliga o que estava ativo e está na lista; ensaio não muda nada
 D="$T/D"; : > "$T/gh.log"
 sh "$AQUI/t29-fase-a.sh" "$T/repo" "$D" --ensaio >/dev/null; grep -q 'workflow disable' "$T/gh.log" && fail "ensaio mudou algo"
-cp "$T/gh.log" /dev/null; rm -f "$D/workflows-ativos-antes.txt"
+[ ! -e "$D/workflows-ativos-antes.txt" ] || fail "ensaio gravou a lista de ativos"
 sh "$AQUI/t29-fase-a.sh" "$T/repo" "$D" > "$T/o4" 2>&1 || { cat "$T/o4"; fail "fase-a Mac"; }
 [ "$(grep -c 'workflow disable' "$T/gh.log")" = 2 ] || fail "esperava 2 disables (w1, w2), não o 'outro'"
 ! grep -q outro.yml "$T/gh.log" || fail "mexeu em workflow fora da lista"
@@ -49,6 +49,8 @@ sh "$AQUI/t29-fase-a.sh" "$T/repo" "$D" > "$T/o4" 2>&1 || { cat "$T/o4"; fail "f
 W="$T/worker.env"; printf 'X=1\nWORKER_TAREFAS_DESLIGADAS=*\n' > "$W"; chmod 600 "$W"
 WORKER_ENV="$W" API_DIR="$T" bash "$AQUI/t20-worker.sh" conferir > /dev/null || fail "t20 conferir"
 sed -i.bak 's/=\*/=a,b/' "$W"; rm -f "$W.bak"; WORKER_ENV="$W" API_DIR="$T" bash "$AQUI/t20-worker.sh" conferir >/dev/null 2>&1 && fail "t20 aceitou worker.env sem '*'"
+WORKER_ENV="$W" API_DIR="$T" bash "$AQUI/t20-worker.sh" liberar >/dev/null 2>&1 && fail "t20 liberar rodou sem PRODUCAO"
+WORKER_ENV="$W" API_DIR="$T" bash "$AQUI/t20-worker.sh" recuperar >/dev/null 2>&1 && fail "t20 recuperar rodou sem PRODUCAO"
 # 7. cron novo = cron de hoje menos a faxina do Storage (nenhuma outra linha mudou)
 diff <(grep -v faxina-storage "$AQUI/../../../coletor/vps/robos.cron") <(grep -v faxina-storage "$AQUI/robos-social-dashboard.go" | grep -v '^# DESLIGADO NA VIRADA') > /dev/null || fail "cron novo difere do robos.cron além da faxina"
 ! grep -v '^#' "$AQUI/robos-social-dashboard.go" | grep -q faxina-storage || fail "faxina-storage continua ligada no cron novo"
