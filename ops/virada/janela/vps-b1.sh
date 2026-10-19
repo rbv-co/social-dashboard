@@ -32,13 +32,15 @@ papeis() {
   [ ! -e "$ADB/PRODUCAO" ] || falha "$ADB/PRODUCAO existe: papéis já aplicados? (o T+7 clone cria a marca DEPOIS)" || return 1
   aplica() { # aplica <arquivo.sql> <VAR> <arquivo-da-senha>
     [ -s "$S/$3" ] || falha "falta $S/$3" || return 1
-    ( export "$2=$(cat "$S/$3")"; docker exec -i -e "$2" api-db psql -U api -d api -Xq -v ON_ERROR_STOP=1 < "$ADB/$1" > /dev/null ) || falha "$1" || return 1
+    ( export "$2=$(cat "$S/$3")"; docker exec -i -e "$2" api-db psql -U api -d api -Xq -v ON_ERROR_STOP=1 < "$ADB/$1" > /dev/null 2> "$V/papeis.err" ) \
+      || { sed -E 's/[0-9a-f]{40,}/<oculto>/g' "$V/papeis.err" | tail -n 5; falha "$1"; return 1; }
     echo "ok $1"
   }
   aplica papel-copia.sql SENHA_COPIA copia.senha || return 1
   [ -s "$S/api-app.senha" ] && [ -s "$V/papel-da-api.sql" ] || falha "falta api-app.senha ou $V/papel-da-api.sql" || return 1
   { printf '\\set senha %s\n' "$(cat "$S/api-app.senha")"; cat "$V/papel-da-api.sql"; } \
-    | docker exec -i api-db psql -U api -d api -XAtq -v ON_ERROR_STOP=1 -f - > "$V/papel-da-api.out" || falha "papel-da-api.sql" || return 1
+    | docker exec -i api-db psql -U api -d api -XAtq -v ON_ERROR_STOP=1 -f - > "$V/papel-da-api.out" 2> "$V/papeis.err" \
+    || { sed -E 's/[0-9a-f]{40,}/<oculto>/g' "$V/papeis.err" | tail -n 5; falha "papel-da-api.sql"; return 1; }
   grep -q '^sobrou_de_outro_dono|0$' "$V/papel-da-api.out" && grep -q '^api_app|f|f|f|f|f$' "$V/papel-da-api.out" \
     || { cat "$V/papel-da-api.out"; falha "api_app: esperava sobrou_de_outro_dono|0 e api_app|f|f|f|f|f"; return 1; }
   echo "ok papel-da-api.sql (sobrou_de_outro_dono|0; api_app|f|f|f|f|f)"
@@ -155,8 +157,9 @@ host-chatwoot() { grep -E '^CRM_EVENT_WEBHOOK_URL=' /opt/chatwoot/.env | sed -E 
 nginx-reverter() {
   BK=$V/nginx; N=/etc/nginx
   SITE=$N/sites-enabled/central.rbvcompany.com
-  ts=$(ls -t "$BK"/site.* 2> /dev/null | head -n 1 | sed 's#.*/site\.##')
-  [ -n "$ts" ] || falha "sem $BK/site.<hora> (o t10-nginx.sh nunca rodou?)" || return 1
+  ts=$(cat "$V/nginx-ts-t10.txt" 2> /dev/null)
+  [ -n "$ts" ] && [ -s "$BK/site.$ts" ] || falha "sem $V/nginx-ts-t10.txt ou $BK/site.<hora> (o t+10-nginx não rodou?)" || return 1
+  grep -q 'nginx-teste' "$BK/site.$ts" && falha "o backup $ts é de uma cópia de teste: recuso" && return 1
   cat "$BK/site.$ts" > "$SITE" || return 1
   for s in central-api.conf api-arquivos-e-storage.conf central-chatwoot.conf; do
     if [ -e "$BK/$s.$ts" ]; then cp -p "$BK/$s.$ts" "$N/snippets/$s"; else rm -f "$N/snippets/$s"; fi
@@ -164,6 +167,7 @@ nginx-reverter() {
   if [ -e "$BK/semquery.conf.$ts" ]; then cp -p "$BK/semquery.conf.$ts" "$N/conf.d/semquery.conf"; else rm -f "$N/conf.d/semquery.conf"; fi
   nginx -t 2>&1 | tail -n 2 || return 1
   nginx -t > /dev/null 2>&1 && nginx -s reload || falha "nginx -t falhou depois de voltar o backup $ts" || return 1
+  [ "$(grep -c 'central-api.conf' "$SITE")" = 0 ] && ! grep -q 'nginx-teste' "$SITE" || falha "o site ainda inclui o Go depois de voltar o backup" || return 1
   echo "nginx de volta ao de antes do T+10 (backup $ts)"
 }
 
@@ -212,13 +216,20 @@ v8() {
   psql_api -c "select origem, count(*), max(recebido_em) from webhooks_recebidos where recebido_em > '$desde'::timestamptz group by 1 order by 1"
 }
 
+# estado do spool sem escrever nada: arquivos por pasta
+spool-estado() { find /var/lib/virada-spool -maxdepth 2 -type f 2> /dev/null | awk -F/ '{ print $4 }' | sort | uniq -c | sed 's/^ *//'; echo "spool: $(systemctl is-active virada-spool 2>&1)"; }
+
 # V9: worker sem tarefa DESLIGADA e sem falha nas que rodaram
 v9() {
   cd "$API" || return 1
   docker compose exec -T worker api worker listar > "$V/v9.listar" || falha "api worker listar" || return 1
   d=$(grep -c DESLIGADA "$V/v9.listar"); echo "tarefas: $(grep -c . "$V/v9.listar"), desligadas: $d"
   m=$(docker compose exec -T worker wget -qO- 127.0.0.1:8081/metricas 2> /dev/null) || falha "/metricas do worker não respondeu" || return 1
-  f=$(printf '%s\n' "$m" | grep -i 'falha' | grep -v '^#' | awk '$NF + 0 > 0')
+  py='import json,sys
+d=json.load(sys.stdin)
+for k,v in d.items():
+    if v.get("falhas", 0) > 0: print("%s falhas=%s %s" % (k, v["falhas"], v.get("ultimo_erro", "")[:80]))'
+  f=$(printf '%s' "$m" | python3 -c "$py") || falha "/metricas não é JSON legível" || return 1
   [ -z "$f" ] || { echo "falhas no /metricas:"; printf '%s\n' "$f" | head -n 10; }
   [ "$d" = 0 ] && [ -z "$f" ]
 }
@@ -226,6 +237,6 @@ v9() {
 [ $# -ge 1 ] || { sed -n '2,12p' "$0" >&2; exit 2; }
 fn=$1; shift
 case $fn in
-  recriar|papeis|clone|hosts|storage|subir|conferir|fumaca|parar|nginx-reverter|modo-chatwoot|host-chatwoot|v4|v7|v8|v9|revogar-fumaca) "$fn" "$@" ;;
+  recriar|papeis|clone|hosts|storage|subir|conferir|fumaca|parar|nginx-reverter|modo-chatwoot|host-chatwoot|v4|v7|v8|v9|spool-estado|revogar-fumaca) "$fn" "$@" ;;
   *) echo "função desconhecida: $fn" >&2; exit 2 ;;
 esac

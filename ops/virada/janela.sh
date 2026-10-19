@@ -6,7 +6,7 @@
 # Uso: bash ops/virada/janela.sh [--dry] <passo> | lista | status | preflight | ensaio | pular <passo> <motivo> | p17 |
 #                              rollback-a | rollback-b | rollback-b-replay | verifica [V1..V10|antes|depois|todos]
 #   <passo>  um dos ids de `janela.sh lista` (t-32, t-30-supabase, t-30-core, t-29, t-28, t-2, t-1, t+0, t+0.5, t+1, t+1-ensaio, t+7-papeis,
-#            t+7-clone, t+8-hosts, t+8-api, t+8-storage, t+9-conferir, t+9-escritas, t+9-fumaca, t+9b, t+10-go, t+10-nginx, t+11, t+14, t+16,
+#            t+7-clone, t+8-hosts, t+8-api, t+8-storage, t+9-conferir, t+9-escritas, t+9-fumaca, t+10-go, t+9b, t+10-nginx, t+11, t+14, t+16,
 #            t+17-pdv, t+17-site, t+17-robos, t+17-actions, t+19, t+20, t+21, t+22, t+25-fim). Cada um confere a pré-condição (os passos
 #            anteriores em $D/estado), executa, confere a saída esperada, grava em $D/janela-<data>.log e imprime, na última linha,
 #            `OK` ou `FALHOU -> rollback A|B` (ou `FALHOU -> esperar...`). Saída: 0 = OK; 1 = FALHOU; 2 = uso; 3 = bloqueado (falta passo anterior).
@@ -25,13 +25,20 @@ AQUI=$(cd "$(dirname "$0")" && pwd)
 V=${V:-$(cd "$AQUI/../.." && pwd)}
 J=$V/ops/virada/janela
 . "$V/ops/migracao/oculta.sh"
+# além da URL e do host: sequência de 40+ hex (senha/token gerados com openssl rand -hex 24) nunca vai à tela nem ao log
+oculta() { sed -E -e 's#postgres(ql)?://[^ "]*#<URL>#g' -e 's#(server at|host name|host|user|role) "[^"]*"( \([^)]*\))?#\1 "<oculto>"#g' -e 's/[0-9a-f]{40,}/<oculto>/g'; }
 VPS=${VPS:-op}
 SSH=${SSH:-ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30}
 export NA_VPS=${NA_VPS:-$SSH $VPS}      # os scripts do plano 01 (spool, core-destinos) rodam o sh no alvo por aqui
 DRY=${DRY:-0}
 [ "${1:-}" = --dry ] && { DRY=1; shift; }
 DATA=${DATA:-$(date +%Y%m%d)}
-D=${D:-$HOME/virada-janela-$DATA}
+# D tem de ser o MESMO do T-30 ao rollback (a janela cruza a meia-noite): ponteiro em ~/.virada-janela-atual
+if [ -z "${D:-}" ]; then
+  if [ -s "$HOME/.virada-janela-atual" ]; then D=$(cat "$HOME/.virada-janela-atual"); else
+    D=$HOME/virada-janela-$DATA; [ "$DRY" = 1 ] || { mkdir -p "$D"; echo "$D" > "$HOME/.virada-janela-atual"; }
+  fi
+fi
 T_JANELA=${T_JANELA:-22:40}
 umask 077; mkdir -p "$D"
 LOG=$D/janela-$DATA.log; EST=$D/estado; ULT=$D/.ultima-saida
@@ -103,9 +110,9 @@ t+8-storage|8|t+7-clone|A|Storage incremental no disco
 t+9-conferir|9|t+8-api|A|api worker conferir (V5)
 t+9-escritas|9|t+0.5|A|ninguém escreveu no Supabase depois da foto (V6)
 t+9-fumaca|9|t+8-storage,t+9-conferir|A|fumaça no 127.0.0.1:8080 (5 rotas + objeto)
-t+9b|9|t+9-fumaca|A|spool desligado: replay ao Go antes do tráfego vivo
-t+10-go|10|t+9-escritas,t+9b|A|GO técnico: V1 a V7 na tela
-t+10-nginx|10|t+10-go|B|nginx -> API Go
+t+10-go|10|t+9-escritas,t+9-fumaca|A|GO técnico: V1 a V7 na tela
+t+9b|10|t+10-go|B|spool desligado: replay ao Go (só depois do GO técnico; antes do nginx)
+t+10-nginx|10|t+9b|B|nginx -> API Go
 t+11|11|t+10-nginx|B|front com VITE_API_AREAS='*'
 t+14|14|t+10-nginx|B|Core entrega ao Go e solta o retido
 t+16|16|t+14|B|Chatwoot -> API Go
@@ -260,7 +267,8 @@ p_tmais9_fumaca() {
 p_tmais9b() {
   exe vps_b1 modo-chatwoot || return 1
   if [ "$DRY" != 1 ] && ! grep -q '^spool$' "$ULT"; then say "spool não estava ligado (modo $(head -n 1 "$ULT")): nada a desligar"; return 0; fi
-  exe sh "$V/ops/virada/spool-desliga.sh" go || return 1
+  exe sh "$V/ops/virada/spool-desliga.sh" go || { [ "$DRY" = 1 ] || : > "$D/spool-foi-ao-go"; return 1; }   # replay parcial também conta: o caminho passa a ser o B
+  [ "$DRY" = 1 ] || : > "$D/spool-foi-ao-go"
   confere "spool desligado" 'ok: spool desligado; rotas do Chatwoot -> go' || return 1
   exe sh "$V/ops/virada/spool-replay.sh" go
 }
@@ -274,12 +282,18 @@ p_tmais10_nginx() {
   obj=$(head -n 1 "$ULT"); [ "$DRY" = 1 ] && obj="<bucket/objeto>"
   [ -n "$obj" ] || { say "FALHOU: sem objeto do Storage (rode t+9-fumaca)"; return 1; }
   exe vps "sh /root/virada/t10-nginx.sh '$obj'" || return 1
+  # o rollback B volta ESTE backup (o do t10 desta execução), não "o mais recente" (os ensaios TESTE=1 gravam na mesma pasta)
+  if [ "$DRY" != 1 ]; then
+    ts=$(sed -n 's/^backup: .*\*\.//p' "$ULT" | head -n 1)
+    [ -n "$ts" ] || { say "FALHOU: não li o backup do t10-nginx.sh na saída (o rollback B não saberia o que voltar)"; return 1; }
+    vps "printf '%s\n' '$ts' > /root/virada/nginx-ts-t10.txt" || return 1
+  fi
   [ "$DRY" = 1 ] || vps "date -u +%Y-%m-%dT%H:%M:%SZ > /root/virada/troca-hora.txt" || return 1   # base do V8: só vale o que chegar depois
   say "TROCA FEITA: daqui em diante o Go recebe escrita (volta = rollback B)"
 }
 p_tmais11() {
   exe vps "cat /root/virada/front-sha.txt" || return 1
-  sha=$(head -n 1 "$ULT"); [ "$DRY" = 1 ] && sha="<sha>"
+  sha=$(head -n 1 "$ULT" | sed 's/-api$//'); [ "$DRY" = 1 ] && sha="<sha>"   # o front-sha.txt grava <curto>-api
   if [ "$DRY" != 1 ]; then
     git -C "$V" fetch -q origin 2> /dev/null
     main=$(git -C "$V" rev-parse origin/main) || return 1
@@ -424,49 +438,64 @@ cmd_p17() {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------------------------
-# Rollback A (roteiro §6): antes do nginx do T+10; nada escreveu no Go. Meta <= 5 min.
+# --- rollbacks (roteiro §6). Só desfazem o que a janela fez (estado em $D/estado); FORCAR=1 desfaz tudo.
+feito() { [ "$DRY" = 1 ] && return 0; s=$(estado_de "$1"); [ "$s" = OK ] || [ "$s" = FALHOU ] || [ "${FORCAR:-0}" = 1 ]; }
+fotos_ok() { # as fotos do Supabase que os passos feitos deviam ter deixado em $D/sb: sem elas o descongelar "passa" sem fazer nada
+  if feito t-30-supabase && [ "$DRY" != 1 ] && [ ! -s "$D/sb/cron-antes.tsv" ]; then say "FALHOU: sem $D/sb/cron-antes.tsv: este D não é o da janela (ponteiro ~/.virada-janela-atual?) e o pg_cron não seria religado"; return 1; fi
+  if feito t+0 && [ "$DRY" != 1 ] && [ ! -s "$D/sb/acl-antes.tsv" ]; then say "FALHOU: sem $D/sb/acl-antes.tsv: este D não é o da janela e o Supabase continuaria congelado"; return 1; fi
+  return 0
+}
+# depois de um rollback os passos de ida deixam de valer: guarda o estado e recomeça vazio (senão t+10-nginx passaria como se nada tivesse voltado)
+encerra_estado() { [ "$DRY" = 1 ] || { mv "$EST" "$D/estado.rollback-$(date +%H%M%S)"; : > "$EST"; }; }
+# Chatwoot: se as rotas estão no spool, o spool devolve à edge; se estão no Go, voltam para a edge (já descongelada)
+chatwoot_para_edge() {
+  exe vps_b1 modo-chatwoot || return 1
+  case "$(head -n 1 "$ULT")" in
+    spool) exe sh "$V/ops/virada/spool-desliga.sh" edge ;;
+    go) exe sh "$V/ops/virada/spool-nginx.sh" edge ;;
+    *) say "rotas do Chatwoot: $(head -n 1 "$ULT"): nada a fazer" ;;
+  esac
+}
+
+# Rollback A: antes do nginx do T+10 e antes do spool ir ao Go; nada escreveu no Go. Meta <= 5 min.
 cmd_rollback_a() {
   say "=== ROLLBACK A (meta <= 5 min)"
   sb || exit 1
+  fotos_ok || exit 1
   if [ "$DRY" != 1 ]; then
+    [ ! -e "$D/spool-foi-ao-go" ] || { echo "FALHOU: o spool já levou eventos do Chatwoot ao Go (t+9b): o caminho é o rollback B (traz o delta de volta)"; exit 1; }
     vps "grep -c central-api.conf /etc/nginx/sites-enabled/central.rbvcompany.com" > "$ULT" 2>&1
     [ "$(head -n 1 "$ULT")" = 0 ] || { echo "FALHOU: o nginx já inclui o Go (T+10 feito): o caminho é o rollback B (janela.sh rollback-b)"; exit 1; }
   fi
   rc=0
   say "A1 parar API e worker";                  exe vps_b1 parar || rc=1
-  say "A2 descongelar o Supabase";              exe sh "$V/ops/virada/supabase.sh" descongelar "$SB" "$D/sb" || rc=1
-  say "A3 Core: env de antes da janela";        exe sh "$V/ops/virada/core-destinos.sh" restaurar || rc=1
-  say "A3b spool: o replay devolve à edge (já descongelada)"
-  exe vps_b1 modo-chatwoot || rc=1
-  case "$(head -n 1 "$ULT")" in
-    spool) exe sh "$V/ops/virada/spool-desliga.sh" edge || rc=1 ;;
-    go) exe sh "$V/ops/virada/spool-nginx.sh" edge || rc=1 ;;
-    *) say "rotas do Chatwoot: $(head -n 1 "$ULT"): nada a fazer" ;;
-  esac
-  say "A4 robôs e Actions de volta (cron.d, cartoes-ean, workflows que estavam ativos)"
-  exe sh "$J/t29-desfazer.sh" "$D" || rc=1
+  if feito t-30-supabase || feito t+0; then say "A2 descongelar o Supabase"; exe sh "$V/ops/virada/supabase.sh" descongelar "$SB" "$D/sb" || rc=1; fi
+  if feito t-30-core; then say "A3 Core: env de antes da janela"; exe sh "$V/ops/virada/core-destinos.sh" restaurar || rc=1; fi
+  say "A3b Chatwoot: o replay devolve à edge (já descongelada)"; chatwoot_para_edge || rc=1
+  if feito t-29; then say "A4 robôs e Actions de volta (cron.d, cartoes-ean, workflows que estavam ativos)"; exe sh "$J/t29-desfazer.sh" "$D" || rc=1; fi
   [ "$DRY" = 1 ] || { vps "grep -c '^SAIU_DO_SUPABASE=' /etc/robos.env" > "$ULT" 2>&1; [ "$(head -n 1 "$ULT")" = 0 ] || say "ATENÇÃO: /etc/robos.env já tem SAIU_DO_SUPABASE (o T+17 rodou?): rode 'bash /root/virada/t17-robos.sh reverter' na VPS"; }
   say "A5 api-db volta a ser de ensaio (nada no Go a guardar)"
   exe vps "rm -f /root/api-db/PRODUCAO" || rc=1
   tunel_fecha
-  [ $rc = 0 ] && { say "ROLLBACK A CONCLUÍDO. Confira: Supabase descongelado (ACL e pg_cron iguais), /up do Core 200, cartoes-ean ativo."; echo "OK"; exit 0; }
-  say "ROLLBACK A COM FALHA: veja acima qual passo (cada um é independente; repita o que falhou à mão)"; echo "FALHOU -> rollback A incompleto"; exit 1
+  [ $rc = 0 ] && { encerra_estado; say "ROLLBACK A CONCLUÍDO. Confira: Supabase descongelado (ACL e pg_cron iguais), /up do Core 200, cartoes-ean ativo."; echo "OK"; exit 0; }
+  say "ROLLBACK A COM FALHA: veja acima qual passo (cada um é independente; repita o que falhou à mão; o estado foi mantido)"; echo "FALHOU -> rollback A incompleto"; exit 1
 }
 
-# Rollback B (roteiro §6), parte 1 (B1 e B2): nada mais escreve no Go; delta do que o Go ganhou. Meta B1+B2 ~ 8 min.
+# Rollback B, parte 1 (B1 e B2): nada mais escreve no Go; delta do que o Go ganhou. Meta B1+B2 ~ 8 min.
 cmd_rollback_b() {
   say "=== ROLLBACK B parte 1: parar de escrever no Go e tirar o delta"
   sb || exit 1
+  fotos_ok || exit 1
   supa=$(coletor_var SUPABASE_URL); [ "$DRY" = 1 ] && supa=https://REF.supabase.co
   [ -n "$supa" ] || { echo "FALHOU: sem SUPABASE_URL em coletor/.env (o delta devolve o host do Storage ao do Supabase)"; exit 1; }
   rc=0
-  say "B1a front para a release anterior";      exe vps "bash /root/virada/t11-front.sh reverter" || rc=1
-  say "B1b nginx como era antes do T+10";       exe vps_b1 nginx-reverter || rc=1
-  say "B1c Core retém de novo (os webhooks da loja voltam a ficar pendentes, sem se perder)"; exe sh "$V/ops/virada/core-destinos.sh" instalar /root/virada/core/core.env.janela || rc=1
-  say "B1d parar API e worker";                 exe vps_b1 parar || rc=1
-  say "B1e Chatwoot: se ele fala com a central (P17), o spool segura os eventos até o Supabase voltar"
+  if feito t+11; then say "B1a front para a release anterior"; exe vps "bash /root/virada/t11-front.sh reverter" || rc=1; fi
+  if feito t+10-nginx; then say "B1b nginx como era antes do T+10"; exe vps_b1 nginx-reverter || rc=1; fi
+  # Chatwoot: segura os eventos no spool até o Supabase voltar (falhar aqui = evento perdido: é falha do B1)
   exe vps_b1 host-chatwoot || rc=1
-  if [ "$DRY" = 1 ] || grep -q 'central.rbvcompany.com' "$ULT"; then exe sh "$V/ops/virada/spool-liga.sh" || say "AVISO: spool não ligou: eventos do Chatwoot durante o rollback podem se perder"; fi
+  if [ "$DRY" = 1 ] || grep -q 'central.rbvcompany.com' "$ULT"; then say "B1c spool segura o Chatwoot durante o rollback"; exe sh "$V/ops/virada/spool-liga.sh" || { say "FALHOU: o spool não ligou: o Chatwoot bate num Go parado e os eventos se perdem"; rc=1; }; fi
+  if feito t+14; then say "B1d Core retém de novo (os webhooks da loja voltam a ficar pendentes, sem se perder)"; exe sh "$V/ops/virada/core-destinos.sh" instalar /root/virada/core/core.env.janela || rc=1; fi
+  say "B1e revogar a fumaça e parar API e worker"; exe vps_b1 revogar-fumaca; exe vps_b1 parar || rc=1
   [ $rc = 0 ] || { say "B1 COM FALHA: nada mais deve escrever no Go; resolva antes do delta"; echo "FALHOU -> rollback B parte 1"; exit 1; }
   say "B2 pg_dump do api e delta (foto do corte vs agora)"
   tunel_abre || exit 1
@@ -486,39 +515,36 @@ cmd_rollback_b() {
 cmd_rollback_b_replay() {
   say "=== ROLLBACK B parte 2: replay no Supabase, comparar, descongelar"
   sb || exit 1
+  fotos_ok || exit 1
   [ "$DRY" = 1 ] || [ -s "$D/delta/replay.sql" ] || { echo "FALHOU: sem $D/delta/replay.sql (rode rollback-b antes)"; exit 1; }
-  say "B3a o Supabase não pode ter mudado depois do corte"
-  exe sh "$V/ops/virada/delta.sh" destino "$SB" "$D/delta" || { echo "FALHOU: MUDOU no destino: alguém escreveu no Supabase depois do congelamento; descubra quem antes do replay"; exit 1; }
-  confere "destino intacto" 'destino intacto' || { echo "FALHOU: o destino não está intacto"; exit 1; }
-  say "B3b replay (uma transação)";   exe psql "$SB" -X -v ON_ERROR_STOP=1 -f "$D/delta/replay.sql" || { echo "FALHOU: replay (a transação desfez tudo; o Supabase segue congelado)"; exit 1; }
-  say "B3c comparar linha a linha";   exe sh "$V/ops/virada/delta.sh" comparar "$SB" "$D/delta" || { echo "FALHOU: o Supabase não ficou igual ao Go"; exit 1; }
-  confere "igual" 'IGUAL: [0-9]+ tabelas' || { echo "FALHOU: sem IGUAL"; exit 1; }
-  say "B4 o que NÃO volta: logins/senhas/convites feitos no Go (usuarios não volta ao auth.users) e arquivos enviados ao disco depois do corte"
-  [ "$DRY" = 1 ] || { vps "find /var/lib/api/arquivos -newer /root/api-db/PRODUCAO -type f" > "$D/nao-volta.txt" 2>&1; say "arquivos novos no disco: $(wc -l < "$D/nao-volta.txt" | tr -d ' ') (lista em $D/nao-volta.txt; subir ao Storage à mão)"; }
+  if [ -e "$D/delta/replay-feito" ] && [ "$DRY" != 1 ]; then say "B3 replay já feito e conferido neste D: seguindo para o B5"; else
+    say "B3a o Supabase não pode ter mudado depois do corte"
+    exe sh "$V/ops/virada/delta.sh" destino "$SB" "$D/delta" || { echo "FALHOU: MUDOU no destino: alguém escreveu no Supabase depois do congelamento; descubra quem antes do replay"; exit 1; }
+    confere "destino intacto" 'destino intacto' || { echo "FALHOU: o destino não está intacto"; exit 1; }
+    say "B3b replay (uma transação)";   exe psql "$SB" -X -v ON_ERROR_STOP=1 -f "$D/delta/replay.sql" || { echo "FALHOU: replay (a transação desfez tudo; o Supabase segue congelado)"; exit 1; }
+    say "B3c comparar linha a linha";   exe sh "$V/ops/virada/delta.sh" comparar "$SB" "$D/delta" || { echo "FALHOU: o Supabase não ficou igual ao Go"; exit 1; }
+    confere "igual" 'IGUAL: [0-9]+ tabelas' || { echo "FALHOU: sem IGUAL"; exit 1; }
+    [ "$DRY" = 1 ] || : > "$D/delta/replay-feito"
+  fi
+  say "B4 o que NÃO volta: logins/senhas/convites feitos no Go (usuarios não volta ao auth.users) e arquivos enviados ao disco depois da troca"
+  [ "$DRY" = 1 ] || { vps "find /var/lib/api/arquivos -newer /root/virada/troca-hora.txt -type f 2>/dev/null || find /var/lib/api/arquivos -newer /root/api-db/PRODUCAO -type f" > "$D/nao-volta.txt" 2>&1; say "arquivos novos no disco: $(wc -l < "$D/nao-volta.txt" | tr -d ' ') (lista em $D/nao-volta.txt; subir ao Storage à mão)"; }
   rc=0
   say "B5a descongelar o Supabase";    exe sh "$V/ops/virada/supabase.sh" descongelar "$SB" "$D/sb" || rc=1
-  say "B5b Core com o env de antes";   exe sh "$V/ops/virada/core-destinos.sh" restaurar || rc=1
-  say "B5c Chatwoot na edge: o spool devolve o que segurou"
-  exe vps_b1 modo-chatwoot || rc=1
-  case "$(head -n 1 "$ULT")" in
-    spool) exe sh "$V/ops/virada/spool-desliga.sh" edge || rc=1 ;;
-    go) exe sh "$V/ops/virada/spool-nginx.sh" edge || rc=1 ;;
-    *) say "rotas do Chatwoot: $(head -n 1 "$ULT")" ;;
-  esac
-  say "B5d robôs e Actions de volta (T+17 desfeito)"
-  exe vps "bash /root/virada/t17-robos.sh reverter" || rc=1
-  exe sh "$J/t17-actions.sh" "$D" --reverter || rc=1
-  exe sh "$J/t29-desfazer.sh" "$D" || rc=1
-  say "B5e PDV, site e Vessel"
-  exe vps "bash /root/virada/t17-pdv.sh reverter" || rc=1
-  exe sh "$J/t17-site.sh" reverter || rc=1
-  exe vps "bash /root/virada/t19-vessel.sh reverter" || rc=1
-  exe vps "bash /root/virada/t20-worker.sh reverter" || rc=1
+  if feito t-30-core; then say "B5b Core com o env de antes"; exe sh "$V/ops/virada/core-destinos.sh" restaurar || rc=1; fi
+  say "B5c Chatwoot na edge: o spool devolve o que segurou"; chatwoot_para_edge || rc=1
+  say "B5d robôs, Actions, PDV, site, Vessel e worker (só o que a janela fez)"
+  feito t+17-robos && { exe vps "bash /root/virada/t17-robos.sh reverter" || rc=1; }
+  feito t+17-actions && { exe sh "$J/t17-actions.sh" "$D" --reverter || rc=1; }
+  feito t-29 && { exe sh "$J/t29-desfazer.sh" "$D" || rc=1; }
+  feito t+17-pdv && { exe vps "bash /root/virada/t17-pdv.sh reverter" || rc=1; }
+  feito t+17-site && { exe sh "$J/t17-site.sh" reverter || rc=1; }
+  feito t+19 && { exe vps "bash /root/virada/t19-vessel.sh reverter" || rc=1; }
+  feito t+20 && { exe vps "bash /root/virada/t20-worker.sh reverter" || rc=1; }
   say "B6 /root/api-db/PRODUCAO FICA (o api-db guarda o que foi escrito depois do corte); só sai com ok do dono, depois de D+14"
   tunel_fecha
   say "A CONFERIR À MÃO: fumaça do deploy do Chatwoot/PDV/site; o webhook de pedidos da Shopify não mudou (todos já apontam ao Core)."
-  [ $rc = 0 ] && { say "ROLLBACK B CONCLUÍDO"; echo "OK"; exit 0; }
-  say "ROLLBACK B COM FALHA em algum passo acima (cada um é independente; repita à mão)"; echo "FALHOU -> rollback B incompleto"; exit 1
+  [ $rc = 0 ] && { encerra_estado; say "ROLLBACK B CONCLUÍDO"; echo "OK"; exit 0; }
+  say "ROLLBACK B COM FALHA em algum passo acima (cada um é independente; repita à mão; o estado foi mantido)"; echo "FALHOU -> rollback B incompleto"; exit 1
 }
 
 # Ensaio a seco: só os modos seguros dos scripts (nada muda em produção). Imprime `ok`/`FALHOU` por item e o total.

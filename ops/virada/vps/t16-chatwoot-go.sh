@@ -68,7 +68,7 @@ done
 resp=$(curl -sk --max-time 10 -w ' %{http_code}' --resolve "central.rbvcompany.com:443:127.0.0.1" "$NOVO_BASE/api/receber-webhook-chatwoot" < /dev/null) || resp="sem resposta"
 if [ "${CONFERE_EDGE:-0}" = 1 ]; then
   # P17 (antes da janela): a central faz proxy à edge do Supabase, que responde {"ok":false} 405 ao GET
-  case $resp in *'"ok":false'*' 405') ;; *) volta "esperava 405 da edge ({\"ok\":false}), veio: $resp" ;; esac
+  case $resp in *'"spool"'*) volta "esperava a edge, veio o spool: $resp" ;; *'"ok":false'*' 405') ;; *) volta "esperava 405 da edge ({\"ok\":false}), veio: $resp" ;; esac
 else
   case $resp in *'"ok"'*|*'"spool"'*|"sem resposta") volta "a rota da central não é a do Go: $resp" ;; *' 405') ;; *) volta "esperava 405 da API Go, veio: $resp" ;; esac
 fi

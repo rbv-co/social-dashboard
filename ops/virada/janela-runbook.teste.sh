@@ -13,9 +13,9 @@ FV=$T/v; mkdir -p "$FV/ops/virada/janela" "$FV/ops/migracao" "$FV/coletor" "$T/b
 cp "$AQUI/janela.sh" "$AQUI/verifica-virada.sh" "$FV/ops/virada/"; cp "$AQUI/janela/vps-b1.sh" "$FV/ops/virada/janela/"; cp "$RAIZ/ops/migracao/oculta.sh" "$FV/ops/migracao/"
 stub() { printf '#!/bin/sh\n%s\n' "$2" > "$FV/ops/virada/$1"; }
 stub supabase.sh 'echo "supabase.sh $1 (url $2)" >> "$FAKE_LOG"; case "$1" in
-  desligar-cron) echo "jobs: 23, ativos antes: 23"; echo "pg_cron: 0 jobs ativos (rode em-andamento)";;
+  desligar-cron) mkdir -p "$3"; echo x > "$3/cron-antes.tsv"; echo "jobs: 23, ativos antes: 23"; echo "pg_cron: 0 jobs ativos (rode em-andamento)";;
   em-andamento) printf "0\t0\t900\n";;
-  congelar) echo "foto da ACL: 10 linhas; reversão: 4 GRANTs"; echo "CONGELADO: x";;
+  congelar) mkdir -p "$3"; echo x > "$3/acl-antes.tsv"; echo "foto da ACL: 10 linhas; reversão: 4 GRANTs"; echo "CONGELADO: x";;
   escritas) echo "foto 1 das escritas gravada (3 tabelas)";;
   descongelar) echo "ACL igual à de antes (10 linhas)";; esac; exit ${FAKE_RC_SUPABASE:-0}'
 stub core-destinos.sh 'echo "core-destinos $*" >> "$FAKE_LOG"; case "$1" in janela) echo "ok: Core segurando os destinos do Supabase desde 2026-10-20 01:30:00 UTC";; *) echo "ok $1";; esac'
@@ -88,11 +88,21 @@ set +e; FORCAR=1 $J t+8-api > "$T/o" 2>&1; rc=$?; set -e
 FAKE_MODO=edge FORCAR=1 $J t+9b > "$T/o" 2>&1 || fail "t+9b edge"; grep -q 'nada a desligar' "$T/o" || fail "t+9b edge sem mensagem"
 FAKE_MODO=spool FORCAR=1 REPETIR=1 $J t+9b > "$T/o" 2>&1 || fail "t+9b spool: $(cat "$T/o")"; grep -q 'spool-desliga go' "$FAKE_LOG" || fail "não chamou spool-desliga go"
 
-# 8. rollback A: recusa se o nginx já inclui o Go; senão faz A1..A5 e termina em OK
+# 8. rollback A: recusa se o spool já foi ao Go (B) ou se o nginx já inclui o Go; senão faz A1..A5, termina em OK e zera o estado
+[ -e "$T/D/spool-foi-ao-go" ] || fail "t+9b com spool não deixou a marca spool-foi-ao-go"
+set +e; $J rollback-a > "$T/o" 2>&1; rc=$?; set -e
+[ $rc = 1 ] && grep -q 'rollback B' "$T/o" || fail "rollback-a devia recusar depois do spool ir ao Go"
+rm -f "$T/D/spool-foi-ao-go"
+mv "$T/D/sb/acl-antes.tsv" "$T/acl.bak"
+set +e; $J rollback-a > "$T/o" 2>&1; rc=$?; set -e
+[ $rc = 1 ] && grep -q 'acl-antes.tsv' "$T/o" || fail "rollback-a sem foto da ACL devia falhar ($rc)"
+mv "$T/acl.bak" "$T/D/sb/acl-antes.tsv"
 set +e; FAKE_NGINX=1 $J rollback-a > "$T/o" 2>&1; rc=$?; set -e
 [ $rc = 1 ] && grep -q 'rollback B' "$T/o" || fail "rollback-a devia recusar com o Go no nginx"
 : > "$FAKE_LOG"; FAKE_MODO=spool $J rollback-a > "$T/o" 2>&1 || fail "rollback-a: $(cat "$T/o")"
 [ "$(tail -n 1 "$T/o")" = OK ] || fail "rollback-a sem OK"
+[ "$($J status | grep -c '^OK ')" = 0 ] && ls "$T"/D/estado.rollback-* > /dev/null || fail "o rollback não zerou o estado"
+set +e; $J t+0 > "$T/o" 2>&1; rc=$?; set -e; [ $rc = 3 ] || fail "depois do rollback t+0 não devia passar sem t-1 ($rc)"
 for x in 'supabase.sh descongelar' 'core-destinos restaurar' 'spool-desliga edge' 't29-desfazer' 'rm -f /root/api-db/PRODUCAO'; do grep -q -- "$x" "$FAKE_LOG" || fail "rollback-a não fez: $x"; done
 a=$(grep -n 'supabase.sh descongelar' "$FAKE_LOG" | head -n1 | cut -d: -f1); b=$(grep -n 'spool-desliga edge' "$FAKE_LOG" | head -n1 | cut -d: -f1)
 [ "$a" -lt "$b" ] || fail "o spool tem de devolver à edge DEPOIS de descongelar"
