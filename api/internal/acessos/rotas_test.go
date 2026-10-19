@@ -34,6 +34,13 @@ var escritas = map[string]escrita{
 	"POST /acessos/vinculos":            {"", `{"recurso_id":"` + R1 + `","pessoa_id":"` + P3 + `","papel":"leitura","estado":"pendente"}`, 403},
 	"POST /acessos/termos":              {"", `{"pessoa_id":"` + P3 + `","titulo":"x","arquivo_path":"` + P3 + `/x.pdf"}`, 403},
 	"DELETE /acessos/termos/{id}":       {T1, ``, 404},
+
+	"POST /acessos/drive/marcas":                      {"", `{"nome":"Intrusa","external_id":"i-1"}`, 403},
+	"DELETE /acessos/drive/marcas/{id}":               {"a4000000-0000-4000-a000-0000000000ff", ``, 404},
+	"POST /acessos/drive/setores":                     {"", `{"chave":"c_i","label":"Intruso"}`, 403},
+	"DELETE /acessos/drive/setores/{id}":              {"c_marketing_1234", ``, 404},
+	"DELETE /acessos/drive/setores/{chave}/overrides": {"c_marketing_1234", ``, 404},
+	"PUT /acessos/drive/overrides/{external_id}":      {"od-pasta-1", `{"setor_chave":"c_marketing_1234"}`, 403},
 }
 
 // varrer chama `f` para cada rota de Montar, com o caminho já preenchido e o corpo de `escritas`.
@@ -51,7 +58,7 @@ func varrer(t *testing.T, m *mundoteste.Mundo, f func(metodo, rota, caminho, cor
 			t.Errorf("escrita sem caso nas varreduras: %s %s", metodo, rota)
 			return nil
 		}
-		f(metodo, rota, strings.ReplaceAll(rota, "{id}", e.id), e.corpo)
+		f(metodo, rota, strings.NewReplacer("{id}", e.id, "{chave}", e.id, "{external_id}", e.id).Replace(rota), e.corpo)
 		return nil
 	})
 	if err != nil {
@@ -72,8 +79,8 @@ func TestEscritasRecusamImpersonado(t *testing.T) {
 			t.Errorf("%s %s como impersonado = %d %s", metodo, rota, st, b)
 		}
 	})
-	if n != 12 {
-		t.Errorf("escritas = %d, esperava 12 (rota de escrita nova? ponha soSessaoPropria e um caso em `escritas`)", n)
+	if n != 18 {
+		t.Errorf("escritas = %d, esperava 18 (rota de escrita nova? ponha soSessaoPropria e um caso em `escritas`)", n)
 	}
 	if depois := m.Um(t, fotoDosAcessos); depois != antes {
 		t.Error("o impersonado mudou o banco")
@@ -99,8 +106,8 @@ func TestNadaVazaParaQuemNaoTemAcessos(t *testing.T) {
 				t.Errorf("%s %s %s = %d %s; esperava %d", quem, metodo, rota, st, b, quer)
 			}
 		})
-		if l != 6 || g != 12 {
-			t.Errorf("rotas = %d leituras e %d escritas, esperava 6 e 12", l, g)
+		if l != 9 || g != 18 {
+			t.Errorf("rotas = %d leituras e %d escritas, esperava 9 e 18", l, g)
 		}
 	}
 	varrer(t, m, func(metodo, rota, caminho, corpo string) {

@@ -122,9 +122,6 @@ var tabelasSemRota = map[string]string{
 	"robos_saude":             "ligada a área paineis: GET /status-ia/saude-dos-robos",
 	"noticias_concorrentes":   "ligada a área paineis: GET /noticias/*; o resto é do robô (coletor/)",
 	"noticias_panorama":       "ligada a área paineis: GET /noticias/panorama",
-	"acessos_drive_marcas":    "ACHADO 02-1: aba Drive do Acessos grava direto no Supabase, sem rota nem ROTAS",
-	"acessos_drive_overrides": "ACHADO 02-1",
-	"acessos_drive_setores":   "ACHADO 02-1",
 }
 
 // escritasDesviadas: escrita simples ("tabela:operação") que ainda está no código do painel, mas que com a
