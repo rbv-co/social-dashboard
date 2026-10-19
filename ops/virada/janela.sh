@@ -34,11 +34,11 @@ DRY=${DRY:-0}
 [ "${1:-}" = --dry ] && { DRY=1; shift; }
 DATA=${DATA:-$(date +%Y%m%d)}
 # D tem de ser o MESMO do T-30 ao rollback (a janela cruza a meia-noite): ponteiro em ~/.virada-janela-atual
+# (o ponteiro só é gravado quando um PASSO roda de verdade: lista/status/preflight/ensaio não fixam o D de um dia qualquer)
 if [ -z "${D:-}" ]; then
-  if [ -s "$HOME/.virada-janela-atual" ]; then D=$(cat "$HOME/.virada-janela-atual"); else
-    D=$HOME/virada-janela-$DATA; [ "$DRY" = 1 ] || { mkdir -p "$D"; echo "$D" > "$HOME/.virada-janela-atual"; }
-  fi
+  if [ -s "$HOME/.virada-janela-atual" ]; then D=$(cat "$HOME/.virada-janela-atual"); else D=$HOME/virada-janela-$DATA; fi
 fi
+export D
 T_JANELA=${T_JANELA:-22:40}
 umask 077; mkdir -p "$D"
 LOG=$D/janela-$DATA.log; EST=$D/estado; ULT=$D/.ultima-saida
@@ -281,12 +281,14 @@ p_tmais10_nginx() {
   exe objeto_fumaca || return 1
   obj=$(head -n 1 "$ULT"); [ "$DRY" = 1 ] && obj="<bucket/objeto>"
   [ -n "$obj" ] || { say "FALHOU: sem objeto do Storage (rode t+9-fumaca)"; return 1; }
+  [ "$DRY" = 1 ] || vps "rm -f /root/virada/nginx-ts-t10.txt" || return 1     # nada de ts velho de outra tentativa
   exe vps "sh /root/virada/t10-nginx.sh '$obj'" || return 1
   # o rollback B volta ESTE backup (o do t10 desta execução), não "o mais recente" (os ensaios TESTE=1 gravam na mesma pasta)
   if [ "$DRY" != 1 ]; then
     ts=$(sed -n 's/^backup: .*\*\.//p' "$ULT" | head -n 1)
     [ -n "$ts" ] || { say "FALHOU: não li o backup do t10-nginx.sh na saída (o rollback B não saberia o que voltar)"; return 1; }
-    vps "printf '%s\n' '$ts' > /root/virada/nginx-ts-t10.txt" || return 1
+    # só vale o backup de ANTES do Go (REPETIR=1 depois de um sucesso daria um backup que já inclui o Go)
+    vps "! grep -q central-api.conf /root/virada/nginx/site.$ts && printf '%s\n' '$ts' > /root/virada/nginx-ts-t10.txt" || { say "FALHOU: o backup $ts do t10 já inclui o Go (REPETIR depois de sucesso?): o rollback B não teria a que voltar"; return 1; }
   fi
   [ "$DRY" = 1 ] || vps "date -u +%Y-%m-%dT%H:%M:%SZ > /root/virada/troca-hora.txt" || return 1   # base do V8: só vale o que chegar depois
   say "TROCA FEITA: daqui em diante o Go recebe escrita (volta = rollback B)"
@@ -382,6 +384,7 @@ roda_passo() {
       done
     fi
   fi
+  [ "$DRY" = 1 ] || { mkdir -p "$D"; [ -s "$HOME/.virada-janela-atual" ] || echo "$D" > "$HOME/.virada-janela-atual"; }
   ini=$(date +%s)
   say "=== $id (T$( [ "${min#-}" = "$min" ] && echo "+$min" || echo "$min" ), $(hora_nominal "$min")): $desc"
   log "INÍCIO $id"
@@ -440,13 +443,22 @@ cmd_p17() {
 # ---------------------------------------------------------------------------------------------------------------------------------------
 # --- rollbacks (roteiro §6). Só desfazem o que a janela fez (estado em $D/estado); FORCAR=1 desfaz tudo.
 feito() { [ "$DRY" = 1 ] && return 0; s=$(estado_de "$1"); [ "$s" = OK ] || [ "$s" = FALHOU ] || [ "${FORCAR:-0}" = 1 ]; }
-fotos_ok() { # as fotos do Supabase que os passos feitos deviam ter deixado em $D/sb: sem elas o descongelar "passa" sem fazer nada
-  if feito t-30-supabase && [ "$DRY" != 1 ] && [ ! -s "$D/sb/cron-antes.tsv" ]; then say "FALHOU: sem $D/sb/cron-antes.tsv: este D não é o da janela (ponteiro ~/.virada-janela-atual?) e o pg_cron não seria religado"; return 1; fi
-  if feito t+0 && [ "$DRY" != 1 ] && [ ! -s "$D/sb/acl-antes.tsv" ]; then say "FALHOU: sem $D/sb/acl-antes.tsv: este D não é o da janela e o Supabase continuaria congelado"; return 1; fi
+fotos_ok() { # as fotos do Supabase que os passos que DERAM CERTO deviam ter deixado em $D/sb: sem elas o descongelar "passa" sem fazer nada
+  if [ "$DRY" != 1 ] && [ ! -s "$EST" ] && [ "${FORCAR:-0}" != 1 ]; then say "FALHOU: o estado de $D está vazio (D errado? ponteiro ~/.virada-janela-atual) e nada seria desfeito; FORCAR=1 para forçar"; return 1; fi
+  if [ "$(estado_de t-30-supabase)" = OK ] && [ "$DRY" != 1 ] && [ ! -s "$D/sb/cron-antes.tsv" ]; then say "FALHOU: sem $D/sb/cron-antes.tsv: este D não é o da janela (ponteiro ~/.virada-janela-atual?) e o pg_cron não seria religado"; return 1; fi
+  if [ "$(estado_de t+0)" = OK ] && [ "$DRY" != 1 ] && [ ! -s "$D/sb/acl-antes.tsv" ]; then say "FALHOU: sem $D/sb/acl-antes.tsv: este D não é o da janela e o Supabase continuaria congelado"; return 1; fi
   return 0
 }
 # depois de um rollback os passos de ida deixam de valer: guarda o estado e recomeça vazio (senão t+10-nginx passaria como se nada tivesse voltado)
-encerra_estado() { [ "$DRY" = 1 ] || { mv "$EST" "$D/estado.rollback-$(date +%H%M%S)"; : > "$EST"; }; }
+encerra_estado() {
+  [ "$DRY" = 1 ] && return 0
+  h=$(date +%H%M%S)
+  mv "$EST" "$D/estado.rollback-$h"; : > "$EST"
+  [ -d "$D/sb" ] && mv "$D/sb" "$D/sb.rollback-$h"                  # o supabase.sh recusa sobrescrever fotos: nova tentativa começa limpa
+  rm -f "$D/spool-foi-ao-go" "$D/delta/replay-feito"
+  [ "$(cat "$HOME/.virada-janela-atual" 2> /dev/null)" = "$D" ] && rm -f "$HOME/.virada-janela-atual"
+  return 0
+}
 # Chatwoot: se as rotas estão no spool, o spool devolve à edge; se estão no Go, voltam para a edge (já descongelada)
 chatwoot_para_edge() {
   exe vps_b1 modo-chatwoot || return 1

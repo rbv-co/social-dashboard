@@ -157,9 +157,10 @@ host-chatwoot() { grep -E '^CRM_EVENT_WEBHOOK_URL=' /opt/chatwoot/.env | sed -E 
 nginx-reverter() {
   BK=$V/nginx; N=/etc/nginx
   SITE=$N/sites-enabled/central.rbvcompany.com
+  if [ "$(grep -c 'central-api.conf' "$SITE")" = 0 ]; then echo "nginx já sem o Go (o t10-nginx.sh voltou sozinho ou nunca rodou): nada a voltar"; return 0; fi
   ts=$(cat "$V/nginx-ts-t10.txt" 2> /dev/null)
   [ -n "$ts" ] && [ -s "$BK/site.$ts" ] || falha "sem $V/nginx-ts-t10.txt ou $BK/site.<hora> (o t+10-nginx não rodou?)" || return 1
-  grep -q 'nginx-teste' "$BK/site.$ts" && falha "o backup $ts é de uma cópia de teste: recuso" && return 1
+  if grep -q 'nginx-teste' "$BK/site.$ts"; then falha "o backup $ts é de uma cópia de teste: recuso"; return 1; fi
   cat "$BK/site.$ts" > "$SITE" || return 1
   for s in central-api.conf api-arquivos-e-storage.conf central-chatwoot.conf; do
     if [ -e "$BK/$s.$ts" ]; then cp -p "$BK/$s.$ts" "$N/snippets/$s"; else rm -f "$N/snippets/$s"; fi

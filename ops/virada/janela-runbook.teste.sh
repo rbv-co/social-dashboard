@@ -93,6 +93,7 @@ FAKE_MODO=spool FORCAR=1 REPETIR=1 $J t+9b > "$T/o" 2>&1 || fail "t+9b spool: $(
 set +e; $J rollback-a > "$T/o" 2>&1; rc=$?; set -e
 [ $rc = 1 ] && grep -q 'rollback B' "$T/o" || fail "rollback-a devia recusar depois do spool ir ao Go"
 rm -f "$T/D/spool-foi-ao-go"
+REPETIR=1 $J t+0 > /dev/null 2>&1 || fail "t+0 de novo"
 mv "$T/D/sb/acl-antes.tsv" "$T/acl.bak"
 set +e; $J rollback-a > "$T/o" 2>&1; rc=$?; set -e
 [ $rc = 1 ] && grep -q 'acl-antes.tsv' "$T/o" || fail "rollback-a sem foto da ACL devia falhar ($rc)"

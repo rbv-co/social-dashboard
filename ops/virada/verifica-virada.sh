@@ -14,7 +14,9 @@ J=$V/ops/virada/janela
 . "$V/ops/migracao/oculta.sh"
 VPS=${VPS:-op}
 SSH=${SSH:-ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30}
-D=${D:-$HOME/virada-janela-$(date +%Y%m%d)}
+if [ -z "${D:-}" ]; then
+  if [ -s "$HOME/.virada-janela-atual" ]; then D=$(cat "$HOME/.virada-janela-atual"); else D=$HOME/virada-janela-$(date +%Y%m%d); fi
+fi
 vps_b1() { $SSH "$VPS" bash -s -- "$@" < "$J/vps-b1.sh"; }
 vps() { $SSH "$VPS" "$@"; }
 sb() {
