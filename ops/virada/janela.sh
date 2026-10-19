@@ -7,7 +7,7 @@
 #                              rollback-a | rollback-b | rollback-b-replay | verifica [V1..V10|antes|depois|todos]
 #   <passo>  um dos ids de `janela.sh lista` (t-32, t-30-supabase, t-30-core, t-29, t-28, t-2, t-1, t+0, t+0.5, t+1, t+1-ensaio, t+7-papeis,
 #            t+7-clone, t+8-hosts, t+8-api, t+8-storage, t+9-conferir, t+9-escritas, t+9-fumaca, t+10-go, t+9b, t+10-nginx, t+11, t+14, t+16,
-#            t+17-pdv, t+17-site, t+17-robos, t+17-actions, t+19, t+20, t+21, t+22, t+25-fim). Cada um confere a pré-condição (os passos
+#            t+17-pdv, t+17-site, t+17-robos, t+17-actions, t+19, t+20, t+21, t+22, t+25-fim, v8-espera). Cada um confere a pré-condição (os passos
 #            anteriores em $D/estado), executa, confere a saída esperada, grava em $D/janela-<data>.log e imprime, na última linha,
 #            `OK` ou `FALHOU -> rollback A|B` (ou `FALHOU -> esperar...`). Saída: 0 = OK; 1 = FALHOU; 2 = uso; 3 = bloqueado (falta passo anterior).
 #   --dry    imprime cada comando que rodaria (sem executar, sem ssh, sem gravar estado) e termina em `OK`.
@@ -124,7 +124,8 @@ t+19|19|t+17-robos|B|robôs da Vessel (espelho, lembretes, carocos, conteudo-vig
 t+20|20|t+19|B|worker liberado
 t+21|21|t+20|-|intervalo recuperado (--forcar só das 5 permitidas)
 t+22|22|t+11,t+14,t+16,t+17-robos,t+20|B|V7 público, V8, V9, V10
-t+25-fim|25|t+22|-|revoga a fumaça, fecha túnel, guarda evidência
+t+25-fim|25|t+22|-|revoga a fumaça e a virada-v10, fecha túnel, guarda evidência
+v8-espera|26|t+25-fim|-|V8 espera tráfego (até 90 min; rode com nohup ... &; SEM-TRAFEGO não é falha)
 TABELA
 )
 info_passo() { printf '%s\n' "$PASSOS" | awk -F'|' -v i="$1" '$1 == i { print; found = 1 } END { exit !found }'; }
@@ -344,16 +345,25 @@ p_tmais21() {
   exe vps "bash /root/virada/t20-worker.sh recuperar" || { say "anote e siga: a recuperação do intervalo é por tarefa (NUNCA as de push, WhatsApp e RD)"; return 1; }
 }
 p_tmais22() {
-  say "V7 (URL pública), V8, V9 e V10 (V8 e V10 pedem o DONO: carrinho de teste no site, mensagem de teste no Chatwoot, telas por papel)"
+  say "V7 (URL pública), V8 (uma checagem; a espera é o passo v8-espera), V9 e V10 (automático: cada rota do front, conta descartável virada-v10, sem passo do dono)"
   exe bash "$V/ops/virada/verifica-virada.sh" depois
   rc=$?
-  [ $rc = 0 ] || [ $rc = 4 ]   # 4 = nada falhou, só há PENDENTE do dono (V8 e V10)
+  [ "$DRY" = 1 ] || ! grep -q '^V10 FALHOU' "$ULT" || say "V10 FALHOU: leia a rota e a causa acima antes de decidir o rollback B (conta viewer: 403 de módulo em tela só de admin não é regressão da virada; 401/5xx é; falha 'navegador:' ou 'não abriu' é do teste, não do Go: repita com REPETIR=1)"
+  [ $rc = 0 ] || [ $rc = 4 ]   # 4 = nada falhou, só há PENDENTE (V8 e V10 não geram mais; V8 SEM-TRAFEGO sai 0)
 }
 p_tmais25_fim() {
   exe vps_b1 revogar-fumaca
+  exe vps_b1 v10-revogar   # o v10-telas.mjs já revoga ao terminar; aqui é a rede de segurança se ele morreu no meio
   tunel_fecha
   say "Evidência em $D (log, fotos do Supabase, corte/). O dump em $D/corte/*/dump tem dado pessoal: apagar quando o rollback B deixar de valer (D+1)."
   return 0
+}
+
+# V8 com espera (a cada 15 min, até 90): roda DEPOIS do t+25-fim e NÃO é segundo plano sozinho: quem roda usa `nohup sh ops/virada/janela.sh v8-espera &`
+# (a saída vai ao log da janela), para a queda da sessão não matar a espera e para ela não segurar o resto. Só `V8 FALHOU` (exit 1) falha o
+# passo; `V8 OK`, `V8 OK (roteamento)` e `V8 SEM-TRAFEGO` (sem tráfego e sem prova; registra e segue) saem 0.
+p_v8_espera() {
+  exe bash "$V/ops/virada/verifica-virada.sh" V8 espera
 }
 
 # ---------------------------------------------------------------------------------------------------------------------------------------
