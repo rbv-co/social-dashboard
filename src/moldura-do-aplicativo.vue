@@ -128,7 +128,7 @@
     <!-- Modal insistente de opt-in (só botão Ativar agora; some ao ativar/negar).
          O controle permanente de ativar fica no menu do avatar, só enquanto não
          ativou — ativação é só de ida (sem desativar). -->
-    <div v-if="mostrarModalPush" class="np-modal-fundo" v-trava-rolagem>
+    <div v-if="mostrarModalPush && !naTelaDeConsentimento" class="np-modal-fundo" v-trava-rolagem>
       <div class="np-modal">
         <div class="np-modal-emoji">🔔</div>
         <h3>Ativar notificações</h3>
@@ -268,6 +268,8 @@ const route = useRoute()
 const menuAberto = ref(false)
 const naTelaLogin = computed(() => route.name === 'login')
 const naTelaInicio = computed(() => route.name === 'inicio')
+// Quem chega do ChatGPT para ligar a Frota veio decidir uma coisa só: o convite de push não cobre essa decisão.
+const naTelaDeConsentimento = computed(() => route.name === 'oauth-consentimento')
 // Fundo animado some em telas densas onde vira ruído visual (admin).
 /* O fundo animado (7 ícones, 3 orbes, 3 anéis) só existe onde alguém OLHA a
  * tela: a Gestão à Vista, que fica na TV, e a página de entrada. Nas telas de

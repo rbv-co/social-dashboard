@@ -79,11 +79,13 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import { destinoDepoisDoLogin } from '../../guarda-de-rotas.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { setSession, carregarPerfil } from '../../compartilhado/controle-de-login-e-usuario.js'
 
 const router = useRouter()
+const route = useRoute()
 
 // Caminho absoluto: servido em produção via rewrite do Vercel (/midia/:path*),
 // igual ao legado. Ligação dinâmica (:src) evita que o Vite tente resolver
@@ -124,7 +126,7 @@ async function entrar() {
   if (data?.session) {
     setSession(data.session)
     await carregarPerfil(data.session)
-    router.push({ name: 'inicio' })
+    router.push(destinoDepoisDoLogin(route.query.volta))
   }
 }
 

@@ -19,6 +19,9 @@
 //   meta.desativada → ferramenta desligada de propósito: fechada
 export function podeEntrar(rota, temSessao, checarPermissao, ehSuperadmin = false) {
   if (rota.name === 'login') return true
+  // O consentimento do ChatGPT chega de fora com o pedido na URL: sem ele de
+  // volta depois do login, a pessoa teria de começar de novo pelo ChatGPT.
+  if (!temSessao && rota.name === 'oauth-consentimento') return { name: 'login', query: { volta: rota.fullPath } }
   if (!temSessao) return { name: 'login' }
   if (!rota.name) return { name: 'inicio' } // rota inexistente: Início, nunca tela branca
   const meta = rota.meta || {}
@@ -28,4 +31,11 @@ export function podeEntrar(rota, temSessao, checarPermissao, ehSuperadmin = fals
   if (meta.recurso && !checarPermissao(meta.recurso)) return { name: 'inicio' }
   if (Array.isArray(meta.qualquerDe) && !meta.qualquerDe.some((k) => checarPermissao(k))) return { name: 'inicio' }
   return true
+}
+
+// Para onde o login manda depois de entrar. Só a tela de consentimento volta
+// (caminho interno, nunca endereço de fora: `volta` vem da URL e qualquer um
+// monta uma); o resto vai ao Início, como sempre.
+export function destinoDepoisDoLogin(volta) {
+  return typeof volta === 'string' && volta.startsWith('/oauth/consentimento?') ? volta : { name: 'inicio' }
 }
