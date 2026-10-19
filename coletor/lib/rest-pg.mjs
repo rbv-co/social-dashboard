@@ -45,7 +45,8 @@ function onde(filtros, alias, inicio = 1) {
     if (op === 'in') {
       const m = /^\((.*)\)$/s.exec(val);
       if (!m) throw new ErroDeTraducao(`in sem tradução: ${val}`);
-      const itens = m[1].split(',').map((s) => s.trim().replace(/^"(.*)"$/, '$1')).filter((s) => s !== '');
+      if (m[1].includes('"')) throw new ErroDeTraducao(`in com aspas sem tradução: ${val}`);
+      const itens = m[1].split(',').map((s) => s.trim()).filter((s) => s !== '');
       if (!itens.length) return 'false';
       return `${c} in (${itens.map(p).join(', ')})`;
     }
@@ -80,7 +81,7 @@ export async function abrirRest(env = process.env, { Client } = {}) {
       fechar: async () => {},
     };
   }
-  const db = await abrirBanco(env.DATABASE_URL, { Client });
+  const db = await abrirBanco(env.DATABASE_URL, { Client, connectionTimeoutMillis: 15000, statement_timeout: 120000 });
   // Uma consulta por vez no mesmo cliente (o `pg` deprecia concorrência); a fila também mantém a ordem das escritas.
   let fila = Promise.resolve();
   const emFila = (fn) => { const p = fila.then(fn); fila = p.catch(() => {}); return p; };
@@ -114,6 +115,9 @@ export async function abrirRest(env = process.env, { Client } = {}) {
         if (prefer.includes('ignore-duplicates') || !resto.length) sql += ` on conflict (${alvo}) do nothing`;
         else if (prefer.includes('merge-duplicates')) sql += ` on conflict (${alvo}) do update set ${resto.map((c) => `${ident(c)} = excluded.${ident(c)}`).join(', ')}`;
         else throw new ErroDeTraducao('on_conflict sem Prefer de resolução');
+      } else if (/resolution=/.test(prefer)) {
+        // O PostgREST resolveria pela chave primária; aqui seria um INSERT simples que falha na 2ª rodada. Exija a chave.
+        throw new ErroDeTraducao('Prefer de resolução sem on_conflict');
       }
       if (ret) sql += ` returning to_json(${tab})::text as j`;
       const r = await db.rodar(sql, [JSON.stringify(linhas)]);
@@ -146,7 +150,8 @@ export async function abrirRest(env = process.env, { Client } = {}) {
     fetch: (url, init) => emFila(async () => {
       try { return await executar(url, init); }
       catch (e) {
-        if (!e.code) throw e;
+        // Só SQLSTATE de 5 caracteres vira resposta; rede (ECONNRESET...), classe 08 (conexão) e 57 (servidor caindo) sobem.
+        if (!/^[0-9A-Z]{5}$/.test(e.code || '') || /^(08|57)/.test(e.code)) throw e;
         return resp({ 42501: 403, 23505: 409 }[e.code] || 400, JSON.stringify({ code: e.code, message: e.message }));
       }
     }),

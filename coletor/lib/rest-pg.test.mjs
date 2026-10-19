@@ -109,3 +109,13 @@ test('banco fora: falha ao abrir, antes de qualquer escrita; conexão que cai no
   f.ouvintes.error(new Error('terminated'))
   await assert.rejects(r.fetch(`${r.REST}/t?id=eq.1`), /caiu/)
 })
+
+test('upsert sem on_conflict é recusado; erro de rede/queda sobe como exceção, SQLSTATE comum vira resposta', async () => {
+  const r = await abrirRest(ENV, { Client: falso().Client })
+  await assert.rejects(r.fetch(`${r.REST}/t`, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: '[{"a":1}]' }), /sem on_conflict/)
+  await assert.rejects(r.fetch(`${r.REST}/t?id=in.("a,b")`), /aspas/)
+  for (const code of ['ECONNRESET', '57P01', '08006']) {
+    const x = await abrirRest(ENV, { Client: falso(() => { throw Object.assign(new Error('queda'), { code }) }).Client })
+    await assert.rejects(x.fetch(`${x.REST}/t?id=eq.1`), /queda/)
+  }
+})

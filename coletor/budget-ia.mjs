@@ -1021,7 +1021,7 @@ async function main() {
       } catch (e) { console.log('  ✗ ' + (camp.name || camp.id) + ': ' + e.message); puladas++; continue; }
       if (!saida) { console.log('  ⚠ ' + (camp.name || camp.id) + ': sem sugestão válida'); puladas++; continue; }
       try {
-        await sbUpsert('/gt_budget_analises', [{
+        await sbUpsert('/gt_budget_analises?on_conflict=campaign_id', [{
           campaign_id: camp.id,
           // A conta do PAINEL (de quem é a campanha), não o registro que carregava
           // o token. Sem isto a fila não conseguia filtrar por cliente: todas as
@@ -1060,7 +1060,7 @@ async function main() {
           valida_ate: validaAte,
         }));
         try {
-          await sbUpsert('/gt_ad_analises', adRows);
+          await sbUpsert('/gt_ad_analises?on_conflict=ad_id', adRows);
         } catch (e) { console.log('  ✗ gravar anúncios ' + (camp.name || camp.id) + ': ' + e.message); }
       }
     }

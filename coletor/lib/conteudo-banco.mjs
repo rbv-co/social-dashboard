@@ -8,10 +8,10 @@
 // então conteudo-contexto.mjs e os prompts não mudam.
 //
 // `Client` é injetável para o teste não precisar de banco; sem ele, usa o `pg` do coletor.
-export async function abrirBanco(url, { Client } = {}) {
+export async function abrirBanco(url, { Client, ...limites } = {}) {
   if (!url) throw new Error('falta CONTEUDO_DATABASE_URL');
   if (!Client) ({ default: { Client } } = await import('pg'));
-  const cli = new Client({ connectionString: url });
+  const cli = new Client({ connectionString: url, ...limites });
   let caiu = null;
   // Sem este ouvinte, a queda da conexão vira exceção não tratada no meio da chamada à IA.
   cli.on('error', (e) => { caiu = e; });

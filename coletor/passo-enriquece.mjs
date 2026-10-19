@@ -13,8 +13,8 @@ if (!process.env.ANTHROPIC_API_KEY && env.ANTHROPIC_API_KEY) process.env.ANTHROP
 const RODADA = process.env.RODADA || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 // REST_VIA_PG=1 (plano 03 da virada): o mesmo caminho vira SQL no api-db; sem a flag segue o REST do Supabase.
 const R = await abrirRest({ ...env, ...process.env }).catch((e) => { console.error('✗ ' + e.message); process.exit(1); });
-async function rest(method, path, body) {
-  const r = await R.fetch(R.REST + '/' + path, { method, headers: { ...R.sb, Prefer: 'return=representation' }, body: body ? JSON.stringify(body) : undefined });
+async function rest(method, path, body, prefer = 'return=representation') {
+  const r = await R.fetch(R.REST + '/' + path, { method, headers: { ...R.sb, Prefer: prefer }, body: body ? JSON.stringify(body) : undefined });
   const t = await r.text(); if (!r.ok) throw new Error(method + ' ' + path + ' → ' + r.status + ' ' + t.slice(0, 160)); return t ? JSON.parse(t) : null;
 }
 const get = p => rest('GET', p);
@@ -125,7 +125,7 @@ const u = usageSummary();
 console.log(`Enriquecimento: A(hero) ${okA} · B(análises) ${okB} · C(resumos) ${okC} / ${marcas.length} marcas.`);
 console.log(`Custo LLM: ${u.text}`);
 try {
-  await rest('POST', 'coletor_log', [{ fase: 'enriquece-custo', encontradas: marcas.length, inseridas: okC, detalhe: `rodada ${RODADA} · A${okA} B${okB} C${okC} · ${u.text}` }]);
+  await rest('POST', 'coletor_log', [{ fase: 'enriquece-custo', encontradas: marcas.length, inseridas: okC, detalhe: `rodada ${RODADA} · A${okA} B${okB} C${okC} · ${u.text}` }], 'return=minimal'); // o papel só tem INSERT em coletor_log: sem RETURNING
 } catch (e) { console.log('aviso: falha ao logar custo:', String(e).slice(0, 100)); }
 if (R.via === 'rest' && !process.env.SUPABASE_SERVICE_KEY) process.env.SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
 await registrarExecucao({
