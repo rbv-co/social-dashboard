@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -45,6 +46,10 @@ type Resposta struct {
 }
 
 const tetoDaResposta = 8 << 20
+
+// reTokenDoProxy: token recusado de verdade (F7003, INVALID_OAUTHTOKEN). Mais estreito que reTokenRecusado de propósito:
+// INVALID_OAUTHSCOPE num laço (fotos do import) renovaria o token a cada chamada e estouraria o limite do Zoho.
+var reTokenDoProxy = regexp.MustCompile(`(?i)F7003|invalid.?oauth.?token`)
 
 func (c *Cliente) base(s Servico, sufixo string) string {
 	switch s {
@@ -87,7 +92,7 @@ func (c *Cliente) Chamar(ctx context.Context, con Conexao, p Pedido) (Resposta, 
 		if err != nil {
 			return Resposta{}, semResposta(ctx, "zoho: resposta interrompida")
 		}
-		if tentativa == 0 && (resp.StatusCode == http.StatusUnauthorized || reTokenRecusado.Match(lido)) {
+		if tentativa == 0 && (resp.StatusCode == http.StatusUnauthorized || reTokenDoProxy.Match(lido)) { // F7003 vem às vezes com 200; INVALID_OAUTHSCOPE (sem escopo) não é token vencido
 			c.esquecer(tok)
 			continue
 		}

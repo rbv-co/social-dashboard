@@ -592,6 +592,7 @@ func TestProxyMicrosoftRevokeForEmail(t *testing.T) {
 	g.perms["od-a"] = []mapa{msDono, msPerm("pa", "ana@x.com", "Ana", "read"), msPerm("pb", "bia@x.com", "Bia", "read")}
 	g.perms["od-arq"] = []mapa{membroAna, msPerm("pb2", "bia@x.com", "Bia", "read")}
 	g.perms["od-outra"] = []mapa{msPerm("pb3", "bia@x.com", "Bia", "read")}
+	g.perms["od-raiz-1"] = []mapa{msDono, msPerm("pr", "ana@x.com", "Ana", "write")} // raiz da marca RBV: fora de acessos_recursos
 	g.falhaPerm["od-quebrada"] = 500
 	m := msMundo(t, g, msApi)
 	msSQL(t, m, `insert into acessos_recursos (tipo, provedor, nome, external_id, criado_em, arquivado_em) values
@@ -601,9 +602,10 @@ func TestProxyMicrosoftRevokeForEmail(t *testing.T) {
 	  ('onedrive', 'microsoft', 'Quebrada', 'od-quebrada', '2026-01-04', null),
 	  ('onedrive', 'microsoft', 'Sem id', null, '2026-01-05', null)`)
 	_, j, _ := msPedir(t, m, "admin", "revokeForEmail", mapa{"email": "ANA@x.com"})
-	msQuer(t, "resposta", fmt.Sprint(j["removed"], j["folders"], j["falhas"], j["truncated"]), "2 [Ativa Arquivada] 1 <nil>")
-	msQuer(t, "só as permissões da Ana", fmt.Sprint(g.apagados), fmt.Sprint([]string{"od-a/pa", "od-arq/" + membroAna["id"].(string)}))
-	msQuer(t, "log revoke", m.Um(t, `select detalhe from acessos_log where acao = 'onedrive.revoke' and resultado = 'ok' and alvo = 'ANA@x.com'`), "2 acessos")
+	msQuer(t, "resposta", fmt.Sprint(j["removed"], j["folders"], j["falhas"], j["truncated"]), "3 [Ativa Arquivada RBV] 1 <nil>")
+	msQuer(t, "só as permissões da Ana", fmt.Sprint(g.apagados), fmt.Sprint([]string{"od-a/pa", "od-arq/" + membroAna["id"].(string), "od-raiz-1/pr"}))
+	// revogação incompleta (1 pasta não lida) consta como erro na trilha, não como feita
+	msQuer(t, "log revoke", m.Um(t, `select detalhe from acessos_log where acao = 'onedrive.revoke' and resultado = 'erro' and alvo = 'ANA@x.com'`), "3 acessos, 1 falha(s)")
 	// ninguém com esse e-mail: nada apagado, e a lista sai [] e não null
 	g.apagados = nil
 	_, _, corpo := msPedir(t, m, "admin", "revokeForEmail", mapa{"email": "ninguem@x.com"})
@@ -641,4 +643,12 @@ func TestProxyMicrosoftAuthURL(t *testing.T) {
 	msSQL(t, m, `delete from acessos_conexoes where provedor = 'microsoft'`)
 	st, j, _ = msPedir(t, m, "admin", "authUrl", nil)
 	msQuer(t, "sem linha", fmt.Sprint(st, " ", j["error"]), "500 falha_interna")
+}
+
+func TestIDNoCaminhoNaoAndaPelaArvore(t *testing.T) {
+	for id, quer := range map[string]string{"..": "%2e%2e", ".": "%2e", "a/b": "a%2Fb", "x y": "x%20y", "abc": "abc", "a..": "a.."} {
+		if got := idNoCaminho(id); got != quer {
+			t.Errorf("idNoCaminho(%q) = %q, esperava %q", id, got, quer)
+		}
+	}
 }

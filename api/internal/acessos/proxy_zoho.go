@@ -357,7 +357,7 @@ func (x *Proxy) zohoSetUser(ctx context.Context, e *autz.Escopo, p pedido, modo 
 		}
 		corpo, _ := json.Marshal(mapa{"mode": modo, "zuid": zuid})
 		r, err := x.Zoho.Chamar(ctx, con, zoho.Pedido{Metodo: http.MethodPut, Servico: zoho.Mail,
-			Caminho: "/api/organization/accounts/" + url.PathEscape(u.AccountID), Corpo: corpo})
+			Caminho: "/api/organization/accounts/" + idNoCaminho(u.AccountID), Corpo: corpo})
 		if err != nil {
 			return falhou(err.Error())
 		}
@@ -440,7 +440,7 @@ func (x *Proxy) wdColetar(ctx context.Context, con zoho.Conexao) (linhas []linha
 	if org == "" {
 		return nil, 0, errors.New("zoho: workdrive_sem_org_id")
 	}
-	r, j, err = x.wd(ctx, con, http.MethodGet, "/teams/"+url.PathEscape(org)+"/teamfolders", nil)
+	r, j, err = x.wd(ctx, con, http.MethodGet, "/teams/"+idNoCaminho(org)+"/teamfolders", nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -450,7 +450,7 @@ func (x *Proxy) wdColetar(ctx context.Context, con zoho.Conexao) (linhas []linha
 	times := pastasDoWorkdrive(j)
 	for _, tf := range times {
 		linhas = append(linhas, linhasDeRecursos([]pastaWD{tf}, tf.externalID, "")...) // a pasta de equipe é a raiz do cliente
-		rf, jf, err := x.wd(ctx, con, http.MethodGet, "/teamfolders/"+url.PathEscape(tf.externalID)+"/folders", nil)
+		rf, jf, err := x.wd(ctx, con, http.MethodGet, "/teamfolders/"+idNoCaminho(tf.externalID)+"/folders", nil)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -515,16 +515,22 @@ func (x *Proxy) zohoImportarPastas(ctx context.Context, e *autz.Escopo, _ pedido
 		}
 		novas, ja := separarNovas(linhas, gravados)
 		criadas := 0
-		for _, n := range novas {
-			// o índice único parcial (external_id, tipo workdrive) garante a idempotência mesmo com dois cliques juntos
-			tag, err := x.Pool.Exec(ctx, `insert into acessos_recursos (tipo, provedor, nome, external_id, drive_id, caminho)
-				values ('workdrive', 'zoho', $1, $2, $3, $4) on conflict (external_id) where tipo = 'workdrive' and external_id is not null do nothing`,
-				n.Nome, n.ExternalID, n.DriveID, n.Caminho)
-			if err != nil {
-				x.trilha(ctx, e.ID, "zoho.importarPastas", "zoho", ptr("acessos_recursos"), "erro", mapa{"detalhe": "falha_ao_inserir", "tentadas": len(novas)})
-				return erroComDetalhe(http.StatusInternalServerError, "falha_ao_inserir", "falha ao gravar as pastas")
+		// tudo ou nada, como o insert em lote da edge; o índice único parcial garante a idempotência com dois cliques juntos
+		err = pgx.BeginFunc(ctx, x.Pool, func(tx pgx.Tx) error {
+			for _, n := range novas {
+				tag, err := tx.Exec(ctx, `insert into acessos_recursos (tipo, provedor, nome, external_id, drive_id, caminho)
+					values ('workdrive', 'zoho', $1, $2, $3, $4) on conflict (external_id) where tipo = 'workdrive' and external_id is not null do nothing`,
+					n.Nome, n.ExternalID, n.DriveID, n.Caminho)
+				if err != nil {
+					return err
+				}
+				criadas += int(tag.RowsAffected())
 			}
-			criadas += int(tag.RowsAffected())
+			return nil
+		})
+		if err != nil {
+			x.trilha(ctx, e.ID, "zoho.importarPastas", "zoho", ptr("acessos_recursos"), "erro", mapa{"detalhe": "falha_ao_inserir", "tentadas": len(novas)})
+			return erroComDetalhe(http.StatusInternalServerError, "falha_ao_inserir", "falha ao gravar as pastas")
 		}
 		resumo := mapa{"criadas": criadas, "jaExistiam": len(ja) + len(novas) - criadas, "total": len(linhas), "erros": 0}
 		x.trilha(ctx, e.ID, "zoho.importarPastas", "zoho", ptr("acessos_recursos"), "ok", resumo)
@@ -554,7 +560,7 @@ func (x *Proxy) zohoAcessoDaPasta(ctx context.Context, _ *autz.Escopo, p pedido)
 		if p.ResourceID == "" {
 			return erro(http.StatusBadRequest, "faltou_resourceId")
 		}
-		rid := url.PathEscape(string(p.ResourceID))
+		rid := idNoCaminho(string(p.ResourceID))
 		falhas := []mapa{}
 		pessoas := []mapa{}
 		rp, jp, err := x.wd(ctx, con, http.MethodGet, "/files/"+rid+"/permissions", nil)
@@ -672,7 +678,7 @@ func (x *Proxy) zohoApagarLink(ctx context.Context, _ *autz.Escopo, p pedido) re
 			return erro(http.StatusBadRequest, "faltou_linkId")
 		}
 		// a listagem do Zoho demora a refletir o apagar: a tela confia neste ok, não na listagem imediata
-		if _, f := x.wdEscrever(ctx, con, http.MethodDelete, "/links/"+url.PathEscape(string(p.LinkID)), nil, "falha_ao_apagar_link"); f != nil {
+		if _, f := x.wdEscrever(ctx, con, http.MethodDelete, "/links/"+idNoCaminho(string(p.LinkID)), nil, "falha_ao_apagar_link"); f != nil {
 			return *f
 		}
 		return ok(mapa{"ok": true})
@@ -698,7 +704,7 @@ func (x *Proxy) zohoRevogarWorkspace(ctx context.Context, _ *autz.Escopo, p pedi
 		if p.PermissaoID == "" {
 			return erro(http.StatusBadRequest, "faltou_permissaoId")
 		}
-		if _, f := x.wdEscrever(ctx, con, http.MethodDelete, "/permissions/"+url.PathEscape(string(p.PermissaoID)), nil, "falha_ao_revogar"); f != nil {
+		if _, f := x.wdEscrever(ctx, con, http.MethodDelete, "/permissions/"+idNoCaminho(string(p.PermissaoID)), nil, "falha_ao_revogar"); f != nil {
 			return *f
 		}
 		return ok(mapa{"ok": true})

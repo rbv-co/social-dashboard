@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -211,7 +210,7 @@ func linkDaPasta(ps []gPermissao) *string {
 }
 
 func caminhoDoItem(id, sufixo string) string {
-	return "/me/drive/items/" + url.PathEscape(id) + sufixo
+	return "/me/drive/items/" + idNoCaminho(id) + sufixo
 }
 
 // erroGrafo: status != 2xx do Graph vira 200 {error:"graph_http_<status>", detalhe:<json do Graph>}, como na edge.
@@ -960,8 +959,11 @@ func (x *Proxy) msRevokeForEmail(ctx context.Context, e *autz.Escopo, p pedido) 
 	// DE PROPÓSITO sem filtro de arquivado_em: aqui não se MOSTRA pasta, se TIRA acesso. Arquivar é decisão do painel e
 	// não apaga a pasta nem o acesso real no OneDrive; filtrar deixaria um desligado enxergando a pasta arquivada de
 	// verdade (buraco de segurança). Revogar tem de varrer tudo.
-	linhas, err := x.Pool.Query(ctx, `select nome, external_id from acessos_recursos where tipo = 'onedrive'
-		  and external_id is not null order by criado_em, id`)
+	// Mais as RAÍZES das marcas (acessos_drive_marcas): o grant dado no topo de uma marca (ex.: Moto Easy Brasil) não está
+	// em acessos_recursos, e é o que a Auditoria (allShares) mostra; sem elas o desligado manteria o acesso (revisão Opus).
+	linhas, err := x.Pool.Query(ctx, `select distinct on (external_id) nome, external_id from (
+		  select nome, external_id from acessos_recursos where tipo = 'onedrive' and external_id is not null
+		  union all select nome, external_id from acessos_drive_marcas where external_id is not null) t order by external_id, nome`)
 	if err != nil {
 		return falhaInterna("microsoft.revokeForEmail", err)
 	}
@@ -1007,7 +1009,7 @@ parar:
 				truncado = true
 				break parar
 			}
-			del, err := g.chamar("DELETE", caminhoDoItem(f.id, "/permissions/"+url.PathEscape(pm.ID)), nil)
+			del, err := g.chamar("DELETE", caminhoDoItem(f.id, "/permissions/"+idNoCaminho(pm.ID)), nil)
 			if err == nil && del.OK() {
 				removidos++
 				pastasTiradas = append(pastasTiradas, f.nome)
@@ -1017,7 +1019,12 @@ parar:
 			}
 		}
 	}
-	x.trilha(ctx, e.ID, "onedrive.revoke", "microsoft", ptr(string(p.Email)), "ok", strconv.Itoa(removidos)+" acessos")
+	resultado := "ok"
+	if falhas > 0 || truncado {
+		resultado = "erro" // revogação incompleta não pode constar como feita
+	}
+	x.trilha(ctx, e.ID, "onedrive.revoke", "microsoft", ptr(string(p.Email)), resultado,
+		strconv.Itoa(removidos)+" acessos, "+strconv.Itoa(falhas)+" falha(s)")
 	resp := mapa{"removed": removidos, "folders": pastasTiradas}
 	// diverge da edge: revogação parcial não pode parecer completa. Só aparecem quando acontecem.
 	if falhas > 0 {
@@ -1033,7 +1040,7 @@ func (x *Proxy) msUnshare(ctx context.Context, e *autz.Escopo, p pedido) respost
 	if p.ItemID == "" || p.PermID == "" {
 		return erro(http.StatusBadRequest, "sem_itemId_ou_permId")
 	}
-	r, err := x.MS.Grafo(ctx, "DELETE", caminhoDoItem(string(p.ItemID), "/permissions/"+url.PathEscape(string(p.PermID))), nil)
+	r, err := x.MS.Grafo(ctx, "DELETE", caminhoDoItem(string(p.ItemID), "/permissions/"+idNoCaminho(string(p.PermID))), nil)
 	if err != nil {
 		return msFalha("microsoft.unshare", err)
 	}

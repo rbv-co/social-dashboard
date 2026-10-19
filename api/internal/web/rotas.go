@@ -113,6 +113,8 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		}
 		w.Write([]byte("ok"))
 	})
+	// um cliente de cada por processo: o cache do token de acesso (e o limite de tokens novos do Zoho) é por instância
+	zc, mc := zoho.Novo(p), microsoft.Novo(p)
 	h := auth.NovosHandlers(p, s, l)
 	r.Post("/auth/entrar", h.Entrar)
 	// Plano 5.0: links de senha (públicos; limite por IP e por e-mail lá dentro, resposta sem enumeração).
@@ -155,7 +157,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 	// Plano 07a: o retorno do OAuth do Zoho e da Microsoft (a edge acessos-oauth): público, a trava é o state.
 	r.Group(func(r chi.Router) {
 		r.Use(auth.LimitarPorIP(60, time.Minute), comPrazo(30*time.Second))
-		(&acessos.OAuth{Zoho: zoho.Novo(p), MS: microsoft.Novo(p), APIPublica: cfg.APIURLPublica, Retorno: cfg.EnderecoPadrao + "/"}).Montar(r)
+		(&acessos.OAuth{Zoho: zc, MS: mc, APIPublica: cfg.APIURLPublica, Retorno: cfg.EnderecoPadrao + "/"}).Montar(r)
 	})
 	av := &meta.AoVivo{Pool: p, Core: cli}
 	r.Group(func(r chi.Router) {
@@ -182,12 +184,12 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 
 		// Plano 5.10: o cartão EAN do Zoho. Portão do selo (is_vessel_admin) DENTRO do handler, antes de ler o corpo;
 		// no grupo de SESSÃO com o escopo e o prazo próprio (o de domínio cortaria o download).
-		r.With(autz.ComEscopo(p), comPrazo(PrazoCartao)).Post("/vessel-baixar-cartao", (&vessel.Cartao{Pool: p, Zoho: zoho.Novo(p)}).ServeHTTP)
+		r.With(autz.ComEscopo(p), comPrazo(PrazoCartao)).Post("/vessel-baixar-cartao", (&vessel.Cartao{Pool: p, Zoho: zc}).ServeHTTP)
 
 		// Plano 07a: a porta da edge acessos-proxy (29 ações do Zoho e da Microsoft). Portão (is_acessos_admin) e recusa de
 		// "entrar como" nas escritas DENTRO do handler; no grupo de SESSÃO com o escopo e o prazo próprio.
-		r.With(autz.ComEscopo(p), comPrazo(PrazoAcessos)).Post("/acessos-proxy", (&acessos.Proxy{Pool: p, Zoho: zoho.Novo(p),
-			MS: microsoft.Novo(p), Fotos: fotosDoAcessos{arq: arq, base: cfg.APIURLPublica}, APIPublica: cfg.APIURLPublica}).ServeHTTP)
+		r.With(autz.ComEscopo(p), comPrazo(PrazoAcessos)).Post("/acessos-proxy", (&acessos.Proxy{Pool: p, Zoho: zc,
+			MS: mc, Fotos: fotosDoAcessos{arq: arq, base: cfg.APIURLPublica}, APIPublica: cfg.APIURLPublica}).ServeHTTP)
 
 		// Plano 5.0: conta. Os portões de invite-user e entrar-como são os das edges (papel admin;
 		// super-admin pela ficha), dentro do handler, com a resposta 400 {"error": frase} das edges.

@@ -1723,7 +1723,7 @@ function _acDesligar(id){
     // A devolução se registra no Patrimônio/na Frota (mudar `situacao`/
     // `pessoa_id` de lá), não por aqui.
     if(doOd){
-      try{const r=await _acProxy('microsoft.revokeForEmail',{email:c.email_outlook});resumo+=' · OneDrive: '+(r&&r.removed||0)+' removido(s)';}
+      try{const r=await _acProxy('microsoft.revokeForEmail',{email:c.email_outlook});resumo+=' · OneDrive: '+(r&&r.removed||0)+' removido(s)'+((r&&(r.falhas||r.truncated))?' · INCOMPLETO ('+(r.falhas||0)+' falha(s)'+(r.truncated?', varredura interrompida':'')+'): confira na Auditoria':'');}
       catch(e){resumo+=' · OneDrive falhou';}
     }
     if(doZoho){

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -193,6 +194,16 @@ func (x *Proxy) trilha(ctx context.Context, quem, acao, provedor string, alvo *s
 }
 
 func ptr(s string) *string { return &s }
+
+// idNoCaminho escapa um id vindo do cliente para virar segmento de URL do provedor. url.PathEscape não escapa o ponto:
+// "." e ".." andariam pela árvore da API do provedor (a edge, com encodeURIComponent, tinha o mesmo furo).
+func idNoCaminho(id string) string {
+	e := url.PathEscape(id)
+	if e == "." || e == ".." {
+		return strings.ReplaceAll(e, ".", "%2e")
+	}
+	return e
+}
 
 // URLs de retorno do OAuth: precisam ser as registradas no Zoho e no Azure.
 func (x *Proxy) callback(provedor string) string {
