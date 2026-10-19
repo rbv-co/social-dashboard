@@ -68,7 +68,7 @@ const validadeEscritaIncerta = 2 * time.Minute
 // incerto (o core ou a rede falhou depois de o pedido poder ter chegado à Meta): repetir criaria campanha,
 // anúncio ou mídia em duplicidade, e a tela só repete porque não sabe se gravou.
 // ponytail: memória deste processo (a API roda numa instância só); com mais de uma, mover para o banco.
-func (p *Proxy) reservar(chave string, prazo time.Duration) bool {
+func (p *Proxy) reservar(chave string, prazo time.Duration) (time.Time, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	agora := time.Now()
@@ -78,19 +78,24 @@ func (p *Proxy) reservar(chave string, prazo time.Duration) bool {
 		}
 	}
 	if _, ocupada := p.escritas[chave]; ocupada {
-		return false
+		return time.Time{}, false
 	}
 	if p.escritas == nil {
 		p.escritas = map[string]time.Time{}
 	}
-	p.escritas[chave] = agora.Add(prazo + 10*time.Second)
-	return true
+	dona := agora.Add(prazo + 10*time.Second)
+	p.escritas[chave] = dona
+	return dona, true
 }
 
-// concluir libera a trava; incerta a mantém por validadeEscritaIncerta.
-func (p *Proxy) concluir(chave string, incerta bool) {
+// concluir libera a trava; incerta a mantém por validadeEscritaIncerta. `dona` é o que reservar devolveu: se a
+// reserva venceu e outra escrita igual a tomou, esta não mexe na dela.
+func (p *Proxy) concluir(chave string, dona time.Time, incerta bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if !p.escritas[chave].Equal(dona) {
+		return
+	}
 	if incerta {
 		p.escritas[chave] = time.Now().Add(validadeEscritaIncerta)
 	} else {
@@ -219,13 +224,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	incerta := false
 	if escreve {
 		chave := chaveDaEscrita(ator.ID, conta, ped)
-		if !p.reservar(chave, prazo) {
+		dona, ok := p.reservar(chave, prazo)
+		if !ok {
 			// 500 de propósito: a tela trata string com status < 500 como "nada foi gravado" e deixaria repetir.
 			erro(w, http.StatusInternalServerError, "uma escrita igual está em andamento ou terminou sem resposta clara: confira na Meta se ela foi gravada antes de repetir")
 			return
 		}
 		incerta = true // padrão seguro (inclusive em pânico): só libera quando o desfecho é conhecido
-		defer func() { p.concluir(chave, incerta) }()
+		defer func() { p.concluir(chave, dona, incerta) }()
 	}
 	// Sem repetição aqui (tentativas = 1): o gestor e os robôs já tentam de novo.
 	resp, err := p.Core.Meta(ctx, ped, 1)
