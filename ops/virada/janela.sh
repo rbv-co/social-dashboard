@@ -125,7 +125,7 @@ t+20|20|t+19|B|worker liberado
 t+21|21|t+20|-|intervalo recuperado (--forcar só das 5 permitidas)
 t+22|22|t+11,t+14,t+16,t+17-robos,t+20|B|V7 público, V8, V9, V10
 t+25-fim|25|t+22|-|revoga a fumaça e a virada-v10, fecha túnel, guarda evidência
-v8-espera|26|t+25-fim|-|V8 espera tráfego (até 90 min, em segundo plano; SEM-TRAFEGO não é falha)
+v8-espera|26|t+25-fim|-|V8 espera tráfego (até 90 min; rode com nohup ... &; SEM-TRAFEGO não é falha)
 TABELA
 )
 info_passo() { printf '%s\n' "$PASSOS" | awk -F'|' -v i="$1" '$1 == i { print; found = 1 } END { exit !found }'; }
@@ -348,7 +348,7 @@ p_tmais22() {
   say "V7 (URL pública), V8 (uma checagem; a espera é o passo v8-espera), V9 e V10 (automático: cada rota do front, conta descartável virada-v10, sem passo do dono)"
   exe bash "$V/ops/virada/verifica-virada.sh" depois
   rc=$?
-  [ "$DRY" = 1 ] || ! grep -q '^V10 FALHOU' "$ULT" || say "V10 FALHOU: leia a rota e a causa acima antes de decidir o rollback B (conta viewer: 403 de módulo em tela só de admin não é regressão da virada; 401/5xx é)"
+  [ "$DRY" = 1 ] || ! grep -q '^V10 FALHOU' "$ULT" || say "V10 FALHOU: leia a rota e a causa acima antes de decidir o rollback B (conta viewer: 403 de módulo em tela só de admin não é regressão da virada; 401/5xx é; falha 'navegador:' ou 'não abriu' é do teste, não do Go: repita com REPETIR=1)"
   [ $rc = 0 ] || [ $rc = 4 ]   # 4 = nada falhou, só há PENDENTE (V8 e V10 não geram mais; V8 SEM-TRAFEGO sai 0)
 }
 p_tmais25_fim() {
@@ -359,7 +359,8 @@ p_tmais25_fim() {
   return 0
 }
 
-# V8 com espera (a cada 15 min, até 90): roda DEPOIS do t+25-fim, em segundo plano, sem segurar o resto da janela. Só `V8 FALHOU` (exit 1) falha o
+# V8 com espera (a cada 15 min, até 90): roda DEPOIS do t+25-fim e NÃO é segundo plano sozinho: quem roda usa `nohup sh ops/virada/janela.sh v8-espera &`
+# (a saída vai ao log da janela), para a queda da sessão não matar a espera e para ela não segurar o resto. Só `V8 FALHOU` (exit 1) falha o
 # passo; `V8 OK`, `V8 OK (roteamento)` e `V8 SEM-TRAFEGO` (sem tráfego e sem prova; registra e segue) saem 0.
 p_v8_espera() {
   exe bash "$V/ops/virada/verifica-virada.sh" V8 espera

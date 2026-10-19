@@ -157,6 +157,22 @@ FAKE_V8='FALHOU: sem /root/virada/troca-hora.txt\n' FAKE_V8_RC=1 v8 V8; [ $rc = 
 rm -f "$T/D/estado"
 FAKE_V8= INTERVALO8=1 ESPERA8_MAX=2 v8 V8 espera; [ $rc = 0 ] && grep -q '^V8 SEM-TRAFEGO' "$T/o" && [ "$(grep -c 'nova checagem' "$T/o")" = 2 ] || fail "V8 espera: esperava 2 repetições e SEM-TRAFEGO ($rc): $(cat "$T/o")"
 FAKE_V8=$ORG INTERVALO8=1 ESPERA8_MAX=2 v8 V8 espera; [ $rc = 0 ] && grep -q '^V8 OK (uma origem' "$T/o" && ! grep -q 'nova checagem' "$T/o" || fail "V8 espera com tráfego devia parar na 1ª checagem"
+# V10 (não dry): o código do node vale (revisão: o pipe com o `oculta` mascarava a saída 1 e dava V10 OK). curl e node falsos.
+cat > "$T/bin/curl" <<'X'
+#!/bin/sh
+case "$*" in *api/saude*) printf ok;; *auth/eu*) printf 401;; *) printf 200;; esac
+X
+cat > "$T/bin/node" <<'X'
+#!/bin/sh
+echo "   /frota: 500 GET /api/frota/veiculos"; echo "V10 ${FAKE_V10:-FALHOU} (1 rota(s): /frota: 500 GET /api/frota/veiculos)"; [ "${FAKE_V10:-FALHOU}" = OK ] || exit 1
+X
+chmod +x "$T/bin/curl" "$T/bin/node"; : > "$T/pw"
+PLAYWRIGHT=$T/pw v8 V10; [ $rc = 1 ] && grep -q '^V10 FALHOU (1 rota' "$T/o" && ! grep -q '^V10 OK' "$T/o" || fail "V10 com o node falhando devia ser FALHOU/1 ($rc): $(cat "$T/o")"
+FAKE_V10=OK PLAYWRIGHT=$T/pw v8 V10; [ $rc = 0 ] && grep -q '^V10 OK' "$T/o" || fail "V10 com o node OK devia ser OK/0 ($rc): $(cat "$T/o")"
+# destino com um 503 pendente (a nova tentativa do Core ainda vem) e sem nenhum 2xx NÃO é FALHOU; 4xx é
+printf 't+14 OK %s\nt+16 OK %s\n' "$(( $(date +%s) - 600 ))" "$(( $(date +%s) - 300 ))" > "$T/D/estado"
+FAKE_V8= FAKE_CORE='supabase_checkout\tpendente\t503\t1\n' FAKE_CW='2xx 1\nnao-2xx 0\n' v8 V8; [ $rc = 0 ] && ! grep -q '^V8 FALHOU' "$T/o" || fail "503 pendente não devia reprovar ($rc): $(cat "$T/o")"
+FAKE_V8= FAKE_CORE='supabase_checkout\tpendente\t401\t1\n' FAKE_CW='2xx 1\nnao-2xx 0\n' v8 V8; [ $rc = 1 ] && grep -q '^V8 FALHOU' "$T/o" || fail "401 devia reprovar ($rc): $(cat "$T/o")"
 # --dry: nada de ssh, V8 e V10 só descrevem
 : > "$FAKE_LOG"; v8 --dry V8 espera V10; [ $rc = 0 ] && grep -q '^V8 DRY' "$T/o" && grep -q '^V10 DRY' "$T/o" && ! grep -q '^ssh' "$FAKE_LOG" || fail "--dry devia só descrever ($rc): $(cat "$T/o")"
 

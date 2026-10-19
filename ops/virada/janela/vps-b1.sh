@@ -155,8 +155,9 @@ v10-criar() {
 v10-revogar() {
   cd "$API" || return 1
   [ -s "$V/v10.nomes" ] || { echo "virada-v10: nenhuma conta criada, nada a revogar"; return 0; }
-  while read -r n; do docker compose exec -T api api servico revogar "$n" > /dev/null 2>&1 || true; done < "$V/v10.nomes"
-  echo "virada-v10: $(grep -c . "$V/v10.nomes") conta(s) revogada(s) (token só existia em memória)"
+  # < /dev/null no exec: ele lê a entrada padrão e comeria as linhas seguintes do v10.nomes
+  while read -r n; do docker compose exec -T api api servico revogar "$n" > /dev/null 2>&1 < /dev/null || true; done < "$V/v10.nomes"
+  echo "virada-v10: revogação pedida para $(grep -c . "$V/v10.nomes") nome(s) (token só existia em memória)"
 }
 revogar-fumaca() {
   cd "$API" && docker compose exec -T api api servico revogar virada-fumaca > /dev/null 2>&1

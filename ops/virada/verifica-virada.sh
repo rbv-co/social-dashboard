@@ -88,7 +88,7 @@ v8_avalia() {
     if printf '%s\n' "$e" | grep -q "$(printf '\t')"; then
       echo "   Core desde o T+14 (destino status http quantas): $(printf '%s' "$e" | tr '\t\n' ' ')"
       core_bom=$(printf '%s\n' "$e" | awk -F'\t' '$2 == "entregue" && $3 >= 200 && $3 < 300 { n += $4 } END { print n + 0 }')
-      ruim=$(printf '%s\n' "$e" | awk -F'\t' '{ if ($2 == "falhou" || $3 >= 400) mau[$1] += $4; if ($2 == "entregue" && $3 >= 200 && $3 < 300) bom[$1] += $4 }
+      ruim=$(printf '%s\n' "$e" | awk -F'\t' '{ if ($2 == "falhou" || ($3 >= 400 && $3 < 500)) mau[$1] += $4; if ($2 == "entregue" && $3 >= 200 && $3 < 300) bom[$1] += $4 }
         END { for (d in mau) if (!bom[d]) printf "Core %s: %d entrega(s) com falha e nenhuma 2xx; ", d, mau[d] }')
     else nota="$nota Core sem leitura (${e:-vazio});"; fi
   else nota="$nota sem t+14 OK no estado da janela;"; fi
@@ -142,7 +142,7 @@ v10() {
   if ! { [ "$s" = ok ] && [ "$e" = 401 ] && [ "$r" = 200 ]; }; then res 10 falhou "saude='$s', /auth/eu=$e (esperava 401), raiz=$r (esperava 200)"; return; fi
   pw=${PLAYWRIGHT:-$HOME/Projetos/Trabalho/lavessel/REVISAO-TESTES-2026-10/ferramentas/e2e/node_modules/playwright/index.mjs}
   [ -f "$pw" ] || [ -n "${PLAYWRIGHT:-}" ] || { res 10 falhou "sem Playwright em $pw (defina PLAYWRIGHT)"; return; }
-  o=$(PLAYWRIGHT=$pw BASE=$h VPS=$VPS SSH="$SSH" node "$J/v10-telas.mjs" 2>&1 | oculta); r=$?
+  o=$(PLAYWRIGHT=$pw BASE=$h VPS=$VPS SSH="$SSH" node "$J/v10-telas.mjs" 2>&1 | oculta; exit "${PIPESTATUS[0]}"); r=$?   # o código é o do node, não o do sed do oculta
   printf '%s\n' "$o" | grep -v '^V10 ' | sed 's/^/   /' | head -n 40
   u=$(printf '%s\n' "$o" | grep '^V10 ' | tail -n 1 | sed -E 's/^V10 [A-Z]+ \((.*)\)$/\1/')
   [ $r = 0 ] && res 10 ok "$u (automático completo; sem passo do dono)" || res 10 falhou "${u:-sem saída do v10-telas.mjs}"
