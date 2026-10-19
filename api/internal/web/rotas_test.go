@@ -79,6 +79,9 @@ var publicas = map[string]bool{
 	// duas pastas consultor-*; chave do Core ou limite por IP): arquivos/*_test.go
 	"GET /storage/v1/object/public/{bucket}/*": true, "GET /storage/v1/object/sign/{bucket}/*": true,
 	"POST /storage/v1/object/vessel-curriculos/{pasta}/{arquivo}": true, "OPTIONS /storage/v1/object/vessel-curriculos/{pasta}/{arquivo}": true,
+	// Plano 07a: o retorno do OAuth do Zoho e da Microsoft. A trava é o state (10 min, uso único) gravado pelo admin no
+	// proxy; limite por IP no roteador; acessos/oauth_test.go
+	"GET /acessos-oauth/callback/zoho": true, "GET /acessos-oauth/callback/microsoft": true,
 }
 
 func webhooksPublicos() []string {
@@ -565,7 +568,9 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		// Plano 5.7: proxies no grupo de SESSÃO, com prazo próprio (o de domínio cortaria a IA)
 		"POST /sugerir-publico-ia": PrazoIA, "POST /ler-documento": PrazoIA, "POST /buscar-lugar": PrazoMapa,
 		// Plano 5.10: o cartão EAN do Zoho, no grupo de SESSÃO com prazo próprio
-		"POST /vessel-baixar-cartao": PrazoCartao}
+		"POST /vessel-baixar-cartao": PrazoCartao,
+		// Plano 07a: o proxy do Acessos (Graph/WorkDrive: centenas de chamadas) e o retorno do OAuth
+		"POST /acessos-proxy": PrazoAcessos, "GET /acessos-oauth/callback/zoho": 30 * time.Second, "GET /acessos-oauth/callback/microsoft": 30 * time.Second}
 	for _, c := range slices.Concat(rotas51, rotas57, rotas52, rotas59, rotas53, rotas55, rotas510, rotas54, rotas512, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7, 5.2, 5.9, 5.3, 5.5, 5.10, 5.4 e 12: no grupo de domínio, com o prazo dele
 		quer[c] = PrazoDominio
 	}

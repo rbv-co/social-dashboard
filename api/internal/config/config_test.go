@@ -330,3 +330,25 @@ func TestSegredosCurtosDaVesselNaoSobem(t *testing.T) {
 		t.Setenv(nome, "")
 	}
 }
+
+func TestAPIURLPublica(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("API_URL_PUBLICA", "")
+	if c, err := Carregar(); err != nil || c.APIURLPublica != "" {
+		t.Fatalf("vazia deve ser aceita (o authUrl recusa): %v %q", err, c.APIURLPublica)
+	}
+	t.Setenv("API_URL_PUBLICA", " https://socialdashboard.rbvcompany.com/api/ ")
+	if c, err := Carregar(); err != nil || c.APIURLPublica != "https://socialdashboard.rbvcompany.com/api" {
+		t.Fatalf("esperava a base sem espaço nem barra final: %v %q", err, c.APIURLPublica)
+	}
+	t.Setenv("API_URL_PUBLICA", "http://127.0.0.1:8080")
+	if _, err := Carregar(); err != nil {
+		t.Fatalf("http em loopback deve passar: %v", err)
+	}
+	for _, ruim := range []string{"http://socialdashboard.rbvcompany.com/api", "https://x.com/api?a=1", "https://x.com/api#f", "https://u:p@x.com", "/api", "x.com"} {
+		t.Setenv("API_URL_PUBLICA", ruim)
+		if _, err := Carregar(); err == nil {
+			t.Errorf("API_URL_PUBLICA=%q deveria ser recusada", ruim)
+		}
+	}
+}

@@ -62,13 +62,14 @@ type Item struct {
 // Cliente: o token de acesso fica em memória por 50 min (o Zoho limita quantos tokens novos se pedem por janela;
 // pedir um por clique estouraria isso). ponytail: um por processo; vários processos = guardar o token no banco.
 type Cliente struct {
-	pool        *pgxpool.Pool
-	http        *http.Client
-	contas, api func(sufixo string) string // bases; só ParaTeste troca
-	mu          sync.Mutex                 // ponytail: o cadeado fica preso durante o pedido do token (um pedido só por vez); accounts.zoho
-	token       string                     // pendurado bloqueia quem chama até o timeout do cliente (50s). Vários processos/tráfego alto: single-flight com contexto.
-	ate         time.Time
-	de          chave
+	pool           *pgxpool.Pool
+	http           *http.Client
+	contas, api    func(sufixo string) string // bases; só ParaTeste troca
+	mail, contatos func(sufixo string) string // Zoho Mail e Contacts (proxy do Acessos); idem
+	mu             sync.Mutex                 // ponytail: o cadeado fica preso durante o pedido do token (um pedido só por vez); accounts.zoho
+	token          string                     // pendurado bloqueia quem chama até o timeout do cliente (50s). Vários processos/tráfego alto: single-flight com contexto.
+	ate            time.Time
+	de             chave
 }
 
 // String e GoString: o %v/%+v/%#v de um *Cliente imprimiria o token de acesso em cache.
@@ -95,8 +96,10 @@ func Novo(p *pgxpool.Pool) *Cliente {
 			}
 			return nil
 		}},
-		contas: func(s string) string { return "https://accounts.zoho" + s },
-		api:    func(s string) string { return "https://www.zohoapis" + s + "/workdrive/api/v1" }}
+		contas:   func(s string) string { return "https://accounts.zoho" + s },
+		mail:     func(s string) string { return "https://mail.zoho" + s },
+		contatos: func(s string) string { return "https://contacts.zoho" + s },
+		api:      func(s string) string { return "https://www.zohoapis" + s + "/workdrive/api/v1" }}
 }
 
 // ParaTeste: o cliente falando com um Zoho de mentira (httptest) nos dois papéis (contas e API). Base que não é
@@ -111,6 +114,8 @@ func ParaTeste(t testing.TB, p *pgxpool.Pool, base string) *Cliente {
 	b := strings.TrimRight(base, "/")
 	c.contas = func(string) string { return b }
 	c.api = func(string) string { return b + "/workdrive/api/v1" }
+	c.mail = func(string) string { return b + "/mail" }
+	c.contatos = func(string) string { return b + "/contacts" }
 	return c
 }
 

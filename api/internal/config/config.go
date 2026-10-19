@@ -60,6 +60,9 @@ type Config struct {
 	VesselInterno   string // VESSEL_INTERNO_SEGREDO: a chave que o Core manda no lugar da anon (é o que o torna "o Core"); é segredo
 	VesselSoCore    bool   // VESSEL_SO_CORE: as 14 funções de escrita da Vessel só com a chave do Core (liga quando o site passar pelo Core)
 	ArquivosSegredo string // ARQUIVOS_SEGREDO: HMAC das URLs assinadas dos arquivos; é segredo (vazio = assinar responde 503)
+
+	// Plano 07a (proxy do Acessos).
+	APIURLPublica string // API_URL_PUBLICA: a base pública da API, sem barra final (ex.: https://socialdashboard.rbvcompany.com/api); host do redirect_uri do OAuth do Zoho/Microsoft e das fotos importadas. Vazia = o authUrl recusa
 }
 
 // Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
@@ -144,6 +147,7 @@ func Carregar() (Config, error) {
 		VesselInterno:     strings.TrimSpace(os.Getenv("VESSEL_INTERNO_SEGREDO")),
 		VesselSoCore:      ligado(os.Getenv("VESSEL_SO_CORE")),
 		ArquivosSegredo:   strings.TrimSpace(os.Getenv("ARQUIVOS_SEGREDO")),
+		APIURLPublica:     strings.TrimRight(strings.TrimSpace(os.Getenv("API_URL_PUBLICA")), "/"),
 	}
 	// segredo curto é a chave anon (pública) ou "teste" colado por engano: quem a tem vira "o Core" ou assina URL
 	for nome, v := range map[string]string{"VESSEL_INTERNO_SEGREDO": c.VesselInterno, "ARQUIVOS_SEGREDO": c.ArquivosSegredo} {
@@ -200,5 +204,12 @@ func Carregar() (Config, error) {
 		return c, fmt.Errorf("ENDERECO_PADRAO %q não está em ENDERECOS_DO_APP (o link de senha só leva a endereço da lista)", padrao)
 	}
 	c.EnderecoPadrao = padrao
+	// O redirect_uri do OAuth leva o code: só https (http em loopback, para dev/teste), sem query nem fragmento.
+	if c.APIURLPublica != "" {
+		u, err := url.Parse(c.APIURLPublica)
+		if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil || !(u.Scheme == "https" || (u.Scheme == "http" && loopback(u.Hostname()))) {
+			return c, errors.New("API_URL_PUBLICA deve ser uma URL https sem query (http só para localhost, 127.0.0.1 ou ::1)")
+		}
+	}
 	return c, nil
 }

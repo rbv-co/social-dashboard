@@ -348,6 +348,4 @@ func TestContratoFrontUsosTemDestino(t *testing.T) {
 }
 
 // edgesSemRota: edge que o front cita e a API não porta, com o motivo.
-var edgesSemRota = map[string]string{
-	"acessos-proxy": "ACHADO 02-1: decisão documentada (API-PRONTA.md, NOTAS 6-4): sem rota Go; a aba Drive do Acessos chama `${SUPABASE_URL}/functions/v1/acessos-proxy` sem desvio por área",
-}
+var edgesSemRota = map[string]string{}

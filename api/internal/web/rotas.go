@@ -3,6 +3,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/ia"
 	"github.com/rbv-co/social-dashboard/api/internal/mapa"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
+	"github.com/rbv-co/social-dashboard/api/internal/microsoft"
 	"github.com/rbv-co/social-dashboard/api/internal/paineis"
 	"github.com/rbv-co/social-dashboard/api/internal/patrimonio"
 	"github.com/rbv-co/social-dashboard/api/internal/publico"
@@ -64,6 +66,9 @@ const (
 	// Plano 5.10: o cartão EAN do Zoho (POST /vessel-baixar-cartao): o resgate pela busca na árvore do robô levava
 	// ~7 s e o PDF a 600 dpi vem em fluxo; o de domínio (30 s) cortaria o download.
 	PrazoCartao = 60 * time.Second
+
+	// Plano 07a: o proxy do Acessos varre o Graph/WorkDrive (centenas de chamadas na Auditoria). Cabe sob o WriteTimeout.
+	PrazoAcessos = 120 * time.Second
 
 	// EscritaDoServidor é o WriteTimeout do http.Server (main.go): a folga de 30 s acima do maior
 	// prazo por requisição (PrazoCollabs) deixa o handler terminar e responder antes de a conexão cair.
@@ -108,6 +113,8 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		}
 		w.Write([]byte("ok"))
 	})
+	// um cliente de cada por processo: o cache do token de acesso (e o limite de tokens novos do Zoho) é por instância
+	zc, mc := zoho.Novo(p), microsoft.Novo(p)
 	h := auth.NovosHandlers(p, s, l)
 	r.Post("/auth/entrar", h.Entrar)
 	// Plano 5.0: links de senha (públicos; limite por IP e por e-mail lá dentro, resposta sem enumeração).
@@ -147,6 +154,11 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 	// grupo de sessão, SEM o prazo de domínio (cada transferência estende o da própria conexão).
 	arq := &arquivos.Servico{Raiz: cfg.ArquivosDir, Segredo: cfg.ArquivosSegredo, Quem: vs.Quem, Origens: cfg.Origens, SoCore: cfg.VesselSoCore}
 	arq.MontarPublicas(r)
+	// Plano 07a: o retorno do OAuth do Zoho e da Microsoft (a edge acessos-oauth): público, a trava é o state.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.LimitarPorIP(60, time.Minute), comPrazo(30*time.Second))
+		(&acessos.OAuth{Zoho: zc, MS: mc, APIPublica: cfg.APIURLPublica, Retorno: cfg.EnderecoPadrao + "/"}).Montar(r)
+	})
 	av := &meta.AoVivo{Pool: p, Core: cli}
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Exigir(p, s))
@@ -172,7 +184,12 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 
 		// Plano 5.10: o cartão EAN do Zoho. Portão do selo (is_vessel_admin) DENTRO do handler, antes de ler o corpo;
 		// no grupo de SESSÃO com o escopo e o prazo próprio (o de domínio cortaria o download).
-		r.With(autz.ComEscopo(p), comPrazo(PrazoCartao)).Post("/vessel-baixar-cartao", (&vessel.Cartao{Pool: p, Zoho: zoho.Novo(p)}).ServeHTTP)
+		r.With(autz.ComEscopo(p), comPrazo(PrazoCartao)).Post("/vessel-baixar-cartao", (&vessel.Cartao{Pool: p, Zoho: zc}).ServeHTTP)
+
+		// Plano 07a: a porta da edge acessos-proxy (29 ações do Zoho e da Microsoft). Portão (is_acessos_admin) e recusa de
+		// "entrar como" nas escritas DENTRO do handler; no grupo de SESSÃO com o escopo e o prazo próprio.
+		r.With(autz.ComEscopo(p), comPrazo(PrazoAcessos)).Post("/acessos-proxy", (&acessos.Proxy{Pool: p, Zoho: zc,
+			MS: mc, Fotos: fotosDoAcessos{arq: arq, base: cfg.APIURLPublica}, APIPublica: cfg.APIURLPublica}).ServeHTTP)
 
 		// Plano 5.0: conta. Os portões de invite-user e entrar-como são os das edges (papel admin;
 		// super-admin pela ficha), dentro do handler, com a resposta 400 {"error": frase} das edges.
@@ -220,4 +237,21 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		})
 	})
 	return r
+}
+
+// fotosDoAcessos: o import de fotos do Zoho grava no bucket acessos-avatars e devolve a URL pública (a mesma rota
+// /storage/v1/object/public/... que a tela usa, sob a base pública da API). Sem base, o import conta a foto como falha.
+type fotosDoAcessos struct {
+	arq  *arquivos.Servico
+	base string
+}
+
+func (f fotosDoAcessos) Gravar(_ context.Context, caminho, tipo string, corpo []byte) (string, error) {
+	if f.base == "" {
+		return "", errors.New("API_URL_PUBLICA ausente")
+	}
+	if err := f.arq.GravarDoServidor("acessos-avatars", caminho, tipo, corpo); err != nil {
+		return "", err
+	}
+	return f.base + "/storage/v1/object/public/acessos-avatars/" + caminho, nil
 }

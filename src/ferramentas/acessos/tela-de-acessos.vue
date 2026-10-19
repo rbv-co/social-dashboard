@@ -65,7 +65,7 @@ import { temAcessoPatrimonio, pilulaDaSituacaoDoBem, agruparPorPessoa, decidirEs
 // detectam quando o número de linhas bate nele (corte silencioso do PostgREST).
 import { LIMITE_AUDITORIA, foiCortado, avisoDeCorte } from './auditoria-corte.js'
 import { deOnde, TETO_DE_LINHAS } from '../../compartilhado/banco-pela-api.js'
-import { areaNaApi } from '../../compartilhado/api.js'
+import { areaNaApi, fetchDaApi } from '../../compartilhado/api.js'
 import { storageNaArea } from '../../compartilhado/armazenamento-pela-api.js'
 // A API em Go entrega no máximo TETO_DE_LINHAS por pedido (o `limit` de 5000 seria recusado): a auditoria de bens pede o teto.
 const LIMITE_BENS_AUDITORIA = areaNaApi('patrimonio') ? TETO_DE_LINHAS : LIMITE_AUDITORIA
@@ -136,9 +136,16 @@ async function _acLog(acao,alvo,resultado,detalhe){
     await deOnde(sbClient).from('acessos_log').insert({quem:s?.user?.id||null,acao,alvo:alvo||null,resultado:(areaNaApi('acessos')&&resultado==='parcial')?'erro':(resultado||'ok'),detalhe:detalhe||null});}catch(e){}
 }
 async function _acProxy(action,args){
-  const{data:{session:s}}=await sbClient.auth.getSession();
-  const tok=s?.access_token||SUPABASE_ANON_KEY;
-  const r=await fetch(SUPABASE_URL+'/functions/v1/acessos-proxy',{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action},args||{}))});
+  const corpo=JSON.stringify(Object.assign({action},args||{}));
+  let r;
+  // Área `acessos` na API: POST /acessos-proxy (07a); desligada, a edge do Supabase (o rollback não muda nada aqui).
+  if(areaNaApi('acessos')){
+    r=await fetchDaApi('/acessos-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:corpo});
+  }else{
+    const{data:{session:s}}=await sbClient.auth.getSession();
+    const tok=s?.access_token||SUPABASE_ANON_KEY;
+    r=await fetch(SUPABASE_URL+'/functions/v1/acessos-proxy',{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:corpo});
+  }
   let j={};try{j=await r.json();}catch(e){}
   if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
   return j;
@@ -1716,7 +1723,7 @@ function _acDesligar(id){
     // A devolução se registra no Patrimônio/na Frota (mudar `situacao`/
     // `pessoa_id` de lá), não por aqui.
     if(doOd){
-      try{const r=await _acProxy('microsoft.revokeForEmail',{email:c.email_outlook});resumo+=' · OneDrive: '+(r&&r.removed||0)+' removido(s)';}
+      try{const r=await _acProxy('microsoft.revokeForEmail',{email:c.email_outlook});resumo+=' · OneDrive: '+(r&&r.removed||0)+' removido(s)'+((r&&(r.falhas||r.truncated))?' · INCOMPLETO ('+(r.falhas||0)+' falha(s)'+(r.truncated?', varredura interrompida':'')+'): confira na Auditoria':'');}
       catch(e){resumo+=' · OneDrive falhou';}
     }
     if(doZoho){
