@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 // -de-dados.js chama window.supabase.createClient()) — inviável de stubar
 // direito no node. mapa-de-enderecos.js reexporta podeEntrar por
 // compatibilidade, mas o teste importa da fonte pura.
-import { podeEntrar } from './guarda-de-rotas.js'
+import { podeEntrar, destinoDepoisDoLogin } from './guarda-de-rotas.js'
 
 const permiteTudo = () => true
 const negaTudo = () => false
@@ -75,4 +75,13 @@ test('rota de super-admin nao abre para quem so tem permissoes', () => {
 test('rota que o catalogo nao conhece fica fechada, nunca aberta por omissao', () => {
   const rota = { name: 'tela-nova', meta: { foraDoCatalogo: true } }
   assert.deepEqual(podeEntrar(rota, true, permiteTudo, true), { name: 'inicio' })
+})
+
+test('consentimento do ChatGPT sem sessao vai ao login levando o pedido, e o login devolve so para la', () => {
+  const rota = { name: 'oauth-consentimento', fullPath: '/oauth/consentimento?client_id=x&state=y', meta: {} }
+  assert.deepEqual(podeEntrar(rota, false, permiteTudo), { name: 'login', query: { volta: rota.fullPath } })
+  assert.equal(destinoDepoisDoLogin(rota.fullPath), rota.fullPath)
+  for (const fora of ['https://evil.example/oauth/consentimento?', '//evil.example', '/frota', undefined, ['/oauth/consentimento?']]) {
+    assert.deepEqual(destinoDepoisDoLogin(fora), { name: 'inicio' })
+  }
 })
