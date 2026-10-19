@@ -42,7 +42,7 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
   function tokenDaApi(){
     try{
       var st=(sessionStorage.getItem('modo_entrar_como')==='1')?sessionStorage:localStorage;
-      return st.getItem('central_sessao_api')||localStorage.getItem('central_sessao_api')||null;
+      return st.getItem('central_sessao_api')||null;
     }catch(e){ return null; }
   }
   function viaApi(token){
@@ -109,7 +109,7 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
   }
 
   var tApi=tokenDaApi();
-  (tApi ? viaApi(tApi).catch(function(){ return null; }) : Promise.resolve(null))
+  window.__porteiro=(tApi ? viaApi(tApi).catch(function(){ return null; }) : Promise.resolve(null))
     .then(function(perfilApi){
       if(perfilApi) return {sessao:true,perfil:perfilApi,viaApi:true};
       return viaSupabase();   // sem sessão da API, ou ela caiu/venceu: tenta a do Supabase
@@ -295,14 +295,14 @@ function drawBadge(e){const x=e.ctx,w=e.state==='working',c=w?'#16c79a':'#8a93a8
 function applyState(e){const w=e.state==='working',col=w?0x16c79a:0x8a93a8;e.ring.material.color.setHex(col);e.ring.material.emissive.setHex(col);e.beam.visible=w;drawBadge(e);}
 async function qLast(t,c){try{const{data,error}=await sb.from(t).select(c).order(c,{ascending:false}).limit(1);if(error)throw error;return data&&data[0]?data[0][c]:null;}catch(e){return undefined;}}
 // Sessão da API (porteiro validou por ela): lê as rotas da API. Agente sem rota (coletor_log) fica no estado padrão.
-function tokApi(){try{const st=sessionStorage.getItem('modo_entrar_como')==='1'?sessionStorage:localStorage;return st.getItem('central_sessao_api')||localStorage.getItem('central_sessao_api');}catch(e){return null;}}
+function tokApi(){try{const st=sessionStorage.getItem('modo_entrar_como')==='1'?sessionStorage:localStorage;return st.getItem('central_sessao_api');}catch(e){return null;}}
 async function aLast(rota,c){try{const r=await fetch('/api'+rota+'?ordem='+c+'.desc&limite=1',{headers:{Authorization:'Bearer '+tokApi()}});if(!r.ok)return undefined;const d=await r.json();return d&&d[0]?d[0][c]:null;}catch(e){return undefined;}}
 async function aVivo(rota){try{const r=await fetch('/api'+rota+'?limite=1',{headers:{Authorization:'Bearer '+tokApi()}});return r.ok?new Date().toISOString():undefined;}catch(e){return undefined;}}
 async function qCount(t){try{const{count,error}=await sb.from(t).select('*',{count:'exact',head:true});if(error)throw error;return count;}catch(e){return undefined;}}
 async function refresh(){for(const e of AGT){let last,state;if(window.__3dViaApi){if(e.cfg.api)last=e.cfg.c?await aLast(e.cfg.api,e.cfg.c):await aVivo(e.cfg.api);}else if(sb&&e.cfg.c)last=await qLast(e.cfg.t,e.cfg.c);else if(sb&&e.cfg.t&&!e.cfg.c){const n=await qCount(e.cfg.t);last=n!==undefined?new Date().toISOString():undefined;}
  if(last==null){state=e.cfg.def||'idle';last=e.last;}else{const h=(Date.now()-new Date(last).getTime())/36e5;state=h<=(e.cfg.mh||48)?'working':'idle';}e.state=state;e.last=last;applyState(e);}}
 function pulse(now){const t=now*0.004;for(const e of AGT){if(e.state==='working'){const s=1+Math.sin(t*2+e.x)*0.09;e.ring.scale.set(s,s,1);e.beam.material.opacity=0.12+0.08*(0.5+0.5*Math.sin(t*3+e.z));}else e.ring.scale.set(1,1,1);}}
-refresh();setInterval(refresh,60000);
+(window.__porteiro||Promise.resolve()).then(()=>{refresh();setInterval(refresh,60000);});
 
 /* ---- INTERAÇÃO ---- */
 const ray=new THREE.Raycaster(),pt=new THREE.Vector2();let moved=false;
