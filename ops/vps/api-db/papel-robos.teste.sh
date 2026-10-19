@@ -42,6 +42,8 @@ create table acessos_conexoes (provedor text primary key, client_id text, client
 create table bling_tokens (id int primary key, access_token text, refresh_token text, client_secret text);
 create table vessel_lotes (id uuid primary key default gen_random_uuid(), modelo text, cor text, sku text, fotos text, criado_em timestamptz default now(), fabricado_em date);
 create table vessel_vendedores_bling (bling_vendedor_id bigint primary key, nome text);
+create table bling_vendedores (vendor_id bigint primary key, nome text not null default '');
+create table bling_pedido_vendedor (pedido_id bigint primary key, vendor_id bigint not null);
 create table vessel_pedidos (id bigserial primary key, bling_pedido_id bigint unique, total numeric);
 create table vessel_pedido_itens (id bigserial primary key, pedido_id bigint, sku text);
 create table bling_pedido_forma_pagamento (parcela_id bigint primary key, pedido_id bigint);
@@ -117,6 +119,7 @@ confere "papel que já existia ficou intacto" "$(adm -c "select rolname, rolconn
 ok robo_reporte "grava a rodada" "insert into robos_execucoes (robo, disparado_em, status_code, ok, resposta, conferido_em) values ('x', now(), 200, true, 'ok', now())"
 ok robo_selo "token, lê e atualiza o lote" "select id, access_token from bling_tokens; select id, modelo, cor, sku, fotos, criado_em from vessel_lotes; update vessel_lotes set cor = 'a', fotos = 'b'"
 ok robo_pedidos_vessel "pedido novo (com sequence), itens, pagamento, chave" "insert into vessel_pedidos (bling_pedido_id, total) values (1, 2) on conflict (bling_pedido_id) do update set total = 3; insert into vessel_pedido_itens (pedido_id, sku) values (1, 'a'); delete from vessel_pedido_itens; insert into bling_pedido_forma_pagamento values (1, 1); select vessel_chave_do_nome('A'); select pedido_id, total_corrigido from bling_pedido_ajuste_valor; select id, nome, email, whatsapp, origem, criado_em, bling_id from vessel_lista_espera; update vessel_pessoas set bling_contato_id = 1"
+ok robo_pedidos_vessel "caches do ranking por vendedor" "insert into bling_vendedores (vendor_id, nome) values (1, 'a') on conflict (vendor_id) do update set nome = 'b'; insert into bling_pedido_vendedor (pedido_id, vendor_id) values (1, 1) on conflict (pedido_id) do update set vendor_id = 2"
 ok robo_shopify "upsert do pedido" "insert into shopify_pedidos values (1, 2) on conflict (id) do update set total = 3"
 ok robo_metaads_zoho "credencial do Zoho e leads" "select provedor, client_id, client_secret, refresh_token, data_center from acessos_conexoes; select nome, utm_term, clique_meta from vessel_lista_espera; select * from campaigns, ads, ad_insights_hora; select pedido_id, total_corrigido from bling_pedido_ajuste_valor"
 ok robo_vigia_meta "conta e registro de problemas" "select id, name, ad_account_id from accounts; select gt_registrar_problemas('a', '[]'); select provedor, client_id, client_secret, refresh_token, data_center from acessos_conexoes; insert into robos_execucoes (robo, ok, status_code, resposta, conferido_em) values ('v', true, 200, 'ok', now())"
