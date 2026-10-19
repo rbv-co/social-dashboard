@@ -25,6 +25,7 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
 <div id="porteiro" style="position:fixed;inset:0;z-index:99999;background:#0b0f1a;color:#9aa6cc;
      display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;
      font:14px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">conferindo seu acesso…</div>
+<script src="acesso.js"></script>
 <script>
 (function(){
   var U='https://kounqtdoioootxqegkij.supabase.co';
@@ -34,61 +35,86 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
     el.innerHTML='<div><div style="font-size:16px;color:#e8ecf8;margin-bottom:8px;">'+msg+'</div>'+
       '<a href="/" style="color:#6ea8ff;">voltar para a Central</a></div>';
   }
-  var chave=null;
-  try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(/^sb-.*-auth-token$/.test(k)){chave=k;break;} } }catch(e){}
-  var tok=null;
-  if(chave){ try{ tok=JSON.parse(localStorage.getItem(chave)); }catch(e){} }
-  if(!tok||!tok.access_token){ nega('Entre na Central para ver o Escritório 3D.'); return; }
-  var uid=(tok.user&&tok.user.id)||'';
-  if(!uid){ nega('Não consegui identificar sua sessão. Entre de novo.'); return; }
-  // BUSCA O PERFIL, E SABE RENOVAR A SESSÃO ANTES DE DESISTIR.
-  //
-  // Visto ao vivo em 04/08/2026: o porteiro barrou um SUPERADMIN dizendo "não
-  // consegui ler seu perfil", e a MESMA chamada dava 200 segundos depois. O
-  // motivo é que esta página é ESTÁTICA — ela não tem o supabase-js cuidando da
-  // sessão como o aplicativo tem. Com o `access_token` guardado já vencido (ou
-  // recém-trocado), a leitura volta 401.
-  //
-  // Negar por dúvida é o padrão certo para PERMISSÃO. Só que isto não era
-  // dúvida de permissão: era sessão velha — e tratar as duas como a mesma coisa
-  // tranca do lado de fora justamente quem tem a chave.
-  function perfil(token){
-    return fetch(U+'/rest/v1/profiles?select=role,is_superadmin,permissions,features&id=eq.'+encodeURIComponent(uid),
-      {headers:{apikey:AK,Authorization:'Bearer '+token}})
-      .then(function(r){ return r.status===401 ? null : r.json(); });
+  // 1) SESSÃO DA API (Central depois da virada). O login pela API apaga a sessão do Supabase do
+  //    navegador; por isso esta é a primeira porta. Mesma regra de src/compartilhado/api.js:
+  //    aba "entrar como" guarda em sessionStorage, o resto em localStorage.
+  var BASE='/api';
+  function tokenDaApi(){
+    try{
+      var st=(sessionStorage.getItem('modo_entrar_como')==='1')?sessionStorage:localStorage;
+      return st.getItem('central_sessao_api')||localStorage.getItem('central_sessao_api')||null;
+    }catch(e){ return null; }
   }
-  function renovar(){
-    if(!tok.refresh_token) return Promise.resolve(null);
-    return fetch(U+'/auth/v1/token?grant_type=refresh_token',
-      {method:'POST',headers:{apikey:AK,'Content-Type':'application/json'},
-       body:JSON.stringify({refresh_token:tok.refresh_token})})
+  function viaApi(token){
+    return fetch(BASE+'/auth/eu',{headers:{Authorization:'Bearer '+token}})
       .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(j){ return (j&&j.access_token)||null; });
+      .then(function(j){ return (j&&j.id) ? {superadmin:j.superadmin,permissoes:j.permissoes,modulos:j.modulos} : null; });
   }
-  perfil(tok.access_token)
-    .then(function(d){
-      // UMA tentativa de renovar, e só quando a primeira falhou por sessão.
-      // Repetir em laço transformaria problema de login em martelada no
-      // servidor de autenticação.
-      if(d) return d;
-      return renovar().then(function(novo){ return novo ? perfil(novo) : null; });
+
+  // 2) SESSÃO DO SUPABASE (antes da virada e no ROLLBACK para ele). Também é o plano B se a API
+  //    não responder, mas só quando existe uma sessão do Supabase guardada.
+  function viaSupabase(){
+    var chave=null;
+    try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(/^sb-.*-auth-token$/.test(k)){chave=k;break;} } }catch(e){}
+    var tok=null;
+    if(chave){ try{ tok=JSON.parse(localStorage.getItem(chave)); }catch(e){} }
+    if(!tok||!tok.access_token) return Promise.resolve({sessao:false});
+    var uid=(tok.user&&tok.user.id)||'';
+    if(!uid) return Promise.resolve({sessao:true,erro:'Não consegui identificar sua sessão. Entre de novo.'});
+    // BUSCA O PERFIL, E SABE RENOVAR A SESSÃO ANTES DE DESISTIR.
+    //
+    // Visto ao vivo em 04/08/2026: o porteiro barrou um SUPERADMIN dizendo "não
+    // consegui ler seu perfil", e a MESMA chamada dava 200 segundos depois. O
+    // motivo é que esta página é ESTÁTICA — ela não tem o supabase-js cuidando da
+    // sessão como o aplicativo tem. Com o `access_token` guardado já vencido (ou
+    // recém-trocado), a leitura volta 401.
+    //
+    // Negar por dúvida é o padrão certo para PERMISSÃO. Só que isto não era
+    // dúvida de permissão: era sessão velha — e tratar as duas como a mesma coisa
+    // tranca do lado de fora justamente quem tem a chave.
+    function perfil(token){
+      return fetch(U+'/rest/v1/profiles?select=role,is_superadmin,permissions,features&id=eq.'+encodeURIComponent(uid),
+        {headers:{apikey:AK,Authorization:'Bearer '+token}})
+        .then(function(r){ return r.status===401 ? null : r.json(); });
+    }
+    function renovar(){
+      if(!tok.refresh_token) return Promise.resolve(null);
+      return fetch(U+'/auth/v1/token?grant_type=refresh_token',
+        {method:'POST',headers:{apikey:AK,'Content-Type':'application/json'},
+         body:JSON.stringify({refresh_token:tok.refresh_token})})
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(j){ return (j&&j.access_token)||null; });
+    }
+    return perfil(tok.access_token)
+      .then(function(d){
+        // UMA tentativa de renovar, e só quando a primeira falhou por sessão.
+        // Repetir em laço transformaria problema de login em martelada no
+        // servidor de autenticação.
+        if(d) return d;
+        return renovar().then(function(novo){ return novo ? perfil(novo) : null; });
+      })
+      .then(function(d){
+        var p=(d&&d[0])||null;
+        if(!p) return {sessao:true,erro:'Não consegui ler seu perfil. Tente entrar de novo.'};
+        return {sessao:true,perfil:{superadmin:p.is_superadmin,permissoes:p.permissions,modulos:p.features}};
+      });
+  }
+
+  function decide(r){
+    if(!r.sessao){ nega('Entre na Central para ver o Escritório 3D.'); return; }
+    if(r.erro){ nega(r.erro); return; }
+    if(!globalThis.acessoDo3d.pode(r.perfil)){ nega('Você ainda não tem acesso ao Escritório 3D.'); return; }
+    window.__3dViaApi=!!r.viaApi;
+    el.parentNode.removeChild(el);
+  }
+
+  var tApi=tokenDaApi();
+  (tApi ? viaApi(tApi).catch(function(){ return null; }) : Promise.resolve(null))
+    .then(function(perfilApi){
+      if(perfilApi) return {sessao:true,perfil:perfilApi,viaApi:true};
+      return viaSupabase();   // sem sessão da API, ou ela caiu/venceu: tenta a do Supabase
     })
-    .then(function(d){
-      var p=(d&&d[0])||null;
-      if(!p){ nega('Não consegui ler seu perfil. Tente entrar de novo.'); return; }
-      var feats=p.features||[];
-      var perms=p.permissions||{};
-      // SEM ATALHO PARA `role==='admin'`, e isto foi corrigido antes de mesclar
-      // (04/08/2026): o cartão da home usa `hasPermission`, que NÃO tem esse
-      // atalho. Com ele aqui, um admin comum não veria o cartão mas entraria
-      // pelo endereço — porta que a tela diz estar fechada e não está. As duas
-      // portas passam a responder a mesma coisa.
-      var pode = p.is_superadmin===true
-              || feats.indexOf('escritorio3d')>=0
-              || ((perms['escritorio3d']||[]).indexOf('ver')>=0);
-      if(!pode){ nega('Você ainda não tem acesso ao Escritório 3D.'); return; }
-      el.parentNode.removeChild(el);
-    })
+    .then(decide)
     .catch(function(){ nega('Não consegui conferir seu acesso agora.'); });
 })();
 </script>
@@ -254,10 +280,10 @@ function updW(dt){for(const w of WK){const a=w.path[w.i],b=w.path[(w.i+1)%w.path
 
 /* ---- STATUS (anel+feixe+crachá+supabase) ---- */
 let sb=null;try{sb=window.supabase.createClient("https://kounqtdoioootxqegkij.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM");}catch(e){}
-const STCFG={'Assistente de Social Media':{cad:'Diário',load:3,t:'daily_snapshots',c:'captured_at',mh:30,def:'working'},
- 'Analista de Dados':{cad:'Diário',load:3,t:'bling_pedido_vendedor',c:null,mh:30,def:'working'},
+const STCFG={'Assistente de Social Media':{cad:'Diário',load:3,t:'daily_snapshots',c:'captured_at',mh:30,def:'working',api:'/redes/seguidores'},
+ 'Analista de Dados':{cad:'Diário',load:3,t:'bling_pedido_vendedor',c:null,mh:30,def:'working',api:'/comercial/pedidos-vendedor'},
  'Analista de Mercado':{cad:'A cada 3 dias',load:2,t:'coletor_log',c:'run_at',mh:96,def:'working'},
- 'Gestor Comercial':{cad:'Semanal',load:2,t:'gestao_comercial_briefings',c:'created_at',mh:216,def:'idle'}};
+ 'Gestor Comercial':{cad:'Semanal',load:2,t:'gestao_comercial_briefings',c:'created_at',mh:216,def:'idle',api:'/comercial/briefings'}};
 function rrx(x,a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();}
 function fmtd(v){if(!v)return'—';const d=new Date(v);return isNaN(d)?'—':d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
 AGT.forEach(e=>{e.cfg=STCFG[e.info.name]||{cad:'—',load:1,def:'idle'};e.state=e.cfg.def||'idle';
@@ -268,8 +294,12 @@ AGT.forEach(e=>{e.cfg=STCFG[e.info.name]||{cad:'—',load:1,def:'idle'};e.state=
 function drawBadge(e){const x=e.ctx,w=e.state==='working',c=w?'#16c79a':'#8a93a8';x.clearRect(0,0,380,158);x.fillStyle='rgba(12,18,30,.93)';rrx(x,5,5,370,148,18);x.fill();x.strokeStyle=c;x.lineWidth=3;x.stroke();x.textAlign='left';x.fillStyle='#eef3ff';x.font='bold 25px sans-serif';x.fillText(e.info.name,20,38);x.fillStyle=c;x.beginPath();x.arc(31,74,8,0,7);x.fill();x.font='bold 19px sans-serif';x.fillText(w?'TRABALHANDO':'OCIOSO',48,80);x.fillStyle='#9fb0d0';x.font='14px sans-serif';x.fillText('Última: '+fmtd(e.last),20,108);x.fillText('Cadência: '+e.cfg.cad,20,130);x.fillStyle='#9fb0d0';x.fillText('Carga:',250,108);for(let i=0;i<3;i++){x.fillStyle=i<e.cfg.load?c:'#33405a';rrx(x,250+i*40,116,32,14,4);x.fill();}e.tex.needsUpdate=true;}
 function applyState(e){const w=e.state==='working',col=w?0x16c79a:0x8a93a8;e.ring.material.color.setHex(col);e.ring.material.emissive.setHex(col);e.beam.visible=w;drawBadge(e);}
 async function qLast(t,c){try{const{data,error}=await sb.from(t).select(c).order(c,{ascending:false}).limit(1);if(error)throw error;return data&&data[0]?data[0][c]:null;}catch(e){return undefined;}}
+// Sessão da API (porteiro validou por ela): lê as rotas da API. Agente sem rota (coletor_log) fica no estado padrão.
+function tokApi(){try{const st=sessionStorage.getItem('modo_entrar_como')==='1'?sessionStorage:localStorage;return st.getItem('central_sessao_api')||localStorage.getItem('central_sessao_api');}catch(e){return null;}}
+async function aLast(rota,c){try{const r=await fetch('/api'+rota+'?ordem='+c+'.desc&limite=1',{headers:{Authorization:'Bearer '+tokApi()}});if(!r.ok)return undefined;const d=await r.json();return d&&d[0]?d[0][c]:null;}catch(e){return undefined;}}
+async function aVivo(rota){try{const r=await fetch('/api'+rota+'?limite=1',{headers:{Authorization:'Bearer '+tokApi()}});return r.ok?new Date().toISOString():undefined;}catch(e){return undefined;}}
 async function qCount(t){try{const{count,error}=await sb.from(t).select('*',{count:'exact',head:true});if(error)throw error;return count;}catch(e){return undefined;}}
-async function refresh(){for(const e of AGT){let last,state;if(sb&&e.cfg.c)last=await qLast(e.cfg.t,e.cfg.c);else if(sb&&e.cfg.t&&!e.cfg.c){const n=await qCount(e.cfg.t);last=n!==undefined?new Date().toISOString():undefined;}
+async function refresh(){for(const e of AGT){let last,state;if(window.__3dViaApi){if(e.cfg.api)last=e.cfg.c?await aLast(e.cfg.api,e.cfg.c):await aVivo(e.cfg.api);}else if(sb&&e.cfg.c)last=await qLast(e.cfg.t,e.cfg.c);else if(sb&&e.cfg.t&&!e.cfg.c){const n=await qCount(e.cfg.t);last=n!==undefined?new Date().toISOString():undefined;}
  if(last==null){state=e.cfg.def||'idle';last=e.last;}else{const h=(Date.now()-new Date(last).getTime())/36e5;state=h<=(e.cfg.mh||48)?'working':'idle';}e.state=state;e.last=last;applyState(e);}}
 function pulse(now){const t=now*0.004;for(const e of AGT){if(e.state==='working'){const s=1+Math.sin(t*2+e.x)*0.09;e.ring.scale.set(s,s,1);e.beam.material.opacity=0.12+0.08*(0.5+0.5*Math.sin(t*3+e.z));}else e.ring.scale.set(1,1,1);}}
 refresh();setInterval(refresh,60000);

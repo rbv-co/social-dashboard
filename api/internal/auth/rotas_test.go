@@ -154,6 +154,15 @@ func TestEuSairESemToken(t *testing.T) {
 	if b := chamar(h, "GET", "/auth/eu", "", tok).Body.String(); !strings.Contains(b, `"nome":"Ana"`) {
 		t.Fatalf("eu sem o nome do perfil: %s", b)
 	}
+	// modulos (profiles.features): o Escritório 3D decide o acesso por ele. Sem features = lista vazia, nunca null.
+	p.Exec(context.Background(), `update profiles set features = '{}' where id = $1`, uid)
+	if b := chamar(h, "GET", "/auth/eu", "", tok).Body.String(); !strings.Contains(b, `"modulos":[]`) {
+		t.Fatalf("eu sem features deve trazer modulos vazio: %s", b)
+	}
+	p.Exec(context.Background(), `update profiles set features = array['escritorio3d','banco'] where id = $1`, uid)
+	if b := chamar(h, "GET", "/auth/eu", "", tok).Body.String(); !strings.Contains(b, `"modulos":["escritorio3d","banco"]`) {
+		t.Fatalf("eu sem os módulos do perfil: %s", b)
+	}
 	if w := chamar(h, "POST", "/auth/sair", "", tok); w.Code != 204 {
 		t.Fatalf("sair = %d", w.Code)
 	}

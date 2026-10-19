@@ -1,3 +1,14 @@
 O "Escritório 3D" dos agentes: uma página estática à parte, feita em
 three.js (não é Vue). Não faz parte do app principal nem do build dele —
 é acessada direto pelo próprio arquivo HTML desta pasta.
+
+ACESSO (porteiro no começo do index.html; a decisão fica em acesso.js, com teste em
+src/ferramentas/inicio/escritorio-3d-acesso.test.mjs):
+- Primeiro tenta a sessão da API (token em central_sessao_api, GET /api/auth/eu).
+- Se não houver, ou ela estiver vencida, tenta a sessão do Supabase (sb-*-auth-token):
+  é o caminho do ROLLBACK e de antes da virada.
+- Entra quem é superadmin, tem o módulo `escritorio3d` ou a permissão `escritorio3d: ver`.
+  Papel admin sozinho NÃO entra (igual ao cartão da home).
+- O status dos agentes lê /api/redes/seguidores, /api/comercial/pedidos-vendedor e
+  /api/comercial/briefings. O "Analista de Mercado" (coletor_log) não tem rota na API:
+  fica no estado padrão (trabalhando) até existir uma.
