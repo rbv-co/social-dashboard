@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prova os 15 papéis de robô (papel-robo-*.sql) num banco DESCARTÁVEL de um Postgres de teste que já esteja de pé (o mesmo dos
+# Prova os 16 papéis de robô (papel-robo-*.sql) num banco DESCARTÁVEL de um Postgres de teste que já esteja de pé (o mesmo dos
 # testes Go; precisa de `psql` 17). Nada de produção. Cria um banco e os papéis, e remove tudo no fim.
 # Uso (na raiz do repositório):
 #   TEST_DATABASE_URL='postgres://postgres@127.0.0.1:55606/postgres?sslmode=disable' bash ops/vps/api-db/papel-robos.teste.sh
@@ -33,7 +33,7 @@ limpar() {
 }
 trap limpar EXIT
 
-confere "são 15 arquivos de papel de robô" "${#ARQS[@]}" "15"
+confere "são 16 arquivos de papel de robô" "${#ARQS[@]}" "16"
 psql "$BASE" -X -q -v ON_ERROR_STOP=1 -c "create database $NOME" || exit 1
 adm <<'SQLX'
 create role pdv_leitura login;  -- papel que JÁ existe: tem de sobreviver intacto
@@ -81,6 +81,12 @@ create table fabrica_campanhas (id uuid primary key default gen_random_uuid(), f
 create table fabrica_criativos (id uuid primary key default gen_random_uuid(), storage_path text, purgado_em timestamptz, url text);
 create table fabrica_looks (chave text primary key, preview_url text, nome text);
 create table robos_execucoes (id bigserial primary key, robo text, disparado_em timestamptz, status_code int, ok bool, resposta text, conferido_em timestamptz);
+create table vessel_pecas (codigo text primary key, lote_id uuid references vessel_lotes(id), numero_na_serie int, cartao_gerado_em timestamptz);
+create table vessel_cartao_pedidos (id uuid primary key default gen_random_uuid(), pecas text[], situacao text, pasta text, erro text, criado_em timestamptz default now());
+create table vessel_cartao_arquivos (codigo text, nome text, zoho_id text not null, pasta_id text, atualizado_em timestamptz default now(), primary key (codigo, nome));
+create function vessel_cartao_pegar_da_fila() returns json language sql security definer as $$ select '{"ok":true}'::json $$;
+create function vessel_cartao_pedido_terminou(p_pedido uuid, p_ok boolean, p_pasta text, p_erro text, p_pecas text[]) returns json language sql security definer as $$ select '{"ok":true}'::json $$;
+create function vessel_cartao_recolocar_travados(p_minutos int default 150) returns json language sql security definer as $$ select '{"ok":true}'::json $$;
 create table usuarios (id uuid primary key, email text, senha_hash text);
 create function unaccent_simples(t text) returns text language sql as $$ select lower(t) $$;
 create function vessel_chave_do_nome(t text) returns text language sql as $$ select unaccent_simples(t) $$;
@@ -104,7 +110,7 @@ for a in "${ARQS[@]}"; do
   for rodada in 1 2; do psql "$SERVIDOR/$NOME" -X -v ON_ERROR_STOP=1 -q -f "$a" >/dev/null 2>&1; confere "$n: roda (rodada $rodada)" "$?" "0"; done
 done
 confere "nenhum papel é superusuário, bypassrls nem herda" "$(adm -c "select count(*) from pg_roles where rolname like 'robo\_%' and (rolsuper or rolbypassrls or rolinherit or rolcreatedb or rolcreaterole or not rolcanlogin)")" "0"
-confere "15 papéis com limite de conexões" "$(adm -c "select count(*) from pg_roles where rolname like 'robo\_%' and rolconnlimit > 0")" "15"
+confere "16 papéis com limite de conexões" "$(adm -c "select count(*) from pg_roles where rolname like 'robo\_%' and rolconnlimit > 0")" "16"
 confere "papel que já existia ficou intacto" "$(adm -c "select rolname, rolconnlimit, has_table_privilege(oid::regrole::text, 'usuarios', 'select') from pg_roles where rolname = 'pdv_leitura'")" "$before"
 
 # (4) o que cada robô faz
@@ -123,6 +129,7 @@ ok robo_opr "contas, campanhas, seguidores, eventos" "select id, instagram_id fr
 ok robo_budget "configuração e análises" "select * from gt_ponderada_config, gt_objetivo_interacao; insert into gt_budget_analises values ('a', 'b') on conflict (campaign_id) do update set veredito = 'c'; insert into gt_ad_analises values ('a', 'b') on conflict (ad_id) do update set veredito = 'c'"
 ok robo_noticias "notícia, log, panorama" "insert into noticias_concorrentes (marca, titulo) values ('a', 'b'); update noticias_concorrentes set produtos = 'x'; delete from noticias_concorrentes; insert into coletor_log (fase) values ('a'); insert into noticias_panorama values ('a', 'b') on conflict (rodada) do update set conteudo_md = 'c'"
 ok robo_faxina "lê o que está em uso" "select id, fechada_em, purgado_em from fabrica_campanhas; select storage_path, purgado_em from fabrica_criativos; select preview_url from fabrica_looks"
+ok robo_cartoes "fila, peças com SKU, ids dos arquivos (upsert 2x), credencial do Zoho e as 3 funções" "select vessel_cartao_recolocar_travados(150); select vessel_cartao_pegar_da_fila(); select vessel_cartao_pedido_terminou(gen_random_uuid(), true, 'p', null, array['A']); select id, situacao, criado_em, pecas from vessel_cartao_pedidos; select p.codigo, p.numero_na_serie, l.sku from vessel_pecas p left join vessel_lotes l on l.id = p.lote_id; insert into vessel_cartao_arquivos (codigo, nome, zoho_id, pasta_id, atualizado_em) values ('A', 'a.png', 'z', 'p', now()) on conflict (codigo, nome) do update set zoho_id = excluded.zoho_id, pasta_id = excluded.pasta_id, atualizado_em = excluded.atualizado_em; insert into vessel_cartao_arquivos (codigo, nome, zoho_id, pasta_id, atualizado_em) values ('A', 'a.png', 'z2', 'p', now()) on conflict (codigo, nome) do update set zoho_id = excluded.zoho_id, pasta_id = excluded.pasta_id, atualizado_em = excluded.atualizado_em; select provedor, client_id, client_secret, refresh_token, data_center from acessos_conexoes"
 
 # (5) o que NÃO podem
 for r in $(adm -c "select rolname from pg_roles where rolname like 'robo\_%' order by 1"); do
@@ -149,6 +156,10 @@ nega robo_noticias "lê os pedidos" "select * from vessel_pedidos"
 nega robo_noticias "altera o título da notícia" "update noticias_concorrentes set titulo = 'x'"
 nega robo_opr "lê telefone do chatwoot" "select contact_phone_number from chatwoot_eventos"
 nega robo_opr "grava seguidores" "insert into followers_leituras (followers_count) values (1)"
+nega robo_cartoes "muda o pedido direto (só pelas funções)" "update vessel_cartao_pedidos set situacao = 'pronto'"
+nega robo_cartoes "grava em vessel_pecas" "update vessel_pecas set cartao_gerado_em = now()"
+nega robo_cartoes "lê o oauth_state do Zoho" "select oauth_state from acessos_conexoes"
+nega robo_cartoes "lê o resto do lote" "select modelo, cor, fotos from vessel_lotes"
 nega robo_faxina "grava em fabrica_criativos" "update fabrica_criativos set purgado_em = now()"
 nega robo_faxina "lê a url do criativo" "select url from fabrica_criativos"
 

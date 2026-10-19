@@ -8,16 +8,32 @@
 #
 # Layout esperado em $RAIZ:  node/ (Node 22)  venv/ (Python)  social-dashboard/ e, DENTRO dele, vessel-brasil/
 # ⚠️ vessel-brasil tem de ficar DENTRO de social-dashboard: o gerador do site importa ../../coletor/lib/cutout.mjs.
-# Segredos: SUPABASE_URL e SUPABASE_SERVICE_KEY vêm do EnvironmentFile do serviço (/etc/cartoes-ean.env).
+# BANCO (coletor/lib/cartoes-dados.mjs), do EnvironmentFile do serviço (/etc/cartoes-ean.env):
+#   - api-db por `pg` (virada): CARTOES_DB_SENHA, a senha do papel robo_cartoes (ops/vps/api-db/papel-robo-cartoes.sql). Vai para o
+#     `pg` por PGPASSWORD, nunca por argumento nem pela URL. CARTOES_DATABASE_URL, se não vier pronta, é montada com o IP do
+#     `api-db` na rede api_net (como o conteudo-vigia.sh);
+#   - Supabase (REST, o de antes e o ROLLBACK): SUPABASE_URL e SUPABASE_SERVICE_KEY. Voltar = tirar CARTOES_DB_SENHA (e
+#     CARTOES_DATABASE_URL) do arquivo e reiniciar o serviço.
 set -u
 RAIZ="${RAIZ:-/opt/cartoes-ean}"
-WORKERS="${CARTOES_WORKERS:-2}"   # robôs ao mesmo tempo; a VPS divide CPU com o PDV, então poucos
+WORKERS="${CARTOES_WORKERS:-2}"   # robôs ao mesmo tempo; a VPS divide CPU com o PDV, então poucos; teto 4 (o papel robo_cartoes tem connection limit 5)
 export PATH="$RAIZ/node/bin:$RAIZ/venv/bin:$PATH"
 export VESSEL_DIR="$RAIZ/social-dashboard/vessel-brasil"
 # Espelho PERMANENTE das fotos do Zoho: só baixa o que mudou (regras de validade em coletor/lib/espelho-de-fotos.mjs).
 export FOTOS_CACHE="$RAIZ/cache-fotos"
-: "${SUPABASE_URL:?falta SUPABASE_URL}" "${SUPABASE_SERVICE_KEY:?falta SUPABASE_SERVICE_KEY}"
 log() { echo "$(date -u +%FT%TZ) $*"; }
+if [ -n "${CARTOES_DB_SENHA:-}" ]; then
+  export PGPASSWORD="$CARTOES_DB_SENHA"; unset CARTOES_DB_SENHA   # os filhos (Chrome, git, python) não precisam dela
+  if [ -z "${CARTOES_DATABASE_URL:-}" ]; then
+    ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "api_net").IPAddress}}' api-db 2>/dev/null)
+    [ -n "$ip" ] || { log "erro: não achei o IP do api-db"; exit 1; }
+    export CARTOES_DATABASE_URL="postgres://robo_cartoes@$ip:5432/api"
+  fi
+  unset SUPABASE_URL SUPABASE_SERVICE_KEY   # com o banco novo, nada aqui pode escrever no Supabase por engano
+else
+  unset CARTOES_DATABASE_URL   # a ÚNICA chave da virada é a CARTOES_DB_SENHA: sem ela o rollback volta ao REST de verdade
+  : "${SUPABASE_URL:?falta SUPABASE_URL (ou CARTOES_DB_SENHA)}" "${SUPABASE_SERVICE_KEY:?falta SUPABASE_SERVICE_KEY}"
+fi
 
 atualizar() {
   # Falha de rede no pull NÃO impede o cartão: segue com o código que já está aqui.
@@ -42,22 +58,23 @@ trabalhador() {
 }
 
 # Quantos pedidos esperam (no máximo $WORKERS), ou "erro". Leitura que falhou NÃO é fila vazia.
-fila() {
-  local corpo
-  corpo=$(curl -fsS --max-time 20 "$SUPABASE_URL/rest/v1/vessel_cartao_pedidos?situacao=eq.na_fila&select=id&limit=$WORKERS" \
-    -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY") || { echo erro; return; }
-  echo "$corpo" | grep -o '"id"' | wc -l | tr -d ' '
-}
+fila() { (cd "$RAIZ/social-dashboard" && node coletor/cartoes-fila.mjs "$WORKERS") || echo erro; }
 
 rodando() { jobs -rp | wc -l | tr -d ' '; }
 
 log "vigia no ar (até $WORKERS robôs ao mesmo tempo)"
-voltas=0
+voltas=0; erros=0
 while true; do
   n=$(fila)
   if [ "$n" = erro ]; then
     log "não consegui ler a fila; tento de novo em 30 s"; sleep 20
-  elif [ "$n" -gt 0 ]; then
+    # O IP do api-db foi lido na partida: se o contêiner foi recriado com outro IP, a fila nunca mais lê. Sem robô rodando, sai
+    # e o systemd (Restart=always) refaz a URL.
+    erros=$((erros + 1)); if [ "$erros" -ge 6 ] && [ "$(rodando)" -eq 0 ]; then log "erro: fila ilegível há ~3 min; reinicio para reler o IP do api-db"; exit 1; fi
+    continue
+  fi
+  erros=0
+  if [ "$n" -gt 0 ]; then
     r=$(rodando)
     # Só atualiza o código com NENHUM robô rodando: pull no meio de um trocaria os arquivos debaixo dele.
     [ "$r" -eq 0 ] && atualizar
