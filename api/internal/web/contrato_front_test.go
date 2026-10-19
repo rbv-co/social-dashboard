@@ -125,7 +125,6 @@ var tabelasSemRota = map[string]string{
 	"acessos_drive_marcas":    "ACHADO 02-1: aba Drive do Acessos grava direto no Supabase, sem rota nem ROTAS",
 	"acessos_drive_overrides": "ACHADO 02-1",
 	"acessos_drive_setores":   "ACHADO 02-1",
-	"chatwoot_eventos":        "ACHADO 02-2: o relatório OPR lê `sb('chatwoot_eventos…')`, sem rota de leitura (só o webhook grava)",
 }
 
 // escritasDesviadas: escrita simples ("tabela:operação") que ainda está no código do painel, mas que com a

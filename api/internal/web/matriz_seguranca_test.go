@@ -166,6 +166,7 @@ var matriz = map[string]linha{
 	"GET /redes/anuncios":                                            {gDominio, rwL},
 	"GET /redes/anuncios-por-hora":                                   {gDominio, rwL},
 	"GET /redes/campanhas":                                           {gDominio, rwL},
+	"GET /redes/chatwoot-eventos":                                    {gDominio, rwL},
 	"GET /redes/campanhas-por-hora":                                  {gDominio, rwL},
 	"GET /redes/conjuntos":                                           {gDominio, rwL},
 	"GET /redes/contas":                                              {gDominio, rwL},

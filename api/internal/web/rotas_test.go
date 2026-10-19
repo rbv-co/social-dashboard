@@ -247,7 +247,7 @@ var soSessao = map[string]bool{
 	// `TestSegredoDaContaNuncaSai`.
 	"GET /redes/contas": true, "PATCH /redes/contas/{id}": true, "GET /redes/seguidores": true,
 	"GET /redes/leituras-de-seguidores": true, "GET /redes/engajamento": true, "GET /redes/conteudo": true,
-	"GET /redes/campanhas": true, "GET /redes/conjuntos": true, "GET /redes/anuncios": true,
+	"GET /redes/campanhas": true, "GET /redes/chatwoot-eventos": true, "GET /redes/conjuntos": true, "GET /redes/anuncios": true,
 	"GET /redes/insights-de-campanha": true, "GET /redes/insights-da-conta": true,
 	"GET /redes/campanhas-por-hora": true, "GET /redes/anuncios-por-hora": true, "GET /redes/visitas-por-hora": true,
 	"GET /redes/metas": true, "PUT /redes/metas": true, "GET /redes/filtros-de-campanha": true,

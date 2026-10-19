@@ -102,6 +102,10 @@ export const ROTAS = {
     area: 'meta', rota: '/redes/leituras-de-seguidores',
     filtros: { account_id: eq('account_id'), lido_em: { gte: ['lido_em_de', instante] } }, ordens: ['lido_em'],
   },
+  chatwoot_eventos: {
+    area: 'meta', rota: '/redes/chatwoot-eventos',
+    filtros: { dia_br: { gte: 'dia_br_de', lte: 'dia_br_ate' } }, ordens: ['dia_br'],
+  },
   engagement_snapshots: {
     area: 'meta', rota: '/redes/engajamento',
     filtros: { account_id: eq('account_id'), period_days: eq('period_days'), captured_at: faixa('captured_at') }, ordens: ['captured_at'],

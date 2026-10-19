@@ -443,6 +443,22 @@
    "paginaAteOLimite": true,
    "escritas": []
   },
+  "chatwoot_eventos": {
+   "area": "meta",
+   "rota": "/redes/chatwoot-eventos",
+   "params": [
+    "dia_br_ate",
+    "dia_br_de"
+   ],
+   "ordens": [
+    "dia_br"
+   ],
+   "ordemFixa": false,
+   "linhaUnica": false,
+   "chave": "id",
+   "paginaAteOLimite": false,
+   "escritas": []
+  },
   "checkout_abandono": {
    "area": "vessel",
    "rota": "/vessel/checkout-abandono",
