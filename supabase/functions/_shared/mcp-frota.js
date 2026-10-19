@@ -1,6 +1,7 @@
 // O MCP da Frota (supabase/functions/mcp-frota): o JSON-RPC e as 13 ferramentas, sem rede. Quem fala com o
 // banco é o `db` que o index.ts monta com o token DA PESSOA (o RLS e os gatilhos da Frota valem como na tela):
-//   listar(tabela, { filtros: [[coluna, 'eq'|'is_null'|'not_null', valor]], ordem: [coluna, desc], limite })
+//   listar(tabela, { colunas, filtros: [[coluna, 'eq'|'is_null'|'not_null'|'ilike_qualquer', valor]], ordem: [coluna, desc], limite })
+//     ('ilike_qualquer': valor = { coluna: texto já limpo }; casa se QUALQUER coluna contém o texto)
 //   inserir(tabela, linha | linhas) -> linhas      editar(tabela, id, campos) -> linhas (vazio = não achou)
 //   apagar(tabela, id)      maiorKm(veiculoId) -> número | null      avisar(requisicaoId) -> { ok, ... }
 // Erro do banco sobe como Error com a frase do gatilho/RLS; aqui vira isError para o modelo repassar.
@@ -9,11 +10,30 @@
 export const VERSOES = ['2025-06-18', '2025-03-26', '2024-11-05']
 
 export const INSTRUCOES = 'Ferramentas da Frota da RBV (carros da empresa). Valores em reais; datas em ISO 8601 com fuso ' +
-  '(ex.: 2026-10-20T14:00:00-03:00). Para agir sobre um carro, ache o id dele com listar_veiculos (pelo nome ou ' +
-  'placa). Antes de gravar, confirme com a pessoa os números que ela disse. Erro de regra volta com a frase do ' +
-  'sistema: repasse-a, não tente contornar.'
+  '(ex.: 2026-10-20T14:00:00-03:00). Para agir sobre um carro, ache o id dele com listar_veiculos usando busca ' +
+  '(nome ou placa), em vez de listar a frota toda; nas outras listas, filtre por veiculo_id. As listas trazem o ' +
+  'carro (nome e placa) em cada linha e omitem campos vazios. Antes de gravar, confirme com a pessoa os números ' +
+  'que ela disse. Erro de regra volta com a frase do sistema: repasse-a, não tente contornar.'
+
+// Colunas que cada lista devolve: o que o modelo usa, sem o resto (o rabisco da assinatura em frota_uso, ids
+// de cadastro, valores). Cada linha leva o carro junto pelo veiculo_id (chave estrangeira), para não precisar
+// de outra rodada só para saber de que carro é. Resposta menor = o ChatGPT lê e responde mais rápido.
+const CARRO = 'veiculo:frota_veiculos(nome,placa)'
+const COLUNAS = {
+  frota_veiculos: 'id,nome,placa,marca,ano,cor,combustivel,situacao,local_texto,contato_nome,contato_telefone,' +
+    'seguro_seguradora,seguro_vence_em,oficina_nome,observacao',
+  frota_uso: `id,veiculo_id,${CARRO},tipo,pessoa_nome,saida_em,volta_em,km_saida,km_volta,tanque_quartos,destino,finalidade,observacao`,
+  frota_requisicoes: `id,veiculo_id,${CARRO},situacao,pessoa_nome,departamento,destino,finalidade,retirada_prevista,` +
+    'devolucao_prevista,motivo_decisao,encerrada_motivo,observacao,criada_em,decidida_em',
+  frota_abastecimentos: `id,veiculo_id,${CARRO},abastecido_em,km,litros,total_centavos,tanque_depois,combustivel,posto,pessoa_nome,observacao`,
+  frota_revisoes: `id,veiculo_id,${CARRO},manutencao_id,item,km,feita_em,oficina,custo_centavos,observacao`,
+  frota_plano_revisao: 'id,item,a_cada_km,ativo,ordem,observacao',
+}
+// PostgREST monta o `or` com vírgula e parêntese: fora do texto da busca
+export const limparBusca = (s) => String(s).replace(/[,()*%\\"]/g, ' ').trim().slice(0, 60)
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const SITUACOES_DO_CARRO = ['ativo', 'em_manutencao', 'alienado', 'inativo']
 const SITUACOES_DO_PEDIDO = ['pendente', 'aprovada', 'recusada', 'cancelada', 'revogada', 'usada']
 const centavos = (reais) => Math.round(reais * 100)
 
@@ -27,17 +47,17 @@ function exigirUuid(v, frase) { if (typeof v !== 'string' || !UUID.test(v)) recu
 
 // ---- leitura ----
 
-function listar(tabela, ordem, filtros = {}) {
+function listar(tabela, ordem, filtros = {}, padrao = 20) {
   return async (args, { db }) => {
     soConhecidos(args, ['limite', ...Object.keys(filtros)])
-    let limite = 50
+    let limite = padrao
     if (args.limite !== undefined) {
       if (!Number.isInteger(args.limite) || args.limite < 1 || args.limite > 200) recusar('limite deve ser um inteiro de 1 a 200')
       limite = args.limite
     }
     const f = []
     for (const [k, montar] of Object.entries(filtros)) if (args[k] !== undefined) f.push(montar(args[k]))
-    return db.listar(tabela, { filtros: f, ordem, limite })
+    return db.listar(tabela, { colunas: COLUNAS[tabela], filtros: f, ordem, limite })
   }
 }
 const porVeiculo = { veiculo_id: (v) => (exigirUuid(v, 'veiculo_id deve ser o uuid do carro (use listar_veiculos)'), ['veiculo_id', 'eq', v]) }
@@ -178,7 +198,7 @@ const CAMPOS_DO_VEICULO = ['nome', 'marca', 'ano', 'cor', 'combustivel', 'tipo_o
   'rastreador', 'contato_nome', 'contato_telefone', 'contato_papel', 'oficina_nome', 'oficina_telefone']
 const esquemaVeiculo = Object.fromEntries(CAMPOS_DO_VEICULO.map((c) => [c, texto]))
 Object.assign(esquemaVeiculo, {
-  ano: { type: 'integer' }, situacao: { type: 'string', enum: ['ativo', 'em_manutencao', 'alienado', 'inativo'] },
+  ano: { type: 'integer' }, situacao: { type: 'string', enum: SITUACOES_DO_CARRO },
   local_texto: { type: 'string', description: 'Onde o carro fica.' }, seguro_vence_em: { type: 'string', format: 'date' },
 })
 const CAMPOS_DO_PLANO = ['item', 'a_cada_km', 'observacao', 'ordem', 'ativo']
@@ -187,8 +207,19 @@ const esquemaPlano = { item: texto, a_cada_km: { type: 'integer', minimum: 1 }, 
 export const FERRAMENTAS = [
   { nome: 'listar_veiculos', titulo: 'Listar veículos', leitura: true,
     descricao: 'Lista os carros da frota com placa, nome, situação (ativo, em_manutencao, alienado, inativo), local, ' +
-      'seguro e contatos. Use para achar o id de um carro pelo nome ou placa.',
-    esquema: obj({ limite: pLimite }), rodar: listar('frota_veiculos', ['nome', false]) },
+      'seguro e contatos. Use busca (parte do nome ou da placa) para achar o id de um carro.',
+    esquema: obj({
+      busca: { type: 'string', description: 'Parte do nome ou da placa (com ou sem hífen).' },
+      situacao: { type: 'string', enum: SITUACOES_DO_CARRO }, limite: { ...pLimite, description: 'Quantas linhas (padrão 100).' },
+    }),
+    rodar: listar('frota_veiculos', ['nome', false], {
+      busca: (v) => {
+        const t = typeof v === 'string' ? limparBusca(v) : ''
+        if (!t) recusar('busca deve ser parte do nome ou da placa')
+        return ['nome|placa', 'ilike_qualquer', { nome: t, placa: t.toUpperCase().replace(/[^A-Z0-9]/g, '') || t }]
+      },
+      situacao: (v) => (!SITUACOES_DO_CARRO.includes(v) && recusar('situacao deve ser ' + SITUACOES_DO_CARRO.join(', ')), ['situacao', 'eq', v]),
+    }, 100) },
   { nome: 'listar_usos', titulo: 'Listar retiradas e posses', leitura: true,
     descricao: 'Retiradas e posses dos carros (quem pegou, saída/volta, km), das mais novas para as mais antigas. ' +
       'aberta=true mostra só os carros que estão fora agora.',
@@ -286,7 +317,9 @@ export async function responder(m, ctx) {
       if (typeof args !== 'object' || Array.isArray(args)) return { error: { code: -32602, message: 'arguments deve ser um objeto' } }
       try {
         const saida = await f.rodar(args, ctx)
-        return { result: { content: [{ type: 'text', text: JSON.stringify(saida ?? { ok: true }) }], isError: false } }
+        // campo nulo não informa nada e custa leitura ao modelo
+        const texto = JSON.stringify(saida ?? { ok: true }, (_, v) => (v === null ? undefined : v))
+        return { result: { content: [{ type: 'text', text: texto }], isError: false } }
       } catch (e) {
         const frase = e instanceof Recusa ? e.message : 'Não deu certo: ' + (e?.message || 'erro do banco')
         return { result: { content: [{ type: 'text', text: frase }], isError: true } }
@@ -305,7 +338,7 @@ export function gestorDaFrota(perfil) {
 
 // clienteOAuth: o client_id do token (só o servidor OAuth do Supabase Auth o põe). Sem ele, é a sessão da tela,
 // que não serve aqui: o token do ChatGPT e o da tela são portas diferentes. Só lê: a assinatura quem confere é
-// o auth.getUser() antes desta chamada.
+// o auth.getClaims() depois desta triagem.
 export function clienteOAuth(token) {
   try {
     const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')

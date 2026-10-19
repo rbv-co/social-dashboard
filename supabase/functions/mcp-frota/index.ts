@@ -12,7 +12,9 @@
 //   - só passa token com client_id (emitido pelo OAuth): a sessão da tela não serve aqui;
 //   - só passa gestor da Frota (aba Gestão), conferido AQUI e a cada chamada: tirar a permissão vale na hora.
 // verify_jwt DESLIGADO (--no-verify-jwt): sem sessão o ChatGPT precisa do 401 desta função com o
-// WWW-Authenticate, e o do gateway não traz. A assinatura quem confere é o auth.getUser().
+// WWW-Authenticate, e o do gateway não traz. A assinatura quem confere é o auth.getClaims().
+// O conector usa https://central.rbvcompany.com/mcp-frota (nginx do central repassa para cá e serve os
+// metadados na raiz: /etc/nginx/snippets/central-mcp-frota.conf); o /.well-known daqui fica para quem chamar direto.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { responder, gestorDaFrota, clienteOAuth } from '../_shared/mcp-frota.js';
 
@@ -21,6 +23,8 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const AQUI = `${SUPABASE_URL}/functions/v1/mcp-frota`;
 const METADADOS = `${AQUI}/.well-known/oauth-protected-resource`;
 const FRASE_SO_GESTOR = 'Só quem administra a Frota (aba Gestão) pode ligar o ChatGPT a ela.';
+// um só por instância: guarda a JWKS entre chamadas enquanto a edge está quente
+const verificador = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
 const json = (b: unknown, s = 200, h: Record<string, string> = {}) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', ...h } });
@@ -33,9 +37,15 @@ function banco(sb: any, auth: string) {
   const ou = ({ data, error }: any) => { if (error) throw new Error(error.message); return data; };
   return {
     // deno-lint-ignore no-explicit-any
-    async listar(tabela: string, { filtros, ordem, limite }: any) {
-      let q = sb.from(tabela).select('*');
-      for (const [c, op, v] of filtros) q = op === 'eq' ? q.eq(c, v) : op === 'is_null' ? q.is(c, null) : q.not(c, 'is', null);
+    async listar(tabela: string, { colunas, filtros, ordem, limite }: any) {
+      let q = sb.from(tabela).select(colunas || '*');
+      for (const [c, op, v] of filtros) {
+        if (op === 'eq') q = q.eq(c, v);
+        else if (op === 'is_null') q = q.is(c, null);
+        else if (op === 'not_null') q = q.not(c, 'is', null);
+        else if (op === 'ilike_qualquer') q = q.or(Object.entries(v).map(([col, t]) => `${col}.ilike.*${t}*`).join(','));
+        else throw new Error('filtro desconhecido: ' + op);
+      }
       return ou(await q.order(ordem[0], { ascending: !ordem[1], nullsFirst: false }).limit(limite));
     },
     async inserir(tabela: string, linhas: unknown) { return ou(await sb.from(tabela).insert(linhas).select()); },
@@ -77,21 +87,27 @@ Deno.serve(async (req) => {
   const auth = req.headers.get('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!token || !clienteOAuth(token)) return naoAutenticado();
+  // getClaims confere assinatura e validade AQUI, pela chave pública do projeto (ES256, JWKS em cache no
+  // cliente do módulo): sem a ida ao Auth que o getUser fazia a cada chamada (~0,3 s medido em 19/10).
+  // Conta desativada continua barrada: o perfil abaixo e cada consulta passam pelo RLS (conta_ativa).
+  const { data: verificado, error: erroToken } = await verificador.auth.getClaims(token);
+  const sub = verificado?.claims?.sub;
+  if (erroToken || !sub || !verificado?.claims?.client_id) return naoAutenticado();
   const sb = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: { user }, error: erroUser } = await sb.auth.getUser(token);
-  if (erroUser || !user?.id) return naoAutenticado();
-  const { data: perfil, error: erroPerfil } = await sb.from('profiles').select('is_superadmin,permissions').eq('id', user.id).maybeSingle();
+  // perfil e corpo em paralelo
+  const [{ data: perfil, error: erroPerfil }, m] = await Promise.all([
+    sb.from('profiles').select('is_superadmin,permissions').eq('id', sub).maybeSingle(),
+    req.json().catch(() => null),
+  ]);
   if (erroPerfil) return json({ error: 'erro_interno' }, 500);
   if (!gestorDaFrota(perfil)) return json({ error: 'sem_permissao', mensagem: FRASE_SO_GESTOR }, 403);
 
-  let m;
-  try { m = await req.json(); } catch { m = null; }
   if (!m || typeof m !== 'object' || Array.isArray(m) || m.jsonrpc !== '2.0' || typeof m.method !== 'string') {
     return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'mensagem JSON-RPC inválida (lote não é aceito)' } }, 400);
   }
   if (m.id === undefined || m.id === null) return new Response(null, { status: 202 }); // notificação
-  const r = await responder(m, { db: banco(sb, `Bearer ${token}`), usuario: user.id, agora: new Date() });
+  const r = await responder(m, { db: banco(sb, `Bearer ${token}`), usuario: sub, agora: new Date() });
   return json({ jsonrpc: '2.0', id: m.id, ...r });
 });
