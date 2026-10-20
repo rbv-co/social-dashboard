@@ -43,6 +43,7 @@ import { mkdirSync, writeFileSync, existsSync, rmSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { reduzir } from './lib/reduzir-imagem.mjs'
+import { leituraDoCoreLigada, clienteDoEspelho, produtosDoCorePorSku, doMapa } from './lib/produto-do-core.mjs'
 import { pastaDoSku, fotosDaPasta } from './lib/fotos-do-zoho.mjs'
 import { fotosDoZohoParaSku } from './lib/buscar-no-zoho.mjs'
 import {
@@ -203,6 +204,12 @@ async function main() {
     console.log(`${lotes.length} lotes no total · ${alvos.length} com SKU e faltando foto ou cor\n`)
     if (!alvos.length) return
 
+    // CORE_LEITURA_PRODUTO_DETALHE=true: o produto vem do espelho do Core (uma leitura por lista de SKUs,
+    // sem gastar a cota do Bling). Falha do Core derruba a rodada: não vira "não achei".
+    const doCore = leituraDoCoreLigada(process.env)
+      ? await produtosDoCorePorSku(clienteDoEspelho(process.env), alvos.map((l) => l.sku))
+      : null
+
     for (const lote of alvos) {
       // ⚠️ UM LOTE COM PROBLEMA NAO LEVA A RODADA JUNTO. A publicacao do site
       // vem DEPOIS deste laco: qualquer excecao aqui deixava dezenas de lotes
@@ -213,13 +220,22 @@ async function main() {
         const oQueFalta = [falta.faltaFoto && 'foto', falta.faltaCor && 'cor'].filter(Boolean).join(' e ')
         console.log(`── ${lote.modelo} (${lote.sku}) — falta ${oQueFalta}`)
 
-        const busca = await pedirAoBling(`produtos?codigo=${encodeURIComponent(lote.sku)}&limite=5`, token)
-        const achado = produtoQueBate(busca?.data, lote.sku)
-        if (!achado) { console.log('   não achei este SKU no Bling. Fica como está.'); continue }
+        let produto
+        let imagemVencida = false   // link do Bling é assinado e vence: detalhe velho no Core = foto quebrada
+        if (doCore) {
+          const c = doMapa(doCore, lote.sku)
+          if (!c) { console.log('   não achei este SKU (com detalhe) no Core. Fica como está.'); continue }
+          imagemVencida = c.imagensVencidas
+          produto = c.produto
+        } else {
+          const busca = await pedirAoBling(`produtos?codigo=${encodeURIComponent(lote.sku)}&limite=5`, token)
+          const achado = produtoQueBate(busca?.data, lote.sku)
+          if (!achado) { console.log('   não achei este SKU no Bling. Fica como está.'); continue }
 
-        const detalhe = await pedirAoBling(`produtos/${achado.id}`, token)
-        const produto = detalhe?.data
-        if (!produto) { console.log('   o Bling não devolveu o detalhe. Tento na próxima rodada.'); continue }
+          const detalhe = await pedirAoBling(`produtos/${achado.id}`, token)
+          produto = detalhe?.data
+          if (!produto) { console.log('   o Bling não devolveu o detalhe. Tento na próxima rodada.'); continue }
+        }
 
         const mudou = {}
 
@@ -275,7 +291,10 @@ async function main() {
             }
           }
 
-          if (!urls.length) {
+          if (!urls.length && imagemVencida) {
+            // Só o fallback do Bling depende do link do detalhe; a cor e as fotos do Zoho seguem valendo.
+            console.log('   a imagem do detalhe no Core está vencida. Tento na próxima rodada.')
+          } else if (!urls.length) {
             urls = imagensGrandesDoProduto(produto).slice(0, MAXIMO_DE_FOTOS)
             if (urls.length) deOnde = 'Bling'
           }
@@ -286,7 +305,7 @@ async function main() {
             console.log(`   outra bolsa também cai na pasta "${pasta}". Fica sem foto,`
               + ' que é melhor do que a foto errada. Separe os cadastros.')
           } else if (!urls.length) {
-            console.log('   o produto não tem foto no Bling. Assim que subir lá, a próxima rodada pega.')
+            if (!imagemVencida) console.log('   o produto não tem foto no Bling. Assim que subir lá, a próxima rodada pega.')
           } else if (!pasta) {
             console.log('   sem modelo nem cor não dá para nomear a pasta. Fica como está.')
           } else if (DRY) {

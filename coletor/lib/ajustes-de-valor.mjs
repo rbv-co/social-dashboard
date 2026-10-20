@@ -71,3 +71,34 @@ export async function ajustesDeValorPg(cli) {
     throw new Error('não deu para ler bling_pedido_ajuste_valor: ' + (e?.message || e));
   }
 }
+
+/**
+ * Leva o ajuste para `vessel_pedidos` (total_corrigido e receita_liquida) em TODO pedido que tenha linha em
+ * `bling_pedido_ajuste_valor`, e não só nos da janela do robô.
+ *
+ * ⚠️ Sem isto, ajuste cadastrado (ou reaplicado) para pedido com mais de `--dias` dias nunca chega em
+ * `vessel_pedidos`: o robô só regrava o pedido que a janela do Bling devolve, e a receita fica no valor
+ * congelado. Foi o que deixou o 2656 em R$ 1.900 mesmo depois de existir a tabela. Idempotente: só toca
+ * a linha que está diferente, e desfaz o pedido cujo ajuste foi apagado. A tabela é de exceção (poucas linhas), então o update é barato.
+ * Devolve quantos pedidos mudou.
+ */
+export async function propagarAjustesPg(cli) {
+  const { rowCount: aplicados } = await cli.query(
+    `update vessel_pedidos p
+        set total_corrigido = a.total_corrigido,
+            receita_liquida = round(greatest(a.total_corrigido, 0), 2)
+       from bling_pedido_ajuste_valor a
+      where a.pedido_id = p.bling_pedido_id
+        and (p.total_corrigido is distinct from a.total_corrigido
+             or p.receita_liquida is distinct from round(greatest(a.total_corrigido, 0), 2))`);
+  // Ajuste APAGADO: o pedido volta ao valor do Bling (mesma conta do robô: soma dos itens menos o desconto do pedido).
+  const { rowCount: desfeitos } = await cli.query(
+    `update vessel_pedidos p
+        set total_corrigido = null,
+            receita_liquida = round(greatest(
+              (select coalesce(sum(i.total_do_item), 0) from vessel_pedido_itens i where i.pedido_id = p.id)
+                - coalesce(p.desconto, 0), 0), 2)
+      where p.total_corrigido is not null
+        and not exists (select 1 from bling_pedido_ajuste_valor a where a.pedido_id = p.bling_pedido_id)`);
+  return aplicados + desfeitos;
+}
