@@ -34,5 +34,8 @@ func TestFotosModeloSoLeitura(t *testing.T) {
 		if st, _, _ := m.pede(t, quem, "DELETE", "/arquivos/fotos-modelo", `{"caminhos":["LV1005-Palha.jpg"]}`); st != 403 || !m.existe("fotos-modelo", "LV1005-Palha.jpg") {
 			t.Errorf("%s: DELETE em fotos-modelo = %d, esperava 403 e o arquivo intacto", quem, st)
 		}
+		if st, _, _ := m.pede(t, quem, "POST", "/arquivos/fotos-modelo/copiar", `{"de":"LV1005-Palha.jpg","para":"copia.jpg"}`); st != 403 || m.existe("fotos-modelo", "copia.jpg") {
+			t.Errorf("%s: copiar para fotos-modelo = %d, esperava 403", quem, st)
+		}
 	}
 }
