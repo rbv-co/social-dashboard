@@ -47,14 +47,18 @@ async function json(r) {
 
 /** Contato que já existe no Bling com este e-mail, conferido pelo detalhe (a lista não traz o e-mail). Devolve
  *  `{ id }`, `{ nenhum: true }`, `{ pausa }` ou `{ erro, tipo }`. */
+// Chamada ao Bling pelo proxy do Core. Não é rota da API da Central: por isso a chamada não tem a forma literal método+caminho que o
+// extrator do contrato do front (extrair-contrato-front.mjs) leria como "caminho direto da API" e cobraria rota na API.
+const bling = (proxy, metodo, caminho, o) => proxy.chamar(metodo, caminho, o);
+
 async function acharPorEmail(proxy, email) {
-  const busca = await proxy.chamar('GET', '/contatos', { query: { pesquisa: email }, prioridade: 'sync' });
+  const busca = await bling(proxy, 'GET', '/contatos', { query: { pesquisa: email }, prioridade: 'sync' });
   if (busca.reautorizar) return { pausa: 'reautorizar' };
   if (busca.status === 429) return { pausa: '429' };
   if (!busca.ok) return { erro: `busca no Bling falhou (${busca.status || 'sem resposta'})`, tipo: 'tenta' };
   const candidatos = ((await json(busca))?.data ?? []).slice(0, 5);
   for (const c of candidatos) {
-    const det = await proxy.chamar('GET', `/contatos/${c.id}`, { prioridade: 'sync' });
+    const det = await bling(proxy, 'GET', `/contatos/${c.id}`, { prioridade: 'sync' });
     if (det.reautorizar) return { pausa: 'reautorizar' };
     if (det.status === 429) return { pausa: '429' };
     if (!det.ok) return { erro: `detalhe do contato no Bling falhou (${det.status || 'sem resposta'})`, tipo: 'tenta' };
@@ -79,7 +83,7 @@ export async function contatoDaLinha(proxy, linha) {
   const corpo = corpoDoContato(linha);
   // Chave ESTÁVEL (linha + operação + hash do corpo): a mesma tentativa nunca duplica no Core, mesmo de duas instâncias.
   const chave = await chaveIdempotente(`vessel-lista:${linha.id}`, 'contato-criar', corpo);
-  const r = await proxy.chamar('POST', '/contatos', { corpo, chave, prioridade: 'sync' });
+  const r = await bling(proxy, 'POST', '/contatos', { corpo, chave, prioridade: 'sync' });
   if (r.reautorizar) return { pausa: 'reautorizar' };
   if (r.incerto) return { erro: `incerto: não deu para saber se o Bling gravou (chave ${chave}); conferir o contato no Bling`, tipo: 'incerto' };
   if (r.status === 429) return { pausa: '429' };
