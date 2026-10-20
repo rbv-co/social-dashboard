@@ -78,11 +78,8 @@ jobs:
       - name: Trazer a lista de vendedores
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # Token do Bling vindo do core (desligado por padrão: variável do repositório ausente).
-          # Ligado, este passo NÃO renova mais o token.
-          CORE_BLING_TOKEN: ${{ vars.CORE_BLING_TOKEN }}
-          # Bling pelo proxy do core (desligado por padrão: variável do repositório CORE_BLING_PROXY ausente).
-          CORE_BLING_PROXY: ${{ vars.CORE_BLING_PROXY }}
+          # Bling SEMPRE pelo proxy do core (obrigatório: o coletor não tem mais caminho próprio até o Bling nem lê bling_tokens).
+          CORE_BLING_PROXY: 'true'
           CORE_URL: ${{ vars.CORE_URL }}
           CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
         run: node coletor/trazer-vendedores-do-bling.mjs
@@ -94,9 +91,8 @@ jobs:
           GESTOR_USER_EMAIL: ${{ secrets.GESTOR_USER_EMAIL }}
           GESTOR_USER_PASSWORD: ${{ secrets.GESTOR_USER_PASSWORD }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          CORE_BLING_TOKEN: ${{ vars.CORE_BLING_TOKEN }}
-          # Bling pelo proxy do core (desligado por padrão: variável do repositório CORE_BLING_PROXY ausente).
-          CORE_BLING_PROXY: ${{ vars.CORE_BLING_PROXY }}
+          # Bling SEMPRE pelo proxy do core (obrigatório: o coletor não tem mais caminho próprio até o Bling nem lê bling_tokens).
+          CORE_BLING_PROXY: 'true'
           CORE_URL: ${{ vars.CORE_URL }}
           CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
           DIAS: ${{ github.event.inputs.dias }}

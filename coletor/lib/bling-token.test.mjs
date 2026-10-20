@@ -5,56 +5,51 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blingDoColetor } from './bling-token.mjs';
 
-const resp = (corpo, status = 200) => ({ ok: status < 400, status, json: async () => corpo });
+const resp = (corpo, status = 200) => ({ ok: status < 400, status, json: async () => corpo, text: async () => JSON.stringify(corpo), headers: { get: () => null } });
 const CENTRAL = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function falso() {
   const chamadas = [];
   const fetchImpl = async (url, init) => {
-    chamadas.push(String(url));
-    return String(url).includes('/api/interno/bling/token') ? resp({ access_token: 'DO-CORE' }) : resp({ data: [] });
+    chamadas.push({ url: String(url), corpo: init?.body ? JSON.parse(init.body) : null, auth: init?.headers?.Authorization });
+    return resp({ data: [] });
   };
   return { fetchImpl, chamadas };
 }
-const ENV = { CORE_BLING_TOKEN: 'true', CORE_API_TOKEN: 'seg' };
+const ENV = { CORE_BLING_PROXY: 'true', CORE_API_TOKEN: 'seg', CORE_URL: 'https://core.teste' };
 
-// Ponto do tipo REFRESH (trazer-vendedores, classificar-material-dos-lotes): o `senao` e
-// "ler bling_tokens e, vencido, POST oauth/token + gravar". Ligada, ele nunca roda.
-test('tipo refresh: ligada nao renova nem toca o banco; desligada roda o caminho antigo', async () => {
+// Ligada: o token não existe no robô (placeholder) e o fetch vira POST no proxy do core, com o token do CORE, nunca o do banco.
+test('ligada: token e placeholder e toda chamada passa pelo proxy do core', async () => {
   const { fetchImpl, chamadas } = falso();
-  let renovacoes = 0;
-  const senao = async () => { renovacoes++; return 'RENOVADO'; };
-  assert.equal(await blingDoColetor(ENV, { fetchImpl }).token(senao), 'DO-CORE');
-  assert.equal(renovacoes, 0);
-  assert.ok(!chamadas.some((u) => u.includes('oauth/token')));
-  assert.equal(await blingDoColetor({}, { fetchImpl }).token(senao), 'RENOVADO');
-  assert.equal(renovacoes, 1);
-});
-
-// Ponto do tipo LEITURA (trazer-pedidos, fotos-do-selo, classificar-material-vessel): o
-// cabecalho sai do banco, mas ligada o fetch o troca pelo do core e repete uma vez em 401.
-test('tipo leitura: cabecalho do banco e trocado pelo do core; 401 relê e repete uma vez', async () => {
-  let bling = 0;
-  const chamadas = [];
-  const fetchImpl = async (url, init) => {
-    chamadas.push({ url: String(url), auth: init?.headers?.Authorization });
-    if (String(url).includes('/api/interno/bling/token')) return resp({ access_token: `T${chamadas.length}` });
-    return ++bling === 1 ? resp({}, 401) : resp({ data: [{ id: 1 }] });
-  };
   const b = blingDoColetor(ENV, { fetchImpl });
-  const r = await b.fetch('https://api.bling.com.br/Api/v3/produtos/1', { headers: { Authorization: 'Bearer do-banco' } });
+  assert.equal(await b.token(), 'via-core');
+  const r = await b.fetch('https://api.bling.com.br/Api/v3/produtos/1?criterio=5', { headers: { Authorization: 'Bearer do-banco' } });
   assert.equal(r.status, 200);
-  const doBling = chamadas.filter((c) => c.url.includes('api.bling.com.br'));
-  assert.equal(doBling.length, 2);
-  assert.ok(doBling.every((c) => c.auth.startsWith('Bearer T')), 'nenhum Authorization do banco vazou');
+  assert.equal(chamadas.length, 1);
+  assert.equal(chamadas[0].url, 'https://core.teste/api/interno/bling/proxy');
+  assert.equal(chamadas[0].auth, 'Bearer seg', 'nenhum Authorization do banco vazou');
+  assert.deepEqual(chamadas[0].corpo, { metodo: 'GET', caminho: '/produtos/1', query: { criterio: '5' }, prioridade: 'sync' });
 });
 
-test('desligada: fetch do coletor e o fetch global de sempre', async () => {
-  const { fetchImpl, chamadas } = falso();
-  const b = blingDoColetor({}, { fetchImpl });
-  await b.fetch('https://api.bling.com.br/Api/v3/x', { headers: { Authorization: 'Bearer banco' } });
-  assert.deepEqual(chamadas, ['https://api.bling.com.br/Api/v3/x']);
+// Sem CORE_BLING_PROXY (ou com so CORE_BLING_TOKEN) NAO ha caminho antigo: nada de bling_tokens, nada de fetch direto.
+test('desligada: token() e fetch() lancam e nada sai pela rede', async () => {
+  for (const env of [{}, { CORE_BLING_PROXY: 'false' }, { CORE_BLING_TOKEN: 'true', CORE_API_TOKEN: 'seg' }]) {
+    const { fetchImpl, chamadas } = falso();
+    const b = blingDoColetor(env, { fetchImpl });
+    await assert.rejects(() => b.token(), /CORE_BLING_PROXY=true é obrigatório/);
+    await assert.rejects(() => b.fetch('https://api.bling.com.br/Api/v3/x'), /CORE_BLING_PROXY=true é obrigatório/);
+    assert.deepEqual(chamadas, []);
+  }
 });
+
+// Os 5 robos do coletor nao tocam bling_tokens (nem leem, nem renovam): o token e do core.
+for (const p of ['trazer-vendedores-do-bling', 'classificar-material-dos-lotes', 'classificar-material-vessel', 'trazer-pedidos-do-bling', 'fotos-do-selo-do-bling']) {
+  test(`coletor/${p}.mjs nao le bling_tokens`, () => {
+    const src = readFileSync(join(CENTRAL, 'coletor', `${p}.mjs`), 'utf8');
+    const codigo = src.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    assert.doesNotMatch(codigo, /bling_tokens|oauth\/token/);
+  });
+}
 
 // Trava de regressao: todo ponto que fala com o Bling passa pelo helper. Se alguem
 // adicionar um `fetch` cru ao Bling (ou um POST em oauth/token fora do `senao`), cai aqui.

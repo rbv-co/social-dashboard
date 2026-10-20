@@ -35,7 +35,7 @@ grant usage on schema public to robo_pedidos_vessel;
 -- refaz do zero: reaplicar tira o que saiu deste arquivo
 revoke all on all tables in schema public from robo_pedidos_vessel;
 revoke all on all sequences in schema public from robo_pedidos_vessel;
-grant select (id, access_token) on bling_tokens to robo_pedidos_vessel;
+-- (sem bling_tokens: o token do Bling é do Core, o robô fala pelo proxy dele; plano 05 C. Reaplicar este arquivo tira o acesso antigo.)
 grant select, insert, update on vessel_vendedores_bling to robo_pedidos_vessel;
 -- os dois caches que o ranking por vendedor da Gestão à Vista lê (antes só o navegador gravava)
 grant select, insert, update on bling_vendedores to robo_pedidos_vessel;

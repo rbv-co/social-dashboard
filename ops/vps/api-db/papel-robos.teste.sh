@@ -117,7 +117,7 @@ confere "papel que já existia ficou intacto" "$(adm -c "select rolname, rolconn
 
 # (4) o que cada robô faz
 ok robo_reporte "grava a rodada" "insert into robos_execucoes (robo, disparado_em, status_code, ok, resposta, conferido_em) values ('x', now(), 200, true, 'ok', now())"
-ok robo_selo "token, lê e atualiza o lote" "select id, access_token from bling_tokens; select id, modelo, cor, sku, fotos, criado_em from vessel_lotes; update vessel_lotes set cor = 'a', fotos = 'b'"
+ok robo_selo "lê e atualiza o lote" "select id, modelo, cor, sku, fotos, criado_em from vessel_lotes; update vessel_lotes set cor = 'a', fotos = 'b'"
 ok robo_pedidos_vessel "pedido novo (com sequence), itens, pagamento, chave" "insert into vessel_pedidos (bling_pedido_id, total) values (1, 2) on conflict (bling_pedido_id) do update set total = 3; insert into vessel_pedido_itens (pedido_id, sku) values (1, 'a'); delete from vessel_pedido_itens; insert into bling_pedido_forma_pagamento values (1, 1); select vessel_chave_do_nome('A'); select pedido_id, total_corrigido from bling_pedido_ajuste_valor; select id, nome, email, whatsapp, origem, criado_em, bling_id from vessel_lista_espera; update vessel_pessoas set bling_contato_id = 1"
 ok robo_pedidos_vessel "caches do ranking por vendedor" "insert into bling_vendedores (vendor_id, nome) values (1, 'a') on conflict (vendor_id) do update set nome = 'b'; insert into bling_pedido_vendedor (pedido_id, vendor_id) values (1, 1) on conflict (pedido_id) do update set vendor_id = 2"
 ok robo_shopify "upsert do pedido" "insert into shopify_pedidos values (1, 2) on conflict (id) do update set total = 3"
@@ -143,8 +143,10 @@ for r in $(adm -c "select rolname from pg_roles where rolname like 'robo\_%' ord
 done
 nega robo_reporte "lê robos_execucoes" "select * from robos_execucoes"
 nega robo_reporte "apaga robos_execucoes" "delete from robos_execucoes"
+nega robo_selo "lê access_token do Bling (é do Core)" "select access_token from bling_tokens"
 nega robo_selo "lê refresh_token do Bling" "select refresh_token from bling_tokens"
 nega robo_selo "grava sku do lote" "update vessel_lotes set sku = 'x'"
+nega robo_pedidos_vessel "lê access_token do Bling (é do Core)" "select access_token from bling_tokens"
 nega robo_pedidos_vessel "lê client_secret do Bling" "select client_secret from bling_tokens"
 nega robo_pedidos_vessel "lê senha_hash da lista de espera" "select senha_hash from vessel_lista_espera"
 nega robo_pedidos_vessel "lê ip_hash da lista de espera" "select ip_hash from vessel_lista_espera"

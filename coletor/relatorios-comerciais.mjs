@@ -18,6 +18,7 @@ import {
   classificarItem, classificarItemDetalhado, categoriaDeEstoque, DEP_FOCO,
   blingDepositos,
 } from './lib/bling-comercial.mjs';
+import { zerarOQueSumiu } from './lib/estoque-parado.mjs';
 
 // Preenchidos em main() por abrirRest(): REST do Supabase (rollback) ou pg com o papel robo_relatorios (REST_VIA_PG=1).
 let rest, REST, sb;
@@ -261,8 +262,11 @@ async function main() {
     : DEP_FOCO;
 
   console.log('→ Estoque por depósito…');
-  const prodMap = await blingProdutos(token);
-  const saldoPorDep = await blingSaldoFoco(token, prodMap);
+  const leitura = { incompleto: false, lotesComFalha: 0 };
+  const prodMap = await blingProdutos(token, 20, leitura);
+  const saldoPorDep = await blingSaldoFoco(token, prodMap, leitura);
+  const zerarParados = process.env.ZERAR_ESTOQUE_PARADO === '1';   // item B do plano 05: desligado até o dono aprovar
+  const carimboDoEstoque = new Date().toISOString();
   const naoReconhecidos = new Map();   // sku -> nome, para a vigia abaixo
   for (const { deposito_id, canal } of depositosParaColetar) {
     const saldos = saldoPorDep[deposito_id] || {};
@@ -284,6 +288,12 @@ async function main() {
     });
     await upsert('gc_estoque_item', 'deposito_id,sku', rows);
     console.log(`  ${canal}: ${rows.length} SKUs com saldo`);
+    if (zerarParados) {
+      // falha aqui não pode impedir a gravação dos depósitos seguintes: o saldo velho (o de sempre) é o mal menor
+      try {
+        await zerarOQueSumiu({ depositoId: deposito_id, canal, vivas: rows, leitura, prodMap, carimbo: carimboDoEstoque, buscar: sbGetJson, gravar: upsert });
+      } catch (e) { console.warn(`  ${canal}: não consegui zerar o que sumiu (segue):`, e.message); }
+    }
   }
 
   // ── A VIGIA ───────────────────────────────────────────────────────────────
