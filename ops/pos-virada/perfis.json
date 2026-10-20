@@ -1,0 +1,9 @@
+{
+  "sem": { "permissions": {} },
+  "gestor": { "permissions": { "gestor": ["ver"], "gestor.relatorios": ["ver","exportar"], "noticias": ["ver"], "sales.gestao": ["ver"], "sales.analise": ["ver"], "social": ["ver"], "social.relatorio": ["ver","exportar"] } },
+  "loja": { "permissions": { "sales.gestao": ["ver"], "sales.analise": ["ver"] } },
+  "frota": { "permissions": { "frota": ["ver","criar","editar","excluir"], "frota.relatorios": ["ver","exportar"], "frota.aprovar": ["ver"] } },
+  "comercial": { "permissions": { "atendimentos": ["ver","editar"], "atendimentos.beauty-sessions": ["ver","editar"], "atendimentos.private-edit": ["ver","editar"], "atendimentos.stylist-circle": ["ver","editar"], "atendimentos.material-grafico": ["ver"], "atendimentos.pracas": ["ver","editar"], "atendimentos.edicoes": ["ver","editar"], "abandono-carrinho": ["ver"], "meta.leads": ["ver"] } },
+  "admin": { "permissions": { "acessos": ["ver","criar","editar","excluir"], "banco": ["ver","criar","editar","excluir"], "patrimonio": ["ver","criar","editar","excluir"], "patrimonio.relatorios": ["ver","exportar"], "frota": ["ver","criar","editar","excluir"], "autenticidade": ["ver","editar"], "claude.status": ["ver"], "conteudo": ["ver","criar","editar","excluir"], "gestor": ["ver"], "meta.gestor": ["ver","editar"], "meta.fabrica": ["ver","editar"], "noticias": ["ver"], "sales.gestao": ["ver"], "sales.analise": ["ver"], "social": ["ver"], "social.relatorio": ["ver","exportar"] } },
+  "super": { "permissions": {}, "superadmin": true }
+}
