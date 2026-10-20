@@ -159,7 +159,7 @@ onMounted(() => {
 .tela-menu-meta-ads .smenu-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 8px 32px rgba(0,0,0,.1);}
 .tela-menu-meta-ads .smenu-card-num{font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:3px;color:var(--muted);text-transform:uppercase;font-weight:600;}
 .tela-menu-meta-ads .smenu-card-icon{width:48px;height:48px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;}
-.tela-menu-meta-ads .smenu-card-title{font-family:var(--fonte-principal);font-size:max(16px, calc(18px * var(--escala-texto, 1)));font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--text);line-height:1.2;}
+.tela-menu-meta-ads .smenu-card-title{overflow-wrap:anywhere;font-family:var(--fonte-principal);font-size:max(16px, calc(18px * var(--escala-texto, 1)));font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--text);line-height:1.2;}
 .tela-menu-meta-ads .smenu-card-desc{font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);line-height:1.7;}
 .tela-menu-meta-ads .smenu-card-enter{position:absolute;bottom:16px;right:18px;font-size:max(16px, calc(18px * var(--escala-texto, 1)));color:var(--muted);transition:all .2s;}
 .tela-menu-meta-ads .smenu-card:hover .smenu-card-enter{transform:translateX(4px);color:var(--accent);}
@@ -199,13 +199,14 @@ onMounted(() => {
    Aqui está tudo explícito, inclusive os `none`, para nada de antes vazar.
 
    CELULAR (até 767): um card sob o outro, largura cheia.
-   TABLET PRA CIMA (768+): quadrados lado a lado, numa fileira só. */
+   TABLET PRA CIMA (768+): quadrados lado a lado; quebram linha (base 200px) para o título nunca ser cortado. */
 @media(max-width:767px){
   .tela-menu-meta-ads .smenu-cards{display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:12px;width:100%;max-width:none;margin-inline:0;}
   .tela-menu-meta-ads .smenu-card{width:100%;max-width:none;min-width:0;min-height:auto;flex:none;}
 }
 @media(min-width:768px){
-  .tela-menu-meta-ads .smenu-cards{display:flex;flex-direction:row;flex-wrap:nowrap;justify-content:center;gap:18px;width:100%;max-width:1160px;margin-inline:auto;}
-  .tela-menu-meta-ads .smenu-card{flex:1 1 0;width:auto;min-width:0;max-width:320px;}
+  /* quebra linha e base de 200px: em UMA linha, a 768px o cartão tinha ~128px e o título saía cortado (RELATÓRI) */
+  .tela-menu-meta-ads .smenu-cards{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:center;gap:18px;width:100%;max-width:1160px;margin-inline:auto;}
+  .tela-menu-meta-ads .smenu-card{flex:1 1 200px;width:auto;min-width:0;max-width:320px;}
 }
 </style>

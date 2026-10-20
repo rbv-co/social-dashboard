@@ -1,0 +1,13 @@
+Provas de navegador da revisão pós-virada (POS-VIRADA-2026-10, plano 05). Rodam contra https://central.rbvcompany.com com
+contas de prova `zz-prova-05-*` (criadas e apagadas por quem roda; tokens de sessão fora do repositório).
+
+  perfis.json               o que cada perfil de prova vê (espelha profiles.permissions das contas)
+  front-por-perfil.mjs      "entrar como" por perfil: cada rota abre ou cai no Início, sem 401/403/5xx, sem tela branca, sem Supabase
+  escrita-por-perfil.mjs    CRUD pela tela (Banco com hash, Patrimônio, Frota, Praças, Conteúdo) e "outra sessão vê"
+  escrita-barrada.mjs       quem não tem permissão de escrita recebe 403 com corpo válido (e 401 sem sessão)
+  falhas-na-tela.mjs        login de verdade, 401 forçado, API fora por 10 s, 503 nas leituras
+  larguras.mjs              telas de dinheiro a 375/768/1440 + inventário de hosts chamados
+
+Uso:  TOK=/caminho/tokens.json PLAYWRIGHT=/…/playwright/index.mjs node ops/pos-virada/<script>.mjs
+Escrita só com dado `zz-prova-05-*`. ATENÇÃO em escrita-por-perfil.mjs: o primeiro "Abrir ficha" da Frota é de um veículo REAL;
+o script só abre o cartão que contém o nome de prova (uma versão antiga sobrescreveu a marca de um veículo real; restaurada).
