@@ -1,4 +1,5 @@
 #!/bin/sh
+# gracioso = `docker restart` (mesmo contêiner e imagem, SIGTERM + graça de 60 s; não depende de API_VERSAO nem de compose).
 # roda NA VPS, destacado: queda-worker.sh <crash|gracioso> <epoch-do-disparo> <saida>. Mata/recria o api-worker-1 no meio da
 # tarefa meta-hora (24 s, minuto 5 de cada hora) e mede a retomada. Escreve só em <saida>; produção só é LIDA (e o worker, derrubado).
 set -u
@@ -11,7 +12,9 @@ echo "== $MODO disparo previsto $(date -u -d @$ALVO +%T)Z"
 echo "antes: enviando=$(echo "select count(*) from checkout_abandono where mensagem_status='enviando'" | Q) fila_envio=$(echo "select count(*) from checkout_abandono where status='fila_envio'" | Q) envios_feitos=$(echo "select count(*) from envios_feitos" | Q) restarts=$(docker inspect -f '{{.RestartCount}}' api-worker-1) iniciado=$(docker inspect -f '{{.State.StartedAt}}' api-worker-1)"
 echo "meta-hora EM ANDAMENTO (trava coletar-dados-hora presa) no instante da queda: $(echo "select count(*) > 0 from pg_locks where locktype='advisory' and granted and objid=$ID::oid" | Q)"
 T0=$(date +%s); echo "queda @ $(date -u +%T.%N | cut -c1-12)Z"
-if [ "$MODO" = crash ]; then docker kill api-worker-1 >/dev/null; else ( cd /root/api && docker compose up -d --no-deps --force-recreate worker 2>&1 | tail -2 ); fi
+if [ "$MODO" = crash ]; then docker kill api-worker-1 >/dev/null  # ATENÇÃO: o docker trata `docker kill` como parada manual e NÃO reinicia (visto em 20/10); use crash-pid
+elif [ "$MODO" = crash-pid ]; then kill -9 "$(docker inspect -f '{{.State.Pid}}' api-worker-1)"   # SIGKILL pelo host = OOM/queda real: a política de reinício age
+else docker restart api-worker-1 >/dev/null; fi
 echo "locks advisory 1 s depois da queda (trava solta pelo Postgres): $(sleep 1; echo "select count(*) from pg_locks where locktype='advisory' and granted and objid=$ID::oid" | Q)"
 for i in $(seq 180); do S=$(docker inspect -f '{{.State.Health.Status}}' api-worker-1 2>/dev/null || echo ausente); [ "$S" = healthy ] && break; sleep 1; done
 echo "worker $S após $(( $(date +%s)-T0 )) s; RestartCount=$(docker inspect -f '{{.RestartCount}}' api-worker-1) StartedAt=$(docker inspect -f '{{.State.StartedAt}}' api-worker-1)"

@@ -21,6 +21,7 @@ GLOB="${ARQ%.dump}.globals.sql"
 [ -s "$GLOB" ] || { erro "sem os papéis ($GLOB)"; exit 1; }
 TMP=$(mktemp -d /root/.backup-api-offsite.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
+trap 'exit 130' INT HUP TERM   # o dash não roda o trap de EXIT em sinal: sem isto o tar dos segredos ficaria em claro
 cifra() { gpg --batch --yes --pinentry-mode loopback --passphrase-file "$SENHA" --symmetric --cipher-algo AES256 --compress-algo none -o "$2" "$1"; }
 cifra "$ARQ" "$TMP/$(basename "$ARQ").gpg"
 cifra "$GLOB" "$TMP/$(basename "$GLOB").gpg"

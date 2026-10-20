@@ -37,10 +37,11 @@ Tempo medido do Drive ao banco restaurado: **16 s** (baixar 3 s, decifrar 1 s, r
    rclone copy gdrive:backups-vps-op/AAAA-MM-DD/ /root/dr --include 'api-db-*'
    for f in /root/dr/*.gpg; do gpg --batch --pinentry-mode loopback --passphrase-file /root/.backup-gpg-pass -o "${f%.gpg}" -d "$f"; done
    tar -xzf /root/dr/api-db-segredos-AAAA-MM-DD.tar.gz -C /root/secrets   # senhas dos papéis, api.env, worker.env
+   # terminado o restore: apagar /root/dr (dump, papéis e segredos em claro)
    ```
 3. Subir um `api-db` limpo (se o volume sumiu): `docker compose -f /root/api-db/docker-compose.yml up -d` (rede `api_net`, `/root/secrets/api-db.env`); esperar `healthy`.
 4. Papéis, ANTES do dump (o dump traz GRANT para `api_app`, `robo_*`...): `docker exec -i api-db psql -U api -d api -f - < api-db-...globals.sql`
-   (o `CREATE ROLE api` acusa "já existe": é esperado, os `ALTER ROLE` seguem).
+   (rode SEM `ON_ERROR_STOP`: o `CREATE ROLE api` acusa "já existe", é esperado, e os `ALTER ROLE` seguem; leia a saída em busca de qualquer OUTRO erro).
 5. Dados: `docker exec -i api-db pg_restore -U api -d api --exit-on-error < api-db-AAAA-MM-DD-HHMM.dump`.
    Banco que NÃO está vazio: restaurar antes num banco novo (`createdb -O api api_novo`) e trocar os nomes com a API parada; nunca `--clean` em produção.
 6. Conferir: `docker exec -i api-db psql -U api -d api -At -f - < paridade-tabelas.sql` (compare com o `restaurado-*.txt` da última prova: mesmas 194 tabelas),

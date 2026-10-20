@@ -10,25 +10,29 @@ AQUI=$(cd "$(dirname "$0")" && pwd)
 OUT=${1:-/root/restore-prova}; N=${2:-2}
 CT=${API_DB_CONTAINER:-api-db}; TC=${TESTE_CONTAINER:-api-db-prova-teste}
 IMG=postgres:17-trixie
+case "$N" in ''|*[!0-9]*|0) echo "N deve ser um inteiro >= 1" >&2; exit 1 ;; esac
 case "$TC" in *-teste) ;; *) echo "recusado: TESTE_CONTAINER deve terminar em -teste" >&2; exit 1 ;; esac
 mkdir -p "$OUT"; chmod 700 "$OUT"
-limpa() { docker rm -fv "$TC" >/dev/null 2>&1 || true; docker exec "$CT" rm -f /tmp/prova.dump /tmp/prova.globals.sql 2>/dev/null || true; }
+# apaga também as cópias em claro (o .globals.sql leva o hash das senhas): ficam só os .txt
+limpa() { docker rm -fv "$TC" >/dev/null 2>&1 || true; docker exec "$CT" rm -f /tmp/prova.dump /tmp/prova.globals.sql 2>/dev/null || true; rm -f "$OUT/prova.dump" "$OUT/prova.globals.sql"; }
 trap limpa EXIT
 trap 'exit 130' INT HUP TERM
 agora() { date +%s; }
 
-# 1. banco vivo: impressão digital e dump do mesmo snapshot
+# 1. banco vivo: impressão digital e dump do mesmo snapshot (o psql ignora erro do \! : apaga sobra antes e o dump falho some)
+docker exec "$CT" rm -f /tmp/prova.dump /tmp/prova.globals.sql
 { echo 'begin isolation level repeatable read read only;'
   echo 'select pg_export_snapshot() as snap \gset'
   echo '\setenv SNAP :snap'
   echo '\pset tuples_only on'
   echo '\pset format unaligned'
   cat "$AQUI/paridade-tabelas.sql"
-  echo '\! pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --snapshot="$SNAP" -f /tmp/prova.dump'
-  echo '\! pg_dumpall -U "$POSTGRES_USER" --globals-only -f /tmp/prova.globals.sql'
+  echo '\! pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --snapshot="$SNAP" -f /tmp/prova.dump || rm -f /tmp/prova.dump'
+  echo '\! pg_dumpall -U "$POSTGRES_USER" --globals-only -f /tmp/prova.globals.sql || rm -f /tmp/prova.globals.sql'
   echo 'commit;'
 } | docker exec -i "$CT" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q' > "$OUT/vivo.txt"
 docker cp "$CT:/tmp/prova.dump" "$OUT/prova.dump"; docker cp "$CT:/tmp/prova.globals.sql" "$OUT/prova.globals.sql"
+[ "$(grep -c '^T ' "$OUT/vivo.txt")" -gt 0 ] || { echo "impressão digital do banco vivo vazia" >&2; exit 1; }
 echo "vivo: $(grep -c '^T ' "$OUT/vivo.txt") tabelas; dump $(du -h "$OUT/prova.dump" | cut -f1)" | tee "$OUT/resumo.txt"
 
 # 2. restaura N vezes num contêiner descartável e compara
