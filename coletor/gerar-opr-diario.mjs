@@ -24,6 +24,7 @@ import {
 import { visitasPerfilDoDiaMeta, salvarVisitasPerfilDoDia } from './lib/visitas-perfil-meta.mjs';
 import { metaDoColetor } from './lib/core-meta.mjs';
 import { abrirRest } from './lib/rest-pg.mjs';
+import { enviarFechamentos } from './lib/enviar-fechamentos.mjs';
 
 // CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token.
 const META = metaDoColetor();
@@ -210,14 +211,8 @@ async function main() {
   // As duas mensagens de FECHAMENTO DO DIA vão ANTES da imagem (pedido do
   // dono, 17/09/2026) — cada uma tenta independente, uma falhando não
   // impede a outra nem a imagem (mesmo espírito de enviar-relatorio-hora).
-  for (const [nome, msg] of [['leads', mensagemLeads], ['seguidores', mensagemSeguidores]]) {
-    if (!msg) continue;
-    try {
-      await mandarTextoWhatsapp(msg);
-    } catch (e) {
-      console.error(`Falha ao mandar a mensagem de fechamento (${nome}):`, e.message);
-    }
-  }
+  const falhas = await enviarFechamentos([['leads', mensagemLeads], ['seguidores', mensagemSeguidores]], mandarTextoWhatsapp);
+  if (falhas.length) process.exitCode = 1; // sem isto o robô sai 0 com a mensagem perdida (achado 06-A1, 20/10/2026)
 
   // pg: sem contrato de Storage ainda (fase 2) — a imagem não sobe; as duas mensagens de texto acima já saíram.
   if (rest.via === 'pg') {
