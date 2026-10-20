@@ -1,3 +1,4 @@
 /api
 *_test.go
 **/testdata
+!internal/web/testdata/contrato_front.json
