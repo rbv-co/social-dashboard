@@ -114,3 +114,36 @@ test('o limite por rodada vale e o resumo não traz dado pessoal', pula, async (
     assert.doesNotMatch(resumo(r), /@/);
   } finally { await m.fim(); }
 });
+
+test('nenhuma trava de linha fica aberta durante a chamada ao Bling (a RPC da pessoa não espera o Bling)', pula, async () => {
+  const m = await mundo(1);
+  try {
+    await m.cli2.query(`set lock_timeout = '500ms'`);
+    const core = coreFalso();
+    const chamar = core.chamar.bind(core);
+    let mexeu = false;
+    core.chamar = async (metodo, caminho, o) => {
+      if (metodo === 'POST') { await m.cli2.query('update vessel_lista_espera set nome = nome where id = 1'); mexeu = true; } // travaria se a linha estivesse bloqueada
+      return chamar(metodo, caminho, o);
+    };
+    const r = await passo(m.cli, core, { espera: semEspera });
+    assert.ok(mexeu);
+    assert.equal(r.criados, 1);
+  } finally { await m.fim(); }
+});
+
+test('a segunda instância enquanto a primeira trabalha sai sem fazer nada', pula, async () => {
+  const m = await mundo(2);
+  try {
+    let solta; const segura = new Promise((r) => { solta = r; });
+    const core = coreFalso();
+    const chamar = core.chamar.bind(core);
+    core.chamar = async (metodo, caminho, o) => { if (metodo === 'POST') await segura; return chamar(metodo, caminho, o); };
+    const primeira = passo(m.cli, core, { espera: semEspera });
+    await new Promise((r) => setTimeout(r, 200));
+    const segunda = await passo(m.cli2, coreFalso(), { espera: semEspera });
+    assert.equal(segunda.ocupado, true);
+    solta();
+    assert.equal((await primeira).criados, 2);
+  } finally { await m.fim(); }
+});

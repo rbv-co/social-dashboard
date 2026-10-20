@@ -184,5 +184,7 @@ test('falha sem nenhuma linha esperando: o motivo vai na mais nova (não cai no 
     await m.nova(null, new Date()); await m.nova(null, new Date());
     await assert.rejects(comMarcaNaLista(m.cli, async () => { throw new Error('zoho 5xx'); })(), /5xx/);
     assert.deepEqual((await m.ler()).map((x) => x.ultimo_erro), [null, 'zoho 5xx']);
+    await comMarcaNaLista(m.cli, async () => {})(); // sucesso seguinte: o erro que ficou na linha já publicada some
+    assert.deepEqual((await m.ler()).map((x) => x.ultimo_erro), [null, null]);
   } finally { await m.fim(); }
 });

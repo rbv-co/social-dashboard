@@ -2,6 +2,7 @@
 -- Plano 07 (INTEGRACAO-CORE-2026-10): o robô `vessel-contatos-no-bling` (coletor/, VPS, cron de 1 min) leva cada linha da lista de espera
 -- ao Bling como contato (era a edge `vessel-espelhar-lista`, congelada). Ficha na tela de saúde: dá um batimento a cada 30 min mesmo
 -- ocioso, então 2 h sem sucesso é parado de verdade. Não é crítico: o cadastro da pessoa nunca espera por ele.
+-- ATENÇÃO: a ficha só vale com o cron ligado (ops/virada/janela/vessel-contatos.cron): com o robô parado a tela de saúde marca parado depois de 2 h.
 -- Mesmo molde da 00008: num banco sem a tabela (testes, instalação nova) não faz nada; `on conflict do nothing` preserva ficha ajustada.
 -- +goose StatementBegin
 do $$

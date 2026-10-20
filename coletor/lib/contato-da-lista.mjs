@@ -52,7 +52,7 @@ async function acharPorEmail(proxy, email) {
   if (busca.reautorizar) return { pausa: 'reautorizar' };
   if (busca.status === 429) return { pausa: '429' };
   if (!busca.ok) return { erro: `busca no Bling falhou (${busca.status || 'sem resposta'})`, tipo: 'tenta' };
-  const candidatos = ((await json(busca))?.data ?? []).slice(0, 3);
+  const candidatos = ((await json(busca))?.data ?? []).slice(0, 5);
   for (const c of candidatos) {
     const det = await proxy.chamar('GET', `/contatos/${c.id}`, { prioridade: 'sync' });
     if (det.reautorizar) return { pausa: 'reautorizar' };

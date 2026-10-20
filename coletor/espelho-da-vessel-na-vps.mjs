@@ -62,9 +62,9 @@ export function comMarcaNaLista(cli, executar) {
       }
       throw x;
     }
-    await cli.query(`update vessel_lista_espera set planilha_em = now(),
-       ultimo_erro = case when ultimo_erro like 'bling %' then ultimo_erro else null end
-       where planilha_em is null and criado_em <= $1::timestamptz`, [t]);
+    await cli.query(`update vessel_lista_espera set planilha_em = now() where planilha_em is null and criado_em <= $1::timestamptz`, [t]);
+    // planilha em dia: o erro dela (inclusive o que ficou na linha mais nova quando nenhuma esperava) deixa de valer
+    await cli.query(`update vessel_lista_espera set ultimo_erro = null where ultimo_erro is not null and ultimo_erro not like 'bling %' and planilha_em is not null`);
   };
 }
 

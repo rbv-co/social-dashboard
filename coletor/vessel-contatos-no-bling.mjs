@@ -30,40 +30,38 @@ export async function ensaio(cli, { ids = [] } = {}) {
   return rows;
 }
 
-/** Um passo. `proxy` é o `{ chamar }` do Core. Devolve `{ criados, reaproveitados, tenta, incertos, definitivos, pausa }`. */
+/** Um passo. `proxy` é o `{ chamar }` do Core. Devolve `{ criados, reaproveitados, tenta, incertos, definitivos, pausa, ocupado }`.
+ *  UM passo por banco por vez: trava de sessão (advisory) no começo, solta no fim. Nenhuma transação fica aberta durante as chamadas
+ *  ao Bling (o api-db derruba sessão parada em transação aos 60 s e a trava da linha seguraria a RPC da pessoa que acabou de se
+ *  cadastrar): cada linha é lida, levada ao Bling e gravada com `where bling_em is null` (se mudou no meio, não grava por cima). */
 export async function passo(cli, proxy, { ids = [], limite = 20, espera = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
-  const r = { criados: 0, reaproveitados: 0, tenta: 0, incertos: 0, definitivos: 0, pausa: null };
+  const r = { criados: 0, reaproveitados: 0, tenta: 0, incertos: 0, definitivos: 0, pausa: null, ocupado: false };
+  const { rows: [{ ok }] } = await cli.query(`select pg_try_advisory_lock(hashtext('robo:${ROBO}')) as ok`);
+  if (!ok) { r.ocupado = true; return r; }
   const vistos = [];
-  while (vistos.length < limite && !r.pausa) {
-    await cli.query('begin');
-    try {
+  try {
+    while (vistos.length < limite && !r.pausa) {
       const { rows: [linha] } = await cli.query(`select ${COLUNAS} from vessel_lista_espera
          where ${ELEGIVEL} and (cardinality($1::bigint[]) = 0 or id = any($1)) and id <> all($2::bigint[])
-         order by id limit 1 for update skip locked`, [ids, vistos]);
-      if (!linha) { await cli.query('rollback'); break; }
+         order by id limit 1`, [ids, vistos]);
+      if (!linha) break;
       vistos.push(linha.id);
       if (vistos.length > 1) await espera(400); // o Bling dá 3 chamadas por segundo para todos os apps
       const x = await contatoDaLinha(proxy, linha);
-      if (x.pausa) {
-        r.pausa = x.pausa;
-        await cli.query('rollback');
-        break;
-      }
+      if (x.pausa) { r.pausa = x.pausa; break; }
       if (x.id) {
         await cli.query(`update vessel_lista_espera set bling_id = $2, bling_em = now(),
-           ultimo_erro = case when ultimo_erro like 'bling %' then null else ultimo_erro end where id = $1`, [linha.id, x.id]);
+           ultimo_erro = case when ultimo_erro like 'bling %' then null else ultimo_erro end where id = $1 and bling_em is null`, [linha.id, x.id]);
         r[x.reaproveitado ? 'reaproveitados' : 'criados']++;
       } else {
         const antes = Number(/^bling tentativa (\d+)\//.exec(linha.ultimo_erro ?? '')?.[1] ?? 0);
         const texto = x.tipo === 'tenta' ? `bling tentativa ${antes + 1}/${TETO_TENTATIVAS}: ${x.erro}` : `bling ${x.tipo}: ${x.erro.replace(/^incerto: /, '')}`;
-        await cli.query('update vessel_lista_espera set ultimo_erro = $2 where id = $1', [linha.id, texto.slice(0, 500)]);
+        await cli.query('update vessel_lista_espera set ultimo_erro = $2 where id = $1 and bling_em is null', [linha.id, texto.slice(0, 500)]);
         r[{ tenta: 'tenta', incerto: 'incertos', definitivo: 'definitivos' }[x.tipo]]++;
       }
-      await cli.query('commit');
-    } catch (e) {
-      await cli.query('rollback').catch(() => {});
-      throw e;
     }
+  } finally {
+    await cli.query(`select pg_advisory_unlock(hashtext('robo:${ROBO}'))`).catch(() => {});
   }
   return r;
 }
@@ -97,12 +95,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (so_ensaio) {
       for (const l of await ensaio(cli, { ids })) console.log(`${l.origem}: ${l.n} a levar ao Bling`);
     } else {
-      const { rows: [{ ok }] } = await cli.query(`select pg_try_advisory_lock(hashtext('robo:${ROBO}')) as ok`);
-      if (!ok) { console.error('outro processo já é o robô de contatos deste banco'); process.exit(0); }
       const proxy = blingViaCore({ ...process.env, CORE_BLING_PROXY: 'true' });
       const inicio = new Date();
       let r = null, erro = null;
       try { r = await passo(cli, proxy, { ids }); } catch (x) { erro = x; saida = 1; }
+      if (r?.ocupado) { console.error('outro processo já é o robô de contatos deste banco'); process.exit(0); }
       try { await registrar(cli, inicio, r, erro); } catch { /* a linha de saúde não derruba o robô */ }
       console.log(`${inicio.toISOString()} ${erro ? `ERRO: ${String(erro.message ?? erro).slice(0, 200)}` : resumo(r)}`);
     }
