@@ -188,3 +188,9 @@ test('consumidor do espelho: CORE_ESPELHO_TOKEN vence CORE_API_TOKEN; sem ele, o
   await clienteDoAmbiente({ CORE_API_TOKEN: 'a' }, { fetchImpl }).todas('contatos');
   assert.deepEqual(chamadas.map((c) => c.init.headers.Authorization), ['Bearer b', 'Bearer a']);
 });
+
+test('idadeDoEspelho: ultimo_ok ilegivel com limite ligado e defasado (dado torto nao vale como fresco)', () => {
+  assert.equal(idadeDoEspelho({ ultimo_ok: 'ontem' }, { maxIdadeMin: 30 }).defasado, true);
+  assert.equal(idadeDoEspelho({ ultimo_ok: 'ontem' }, { maxIdadeMin: 0 }).defasado, false);
+  assert.equal(idadeDoEspelho({}, { maxIdadeMin: 30 }).defasado, false, 'bloco sem ultimo_ok nao inventa');
+});

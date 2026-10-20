@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -52,7 +54,7 @@ func (l *Leitura) Defasado(agora time.Time, maxIdade time.Duration) bool {
 	if l == nil || l.Sincronia == nil {
 		return false
 	}
-	if l.Sincronia.Atrasado {
+	if l.Sincronia.Atrasado || (l.Sincronia.TempoReal != nil && !*l.Sincronia.TempoReal) {
 		return true
 	}
 	return maxIdade > 0 && l.Sincronia.UltimoOK != nil && agora.Sub(*l.Sincronia.UltimoOK) > maxIdade
@@ -105,7 +107,10 @@ func (c *Cliente) obter(ctx context.Context, caminho string, q url.Values, desti
 			return fmt.Errorf("core: espelho respondeu %d", status)
 		}
 		if !d.repetir {
-			return fmt.Errorf("%w: %s", ErrIndisponivel, d.motivo)
+			if status == 0 {
+				return fmt.Errorf("%w: sem resposta", ErrIndisponivel)
+			}
+			return fmt.Errorf("%w: respondeu %d", ErrIndisponivel, status)
 		}
 		if err := c.dormir(ctx, d.esperar); err != nil {
 			return err
@@ -192,4 +197,32 @@ func (c *Cliente) EspelhoTodas(ctx context.Context, tabela string, q url.Values)
 		cursor = *pg.ProximoCursor
 	}
 	return nil, fmt.Errorf("%w: páginas demais", ErrIndisponivel)
+}
+
+// LimiteDeIdade lê CORE_ESPELHO_MAX_IDADE_MIN para uma tabela, igual a `limiteDeIdadeMin` do JS
+// (core-leitura.js): `30` vale para todas, `tabela=min,tabela=min` é por tabela (o número solto é o
+// padrão); vazio ou torto = 0 = sem limite.
+func LimiteDeIdade(env, tabela string) time.Duration {
+	var padrao float64
+	for _, parte := range strings.Split(env, ",") {
+		parte = strings.TrimSpace(parte)
+		if parte == "" {
+			continue
+		}
+		chave, valor, tem := strings.Cut(parte, "=")
+		if !tem {
+			chave, valor = "", parte
+		}
+		n, err := strconv.ParseFloat(strings.TrimSpace(valor), 64)
+		if err != nil || n < 0 || math.IsNaN(n) || math.IsInf(n, 0) {
+			continue
+		}
+		if strings.TrimSpace(chave) == tabela && tem {
+			return time.Duration(n * float64(time.Minute))
+		}
+		if !tem {
+			padrao = n
+		}
+	}
+	return time.Duration(padrao * float64(time.Minute))
 }

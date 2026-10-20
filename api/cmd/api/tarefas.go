@@ -44,7 +44,8 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	ts = append(ts, msg.Tarefa())
 	// Leitura dupla (plano 04-D): só existe com CORE_LEITURA_SHOPIFY_PEDIDOS ligada; só mede, não troca a fonte.
 	if cfg.CoreLeituraShopifyPedidos {
-		ts = append(ts, (&leituradupla.ShopifyPedidos{Fonte: leituradupla.CentralPG{Pool: p}, Core: cli}).Tarefa())
+		ts = append(ts, (&leituradupla.ShopifyPedidos{Fonte: leituradupla.CentralPG{Pool: p}, Core: cli,
+			MaxIdade: core.LimiteDeIdade(os.Getenv("CORE_ESPELHO_MAX_IDADE_MIN"), "shopify_pedidos")}).Tarefa())
 	}
 	return ts
 }

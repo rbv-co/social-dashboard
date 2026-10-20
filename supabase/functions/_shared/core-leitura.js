@@ -135,6 +135,9 @@ export function idadeDoEspelho(sincronia, { maxIdadeMin = 0, agora = Date.now() 
   if (sincronia.atrasado === true) return { defasado: true, motivo: 'o core marcou a sincronização como atrasada' };
   if (sincronia.tempo_real === false) return { defasado: true, motivo: 'o core está sem receber evento em tempo real' };
   const t = Date.parse(sincronia.ultimo_ok || '');
+  if (maxIdadeMin > 0 && sincronia.ultimo_ok && !Number.isFinite(t)) {
+    return { defasado: true, motivo: 'o core mandou `ultimo_ok` ilegível' };   // dado torto não vale como "fresco"
+  }
   if (maxIdadeMin > 0 && Number.isFinite(t) && agora - t > maxIdadeMin * 60e3) {
     return { defasado: true, motivo: `última sincronização boa há mais de ${maxIdadeMin} min (${sincronia.ultimo_ok})` };
   }

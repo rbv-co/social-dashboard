@@ -62,8 +62,8 @@ func linhasDe(n int) []map[string]any {
 func TestEspelhoTodasPaginaEConferePelaContagem(t *testing.T) {
 	c, _ := espelhoFalso(t, linhasDe(5), 5, nil)
 	l, err := c.EspelhoTodas(context.Background(), "shopify_pedidos", url.Values{})
-	if err != nil || len(l.Linhas) != 5 {
-		t.Fatalf("err=%v linhas=%d", err, len(l.Linhas))
+	if err != nil || l == nil || len(l.Linhas) != 5 {
+		t.Fatalf("err=%v leitura=%+v", err, l)
 	}
 	if got := l.Linhas[0]["shopify_id"].(json.Number).String(); got != "820982911946154508" {
 		t.Fatalf("id perdeu precisão: %s", got)
@@ -191,5 +191,46 @@ func TestEspelhoLeBlocoSincroniaQuandoOCoreManda(t *testing.T) {
 	}
 	if !l.Defasado(time.Now(), 0) {
 		t.Fatal("atrasado devia ser defasado")
+	}
+}
+
+func TestEspelhoSemTokenDoConsumidorUsaOTokenDeSempre(t *testing.T) {
+	var visto string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		visto = r.Header.Get("Authorization")
+		if strings.HasSuffix(r.URL.Path, "/contagem") {
+			w.Write([]byte(`{"linhas":0}`))
+			return
+		}
+		w.Write([]byte(`{"data":[],"proximo_cursor":null}`))
+	}))
+	defer srv.Close()
+	if _, err := Novo(srv.URL, "o-de-sempre").EspelhoTodas(context.Background(), "x", nil); err != nil || visto != "Bearer o-de-sempre" {
+		t.Fatalf("err=%v auth=%q", err, visto)
+	}
+}
+
+func TestDefasadoAcusaWebhookMudo(t *testing.T) {
+	f := false
+	if !(&Leitura{Sincronia: &Sincronia{TempoReal: &f}}).Defasado(time.Now(), 0) {
+		t.Fatal("tempo_real=false é defasado (igual ao JS)")
+	}
+}
+
+func TestLimiteDeIdade(t *testing.T) {
+	cases := []struct {
+		env, tabela string
+		want        time.Duration
+	}{
+		{"", "x", 0},
+		{"30", "x", 30 * time.Minute},
+		{"estoque_depositos=2160, shopify_pedidos=30, 60", "shopify_pedidos", 30 * time.Minute},
+		{"estoque_depositos=2160, shopify_pedidos=30, 60", "contatos", 60 * time.Minute},
+		{"abc,x=-5", "x", 0},
+	}
+	for _, c := range cases {
+		if got := LimiteDeIdade(c.env, c.tabela); got != c.want {
+			t.Errorf("%q/%s = %v, quero %v", c.env, c.tabela, got, c.want)
+		}
 	}
 }

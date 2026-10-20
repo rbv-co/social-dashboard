@@ -190,7 +190,8 @@ async function main() {
     }),
   });
   // Espelho defasado (03-E): saldo velho NUNCA decide publicação. Não grava nada e diz por quê.
-  if (saldo.defasado) { console.log(`DEFASADO: não publico estoque (${saldo.motivo}).`); return; }
+  // Sai VERMELHO de propósito: estoque do site parado em silêncio é pior que robô falhando.
+  if (saldo.defasado) { console.error(`DEFASADO: não publico estoque (${saldo.motivo}).`); process.exit(1); }
   const { ajustes, semBling, iguais } = calcularAjustes(variantes, saldo);
 
   console.log(`${APLICAR ? 'APLICANDO' : 'ENSAIO (nada gravado)'} — ${variantes.length} variantes, ${iguais.length} já certas, ${ajustes.length} a corrigir, ${semBling.length} sem par no Bling`);

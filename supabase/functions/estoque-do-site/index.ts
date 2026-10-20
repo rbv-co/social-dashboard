@@ -228,7 +228,7 @@ Deno.serve(async (req: Request) => {
     });
     // Espelho defasado (03-E): saldo velho NUNCA decide publicação.
     if ((saldo as Map<string, number> & { defasado?: boolean }).defasado) {
-      return json({ defasado: true, motivo: (saldo as { motivo?: string }).motivo }, 200);
+      return json({ defasado: true, motivo: (saldo as { motivo?: string }).motivo }, 503);   // vermelho de propósito: estoque parado em silêncio é pior
     }
     const { ajustes, semBling, iguais } = calcularAjustes(variantes, saldo);
     const falhas: string[] = [];

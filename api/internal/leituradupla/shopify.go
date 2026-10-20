@@ -41,6 +41,7 @@ type Relatorio struct {
 	Central, Core                     int
 	Iguais                            int
 	SoCentral, SoCore, SoCoreAnterior []string
+	Recentes                          int // pedidos mexidos no core depois do corte: a leitura dos dois lados não é do mesmo instante
 	Diferencas                        []Diferenca
 	Defasado                          bool
 }
@@ -72,7 +73,10 @@ func texto(v any) string {
 
 // Comparar casa por id da Shopify (texto: sem passar por float). Compara número do pedido (sem "#"),
 // total (em centavos), moeda e situação financeira (caixa não importa).
-func Comparar(central []LinhaCentral, doCore []map[string]any, defasado bool) Relatorio {
+//
+// `corte` é a hora em que o lado local foi lido; pedido criado ou alterado no core depois de corte-5min
+// fica fora (a Central é lida antes do core: o que mudou no meio não é divergência). Zero = sem corte.
+func Comparar(central []LinhaCentral, doCore []map[string]any, defasado bool, corte time.Time) Relatorio {
 	r := Relatorio{Central: len(central), Core: len(doCore), Defasado: defasado}
 	coreID := make(map[string]map[string]any, len(doCore))
 	for _, l := range doCore {
@@ -88,6 +92,10 @@ func Comparar(central []LinhaCentral, doCore []map[string]any, defasado bool) Re
 		l, ok := coreID[c.ID]
 		if !ok {
 			r.SoCentral = append(r.SoCentral, c.ID)
+			continue
+		}
+		if recente(l["atualizado_em"], corte) {
+			r.Recentes++
 			continue
 		}
 		n := len(r.Diferencas)
@@ -114,6 +122,10 @@ func Comparar(central []LinhaCentral, doCore []map[string]any, defasado bool) Re
 		if vistas[id] {
 			continue
 		}
+		if recente(l["criado_em"], corte) {
+			r.Recentes++
+			continue
+		}
 		if t, err := time.Parse("2006-01-02 15:04:05", texto(l["criado_em"])); err == nil && !primeiro.IsZero() && t.Before(primeiro) {
 			r.SoCoreAnterior = append(r.SoCoreAnterior, id)
 			continue
@@ -121,6 +133,15 @@ func Comparar(central []LinhaCentral, doCore []map[string]any, defasado bool) Re
 		r.SoCore = append(r.SoCore, id)
 	}
 	return r
+}
+
+// recente: o instante (UTC, "2006-01-02 15:04:05", como o core grava) é posterior a corte-5min.
+func recente(v any, corte time.Time) bool {
+	if corte.IsZero() {
+		return false
+	}
+	t, err := time.Parse("2006-01-02 15:04:05", texto(v))
+	return err == nil && t.After(corte.Add(-5*time.Minute))
 }
 
 // Fonte lê o lado local. A produção usa o pgx (CentralPG); o teste, uma lista.
@@ -170,6 +191,7 @@ func (s *ShopifyPedidos) Rodar(ctx context.Context) error {
 	if s.Agora != nil {
 		agora = s.Agora
 	}
+	corte := agora()
 	local, err := s.Fonte.Linhas(ctx)
 	if err != nil {
 		return fmt.Errorf("leitura dupla shopify_pedidos: lado local: %w", err)
@@ -181,10 +203,10 @@ func (s *ShopifyPedidos) Rodar(ctx context.Context) error {
 		}
 		return fmt.Errorf("leitura dupla shopify_pedidos: core: %w", err)
 	}
-	r := Comparar(local, l.Linhas, l.Defasado(agora(), s.MaxIdade))
+	r := Comparar(local, l.Linhas, l.Defasado(agora(), s.MaxIdade), corte)
 	atributos := []any{"tabela", "shopify_pedidos", "central", r.Central, "core", r.Core, "iguais", r.Iguais,
 		"so_central", len(r.SoCentral), "so_core", len(r.SoCore), "so_core_anterior", len(r.SoCoreAnterior),
-		"diferencas", len(r.Diferencas), "defasado", r.Defasado, "sincronia_informada", l.Sincronia != nil}
+		"diferencas", len(r.Diferencas), "recentes_ignorados", r.Recentes, "defasado", r.Defasado, "sincronia_informada", l.Sincronia != nil}
 	if r.Limpo() {
 		slog.Info("leitura dupla", append(atributos, "resultado", "limpa")...)
 		return nil
