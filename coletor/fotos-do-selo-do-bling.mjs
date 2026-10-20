@@ -248,7 +248,6 @@ async function main() {
 
         // ── AS FOTOS ──
         if (falta.faltaFoto || REBAIXAR) {
-          if (imagemVencida) { console.log('   a imagem do detalhe no Core está vencida. Tento na próxima rodada.'); continue }
           // ⚠️⚠️ AS DUAS FONTES, E A TRAVA QUE DECIDE ENTRE ELAS.
           //
           // Regra do dono, 08/09/2026: "Zoho quando houver pasta tratada e a cor e
@@ -292,7 +291,10 @@ async function main() {
             }
           }
 
-          if (!urls.length) {
+          if (!urls.length && imagemVencida) {
+            // Só o fallback do Bling depende do link do detalhe; a cor e as fotos do Zoho seguem valendo.
+            console.log('   a imagem do detalhe no Core está vencida. Tento na próxima rodada.')
+          } else if (!urls.length) {
             urls = imagensGrandesDoProduto(produto).slice(0, MAXIMO_DE_FOTOS)
             if (urls.length) deOnde = 'Bling'
           }
@@ -303,7 +305,7 @@ async function main() {
             console.log(`   outra bolsa também cai na pasta "${pasta}". Fica sem foto,`
               + ' que é melhor do que a foto errada. Separe os cadastros.')
           } else if (!urls.length) {
-            console.log('   o produto não tem foto no Bling. Assim que subir lá, a próxima rodada pega.')
+            if (!imagemVencida) console.log('   o produto não tem foto no Bling. Assim que subir lá, a próxima rodada pega.')
           } else if (!pasta) {
             console.log('   sem modelo nem cor não dá para nomear a pasta. Fica como está.')
           } else if (DRY) {

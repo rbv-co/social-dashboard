@@ -148,11 +148,14 @@ test('propagarAjustesPg: ajuste vence o total reescrito, é idempotente e só to
     await cli.connect();
     try {
       await cli.query('begin');
-      await cli.query(`create temp table vessel_pedidos (bling_pedido_id bigint primary key,
-        total_do_bling numeric(12,2), total_corrigido numeric(12,2), receita_liquida numeric(12,2))`);
+      await cli.query(`create temp table vessel_pedidos (id int generated always as identity, bling_pedido_id bigint primary key,
+        total_do_bling numeric(12,2), total_corrigido numeric(12,2), receita_liquida numeric(12,2), desconto numeric(12,2))`);
+      await cli.query(`create temp table vessel_pedido_itens (pedido_id int, total_do_item numeric(12,2))`);
       await cli.query(`create temp table bling_pedido_ajuste_valor (pedido_id bigint primary key,
         total_corrigido numeric(12,2) not null)`);
-      await cli.query(`insert into vessel_pedidos values (26851358889, 1900, null, 1900), (2, 50, null, 50)`);
+      await cli.query(`insert into vessel_pedidos (bling_pedido_id, total_do_bling, total_corrigido, receita_liquida, desconto)
+        values (26851358889, 1900, null, 1900, 0), (2, 50, null, 50, 0)`);
+      await cli.query(`insert into vessel_pedido_itens select id, total_do_bling from vessel_pedidos`);
       await cli.query(`insert into bling_pedido_ajuste_valor values (26851358889, 1615)`);
 
       assert.equal(await propagarAjustesPg(cli), 1, 'só o pedido com ajuste muda');
@@ -166,6 +169,12 @@ test('propagarAjustesPg: ajuste vence o total reescrito, é idempotente e só to
       assert.equal((await lido()).rows[1].r, '1615.00');
 
       assert.equal(await propagarAjustesPg(cli), 0, 'segunda passada não toca nada');
+
+      // ajuste apagado à mão: o pedido volta ao valor do Bling (soma dos itens), mesmo fora de qualquer janela
+      await cli.query('delete from bling_pedido_ajuste_valor');
+      assert.equal(await propagarAjustesPg(cli), 1);
+      assert.deepEqual((await lido()).rows[1], { id: '26851358889', c: null, r: '1900.00' });
+      assert.equal(await propagarAjustesPg(cli), 0);
     } finally {
       await cli.query('rollback'); await cli.end();
     }
