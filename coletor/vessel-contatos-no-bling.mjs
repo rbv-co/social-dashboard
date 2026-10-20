@@ -17,6 +17,8 @@ import { contatoDaLinha } from './lib/contato-da-lista.mjs';
 
 export const ROBO = 'vessel-contatos-no-bling';
 export const TETO_TENTATIVAS = 5;
+// Linhas por passo (1 passo por minuto): cada linha custa 2 a 3 chamadas ao Core, que divide os 150/min do Bling com todos os apps.
+export const LOTE = 5;
 const ELEGIVEL = `bling_em is null
   and (ultimo_erro is null or ultimo_erro !~ '^bling (incerto|definitivo)')
   and coalesce(substring(ultimo_erro from '^bling tentativa (\\d+)/')::int, 0) < ${TETO_TENTATIVAS}`;
@@ -34,7 +36,7 @@ export async function ensaio(cli, { ids = [] } = {}) {
  *  UM passo por banco por vez: trava de sessão (advisory) no começo, solta no fim. Nenhuma transação fica aberta durante as chamadas
  *  ao Bling (o api-db derruba sessão parada em transação aos 60 s e a trava da linha seguraria a RPC da pessoa que acabou de se
  *  cadastrar): cada linha é lida, levada ao Bling e gravada com `where bling_em is null` (se mudou no meio, não grava por cima). */
-export async function passo(cli, proxy, { ids = [], limite = 20, espera = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+export async function passo(cli, proxy, { ids = [], limite = LOTE, espera = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const r = { criados: 0, reaproveitados: 0, tenta: 0, incertos: 0, definitivos: 0, pausa: null, ocupado: false };
   const { rows: [{ ok }] } = await cli.query(`select pg_try_advisory_lock(hashtext('robo:${ROBO}')) as ok`);
   if (!ok) { r.ocupado = true; return r; }

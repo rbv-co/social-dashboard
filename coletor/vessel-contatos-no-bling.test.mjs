@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { passo, ensaio, resumo, TETO_TENTATIVAS } from './vessel-contatos-no-bling.mjs';
+import { passo, ensaio, resumo, TETO_TENTATIVAS, LOTE } from './vessel-contatos-no-bling.mjs';
 import { coreFalso, resp } from './lib/core-falso-do-bling.mjs';
 
 const semEspera = () => Promise.resolve();
@@ -87,7 +87,7 @@ test('duas instâncias ao mesmo tempo criam um contato só por pessoa', pula, as
   const m = await mundo(6);
   try {
     const core = coreFalso();
-    const [a, b] = await Promise.all([passo(m.cli, core, { espera: semEspera }), passo(m.cli2, core, { espera: semEspera })]);
+    const [a, b] = await Promise.all([passo(m.cli, core, { espera: semEspera, limite: 50 }), passo(m.cli2, core, { espera: semEspera, limite: 50 })]);
     assert.equal(a.criados + b.criados, 6);
     assert.equal(core.criados.size, 6, 'seis chaves, seis contatos');
     assert.ok((await m.ler()).every((l) => l.bling_id));
@@ -145,5 +145,14 @@ test('a segunda instância enquanto a primeira trabalha sai sem fazer nada', pul
     assert.equal(segunda.ocupado, true);
     solta();
     assert.equal((await primeira).criados, 2);
+  } finally { await m.fim(); }
+});
+
+test('o lote padrão é pequeno: uma rodada com 8 pendentes leva só LOTE (o resto fica para o próximo minuto)', pula, async () => {
+  const m = await mundo(8);
+  try {
+    assert.equal(LOTE, 5);
+    const r = await passo(m.cli, coreFalso(), { espera: semEspera });
+    assert.equal(r.criados, LOTE);
   } finally { await m.fim(); }
 });
