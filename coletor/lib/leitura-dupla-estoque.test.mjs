@@ -45,6 +45,23 @@ test('linha só na Central com saldo vira so_central; zerada conta como igual', 
   assert.equal(r.iguais, 1);
 });
 
+test('resposta torta do Core e depósito sumido LANÇAM', () => {
+  const central = [{ deposito_id: D, sku: 'LV1', saldo: 0 }];
+  assert.throws(() => compararEstoque({ central, produtos, saldosCore: [{ id_bling: '1', deposito_id: D, saldo: 'abc' }] }), /inesperada/);
+  assert.throws(() => compararEstoque({ central, produtos, saldosCore: [{ id_bling: '1', deposito_id: D, saldo: null }] }), /inesperada/);
+  assert.throws(() => compararEstoque({ central, produtos, saldosCore: [{ id_bling: '1', saldo: 1 }] }), /inesperada/);
+  assert.throws(() => compararEstoque({ central, produtos, saldosCore: [{ id_bling: '1', deposito_id: D, saldo: 1 }], depositosEsperados: [D, 14888726277] }), /14888726277/);
+});
+
+test('log: resíduo conhecido da Central (linha parada, código morto) não impede "limpa"', () => {
+  const r = compararEstoque({
+    central: [{ deposito_id: D, sku: 'LV1', saldo: 5 }, { deposito_id: D, sku: 'LV3', saldo: 4 }, { deposito_id: D, sku: 'MORTO', saldo: 2 }],
+    produtos, saldosCore: [{ id_bling: '1', deposito_id: D, saldo: 5 }, { id_bling: '3', deposito_id: D, saldo: 0 }],
+  });
+  const l = linhaDeLog(r, { depositos: 1, centralAtualizadoAte: 'x', sincroniaInformada: true });
+  assert.match(l, /central_nao_zerou=1.*sem_par=1.*resultado=limpa/);
+});
+
 test('log: limpa só sem nenhuma divergência', () => {
   const info = { depositos: 4, centralAtualizadoAte: 'x', sincroniaInformada: true };
   const limpa = compararEstoque({ central: [{ deposito_id: D, sku: 'LV1', saldo: 5 }], produtos, saldosCore: [{ id_bling: '1', deposito_id: D, saldo: 5 }] });

@@ -12,11 +12,25 @@ const AMOSTRA = 5;
 const n = (v) => Number(v) || 0;
 const arred = (v) => Math.round(n(v));   // o mesmo arredondamento que o robô da Central aplica
 
+// Resposta inesperada do Core LANÇA (não vira divergência nem "igual" silencioso).
+function validarCore(saldosCore, depositosEsperados) {
+  for (const s of saldosCore) {
+    if (s.id_bling == null || s.deposito_id == null || s.saldo === null || s.saldo === '' || !Number.isFinite(Number(s.saldo))) {
+      throw new Error(`core: linha de estoque_depositos inesperada: ${JSON.stringify(s).slice(0, 120)}`);
+    }
+  }
+  const tem = new Set(saldosCore.map((s) => String(s.deposito_id)));
+  const faltam = (depositosEsperados ?? []).map(String).filter((d) => !tem.has(d));
+  if (faltam.length) throw new Error(`core: espelho sem o(s) depósito(s) ${faltam.join(', ')} em estoque_depositos`);
+}
+
 /**
  * central: linhas de gc_estoque_item {deposito_id, sku, saldo}; produtos: `produtos_bling` do espelho
- * {id_bling, codigo, id_situacaocadastro}; saldosCore: `estoque_depositos` {id_bling, deposito_id, saldo}.
+ * {id_bling, codigo, id_situacaocadastro}; saldosCore: `estoque_depositos` {id_bling, deposito_id, saldo};
+ * depositosEsperados (opcional): ids que o Core TEM de espelhar; faltar um lança (senão o depósito sumido viraria `fora_do_core`).
  */
-export function compararEstoque({ central, produtos, saldosCore }) {
+export function compararEstoque({ central, produtos, saldosCore, depositosEsperados }) {
+  validarCore(saldosCore, depositosEsperados);
   const depCore = new Set(saldosCore.map((s) => String(s.deposito_id)));
   const doCore = new Map(saldosCore.map((s) => [`${s.id_bling}|${s.deposito_id}`, arred(s.saldo)]));
   const idx = indiceDeProdutos(produtos);
@@ -48,7 +62,9 @@ const amostra = (l) => JSON.stringify(l.slice(0, AMOSTRA));
 
 /** A linha de log estruturado (mesmo formato da leitura dupla de pedidos). */
 export function linhaDeLog(r, { depositos, centralAtualizadoAte, sincroniaInformada }) {
-  const ok = !r.diferentes.length && !r.centralNaoZerou.length && !r.soCentral.length && !r.soCore.length && !r.semPar.length;
+  // `central_nao_zerou` e `sem_par` são resíduo conhecido da Central (linha parada / código morto), contados no log
+  // mas fora do critério: senão `limpa` nunca aconteceria. O que decide é saldo que difere ou existe só de um lado.
+  const ok = !r.diferentes.length && !r.soCentral.length && !r.soCore.length;
   return `leitura dupla tabela=estoque_depositos depositos_core=${depositos} iguais=${r.iguais} diferentes=${r.diferentes.length}`
     + ` central_nao_zerou=${r.centralNaoZerou.length} so_central=${r.soCentral.length} so_core=${r.soCore.length} sem_par=${r.semPar.length} fora_do_core=${r.foraDoCore}`
     + ` central_atualizado_ate=${centralAtualizadoAte} sincronia_informada=${sincroniaInformada} resultado=${ok ? 'limpa' : 'divergente'}`

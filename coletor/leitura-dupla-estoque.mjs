@@ -19,6 +19,9 @@ if (!ligada('ESTOQUE_DEPOSITOS', process.env)) {
   process.exit(0);
 }
 
+// Depósitos que o Core TEM de espelhar (item B do plano 04); outros ids em CORE_ESTOQUE_DEPOSITOS (separados por vírgula).
+const DEPOSITOS_DO_CORE = (process.env.CORE_ESTOQUE_DEPOSITOS || '14888726315,14888617206,14888726277,14888830073').split(',').map((d) => d.trim()).filter(Boolean);
+
 const core = clienteDoAmbiente(process.env);
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
@@ -26,6 +29,7 @@ try {
   await cli.query('begin read only');
   const { rows: central } = await cli.query('select deposito_id, sku, saldo, atualizado_em from gc_estoque_item');
   await cli.query('rollback');
+  if (!central.length) throw new Error('central: gc_estoque_item vazia, nada a comparar');
   const [{ linhas: produtos }, { linhas: saldosCore, sincronia }] = await Promise.all([
     core.todas('produtos_bling', { campos: ['id_bling', 'codigo', 'id_situacaocadastro'] }),
     core.todas('estoque_depositos', { campos: ['id_bling', 'deposito_id', 'saldo'] }),
@@ -36,7 +40,7 @@ try {
   if (idade.defasado) {
     console.warn(`leitura dupla tabela=estoque_depositos resultado=defasado motivo="${idade.motivo}" central_atualizado_ate=${atualizadoAte}`);
   } else {
-    const r = compararEstoque({ central, produtos, saldosCore });
+    const r = compararEstoque({ central, produtos, saldosCore, depositosEsperados: DEPOSITOS_DO_CORE });
     const depositos = new Set(saldosCore.map((s) => String(s.deposito_id))).size;
     const linha = linhaDeLog(r, { depositos, centralAtualizadoAte: atualizadoAte, sincroniaInformada: !!sincronia });
     (linha.includes('resultado=limpa') ? console.log : console.warn)(linha);
