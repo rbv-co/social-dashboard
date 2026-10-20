@@ -3,7 +3,6 @@ package publico
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,7 +15,8 @@ import (
 // falsoBling responde o que o Core devolveria do Bling e guarda o que foi pedido (o CPF que chegou, por exemplo).
 type falsoBling struct {
 	mu       sync.Mutex
-	fora     bool // sem resposta (o Core não alcançou o Bling)
+	fora     bool           // sem resposta (o Core não alcançou o Bling)
+	status   map[string]int // status fixo por caminho (429, 500, 404...); corpo vazio
 	contatos string
 	pedidos  string
 	detalhe  string
@@ -28,7 +28,10 @@ func (f *falsoBling) Bling(_ context.Context, p core.PedidoBling) (*core.Respost
 	defer f.mu.Unlock()
 	f.pedido = append(f.pedido, p)
 	if f.fora {
-		return nil, errors.New("sem resposta")
+		return nil, &core.SemResposta{Causa: "o Bling não respondeu no prazo", Tentativas: 3}
+	}
+	if st := f.status[p.Caminho]; st != 0 {
+		return &core.Resposta{Status: st, Corpo: []byte(`{}`)}, nil
 	}
 	corpo := ""
 	switch {
@@ -110,14 +113,14 @@ func TestGarantiaAprovaQuandoOBlingTemACompra(t *testing.T) {
 	}
 }
 
-// Bling fora do ar, sem a compra ou com outro modelo: PENDENTE, nunca recusa; o pedido fica guardado para a fila de gente.
+// Bling RESPONDEU e a compra não está lá (ou é de outro modelo): PENDENTE, nunca recusa; o pedido fica guardado para a fila de gente.
 func TestGarantiaNuncaRecusaPorCausaDoBling(t *testing.T) {
 	casos := map[string]func(*falsoBling){
-		"Bling fora do ar":  func(b *falsoBling) { b.fora = true },
-		"sem contato":       func(b *falsoBling) { b.contatos = `{"data":[]}` },
-		"outro modelo":      func(b *falsoBling) { b.detalhe = `{"data":{"itens":[{"codigo":"SS1162-P"}]}}` },
-		"resposta estranha": func(b *falsoBling) { b.contatos = `isto não é json` },
-		"prefixo curto":     func(b *falsoBling) { b.detalhe = `{"data":{"itens":[{"codigo":"SS0"}]}}` },
+		"sem contato":    func(b *falsoBling) { b.contatos = `{"data":[]}` },
+		"outro modelo":   func(b *falsoBling) { b.detalhe = `{"data":{"itens":[{"codigo":"SS1162-P"}]}}` },
+		"prefixo curto":  func(b *falsoBling) { b.detalhe = `{"data":{"itens":[{"codigo":"SS0"}]}}` },
+		"404 do contato": func(b *falsoBling) { b.status = map[string]int{"/contatos": 404} },
+		"404 do pedido":  func(b *falsoBling) { b.status = map[string]int{"/pedidos/vendas/777": 404} },
 	}
 	for nome, ajusta := range casos {
 		b := compraDeAna()
@@ -133,6 +136,78 @@ func TestGarantiaNuncaRecusaPorCausaDoBling(t *testing.T) {
 		if m.um(t, `select count(*)::text from vessel_registros`) != "0" {
 			t.Errorf("%s: aprovou sem a prova", nome)
 		}
+	}
+}
+
+// Bling que NÃO respondeu direito (timeout, 429, 5xx, outro 4xx, corpo ilegível) NÃO é "compra não achada": a cliente
+// recebe 503 "tente de novo", a busca PARA na primeira falha (não gasta a cota atrás de um Bling fora), o pedido fica
+// guardado como pendente e não se aprova nada. Repetir depois, com o Bling de volta, aprova (pendente não tranca a peça).
+func TestGarantiaBlingFalhandoPedeParaTentarDeNovo(t *testing.T) {
+	casos := map[string]struct {
+		ajusta    func(*falsoBling)
+		consultas int // quantas chamadas ao Bling até desistir
+	}{
+		"timeout":           {func(b *falsoBling) { b.fora = true }, 1},
+		"429 no contato":    {func(b *falsoBling) { b.status = map[string]int{"/contatos": 429} }, 1},
+		"500 no pedido":     {func(b *falsoBling) { b.status = map[string]int{"/pedidos/vendas/777": 500} }, 3},
+		"503 na lista":      {func(b *falsoBling) { b.status = map[string]int{"/pedidos/vendas": 503} }, 2},
+		"401 do token":      {func(b *falsoBling) { b.status = map[string]int{"/contatos": 401} }, 1},
+		"resposta estranha": {func(b *falsoBling) { b.contatos = `isto não é json` }, 1},
+	}
+	for nome, c := range casos {
+		b := compraDeAna()
+		c.ajusta(b)
+		m, _ := mundoDaGarantia(t, b)
+		st, r, o := m.edge(t, "vessel-registrar-garantia", registro("VBAAAA0002", cpfAna))
+		if st != 503 || o["ok"] != false || o["motivo"] != "falhou" {
+			t.Errorf("%s: %d %s, esperava 503 falhou (tente de novo)", nome, st, r)
+		}
+		if len(b.pedido) != c.consultas {
+			t.Errorf("%s: %d consultas ao Bling, esperava %d (parar na primeira falha)", nome, len(b.pedido), c.consultas)
+		}
+		if got := m.um(t, `select estado from vessel_pedidos_de_registro where codigo = 'VBAAAA0002'`); got != "pendente" {
+			t.Errorf("%s: o pedido ficou %q, esperava pendente guardado", nome, got)
+		}
+		if m.um(t, `select count(*)::text from vessel_registros`) != "0" {
+			t.Errorf("%s: aprovou sem a prova", nome)
+		}
+		// o Bling volta: a mesma cliente tenta de novo e aprova
+		b.fora, b.status, b.contatos = false, nil, compraDeAna().contatos
+		st, r, o = m.edge(t, "vessel-registrar-garantia", registro("VBAAAA0002", cpfAna))
+		if st != 200 || o["estado"] != "aprovado" {
+			t.Errorf("%s: segunda tentativa = %d %s, esperava aprovado", nome, st, r)
+		}
+	}
+}
+
+// 404 de UM pedido é definitivo para aquele pedido, não para a busca: a compra pode estar no seguinte.
+func TestGarantia404DeUmPedidoNaoParaABusca(t *testing.T) {
+	b := compraDeAna()
+	b.pedidos = `{"data":[{"id":776,"numero":5000,"data":"2026-02-01"},{"id":777,"numero":5001,"data":"2026-01-10"}]}`
+	b.status = map[string]int{"/pedidos/vendas/776": 404}
+	m, _ := mundoDaGarantia(t, b)
+	st, r, o := m.edge(t, "vessel-registrar-garantia", registro("VBAAAA0001", cpfAna))
+	if st != 200 || o["estado"] != "aprovado" {
+		t.Fatalf("resposta = %d %s", st, r)
+	}
+}
+
+// A cliente logada passa pelo mesmo caminho: Bling falhando = 503, nada aprovado.
+func TestGarantiaDaClienteLogadaComBlingFalhando(t *testing.T) {
+	b := compraDeAna()
+	b.status = map[string]int{"/contatos": 429}
+	m, _ := mundoDaGarantia(t, b)
+	_, _, o := m.edge(t, "vessel-conta", criarConta("Ana Souza", cpfAna, "ana@x.com"))
+	senha, _ := o["senha"].(string)
+	_, _, oe := m.edge(t, "vessel-conta", fmt.Sprintf(`{"acao":"entrar","login":"ana@x.com","senha":%q}`, senha))
+	tok, _ := oe["token"].(string)
+	corpo := fmt.Sprintf(`{"token":%q,"codigo":"VBAAAA0001","onde":"Loja Iguatemi","comprado_em":"2026-01-10"}`, tok)
+	st, r, o2 := m.edge(t, "vessel-registrar-garantia", corpo)
+	if st != 503 || o2["motivo"] != "falhou" {
+		t.Fatalf("logada com Bling em 429 = %d %s", st, r)
+	}
+	if m.um(t, `select count(*)::text from vessel_registros`) != "0" {
+		t.Error("aprovou sem a prova")
 	}
 }
 
