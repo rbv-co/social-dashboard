@@ -12,13 +12,16 @@ BANCO=${ACL_BANCO_ESPERADO:-api}
 recusa() { echo "RECUSADO: $*" >&2; exit 2; }
 case $ALVO in *[Ss][Uu][Pp][Aa][Bb][Aa][Ss][Ee]*|*pooler*) recusa "o alvo parece o Supabase" ;; esac
 case $ALVO in *@127.0.0.1:*|*@localhost:*|*@127.0.0.1/*|*@localhost/*) ;; *) recusa "o alvo não é o túnel local do api-db" ;; esac
+case $ALVO in *host=*|*hostaddr=*|*service=*) recusa "a URL traz host/hostaddr/service por parâmetro" ;; esac
+[ "$BANCO" != postgres ] || recusa "ACL_BANCO_ESPERADO não pode ser 'postgres'"
 nome=${ALVO##*/}; nome=${nome%%\?*}
 [ "$nome" = "$BANCO" ] || recusa "o banco da URL não é '$BANCO'"
 [ -s "$SQL" ] || recusa "sem $SQL (este D não é o da janela?)"
+! grep -q '\\' "$SQL" || recusa "o arquivo tem barra invertida (meta-comando do psql)"
 awk 'NF && !/^grant [A-Za-z, ]+ on (table|routine|function|sequence) [^;]+;$/ { ruim = 1 } END { exit ruim }' "$SQL" || recusa "o arquivo tem algo além de GRANT"
 n=$(grep -c '^grant ' "$SQL" || true)
 [ "$n" -gt 0 ] || recusa "o arquivo não tem GRANT"
-if [ -n "$DIR" ]; then
+if [ -n "$DIR" ] && [ ! -e "$DIR/acl-api-antes-reverter.txt" ]; then # reexecução não sobrescreve a foto original
   mkdir -p "$DIR"
   psql "$ALVO" -X -Atq -c "select c.relname, c.relacl from pg_class c where c.relnamespace = 'public'::regnamespace and c.relacl is not null order by 1" > "$DIR/acl-api-antes-reverter.txt"
 fi
