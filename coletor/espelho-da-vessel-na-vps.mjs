@@ -76,6 +76,29 @@ async function registrar(cli, inicio, estado, erro) {
      values ($1, $2, $3, $4, $5, now())`, [ROBO, inicio, erro ? 500 : 200, !erro, erro ? erro.slice(0, 500) : estado]);
 }
 
+/** O laço do serviço. `umaVez` dá UM passo e termina com `cli.end()` sem reentrar: o fim da conexão que o próprio laço provoca
+ *  não é queda (antes, `on('end')` via `parar=false`, saía com 1 e a prova do t+19 da virada falhava por desenho). */
+export async function servir(cli, executar, { umaVez = false, sair = process.exit, esperaS = 60 } = {}) {
+  let parar = false;
+  const sinal = () => { parar = true; };
+  const sinais = ['SIGTERM', 'SIGINT'];
+  for (const s of sinais) process.on(s, sinal);
+  // pg.Client não reconecta e o advisory lock vai com a conexão: cair é melhor que girar em falso (systemd: Restart=always)
+  cli.on('error', (x) => { console.error(`conexão com o banco caiu: ${x.message}`); sair(1); });
+  cli.on('end', () => { if (!parar) sair(1); });
+  do {
+    const inicio = new Date();
+    let estado = null, erro = null;
+    try { estado = await passo(cli, executar, { aoErro: (m) => { erro = m; } }); } catch (x) { erro = String(x?.message ?? x); }
+    try { await registrar(cli, inicio, estado, erro); } catch { /* a linha de saúde não derruba o robô */ }
+    if (erro) console.error(`${new Date().toISOString()} ${erro}`);
+    if (umaVez) parar = true;
+    for (let i = 0; i < esperaS && !parar; i++) await new Promise((r) => setTimeout(r, 1000));
+  } while (!parar);
+  for (const s of sinais) process.off(s, sinal);
+  await cli.end();
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   if (!process.env.DATABASE_URL) { console.error('⛔ Falta DATABASE_URL.'); process.exit(1); }
   const { default: pg } = await import('pg');
@@ -93,19 +116,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const fetchOriginal = globalThis.fetch;
   globalThis.fetch = (u, o = {}) => fetchOriginal(u, { signal: AbortSignal.timeout(120_000), ...o });
   const executar = () => rodada({ ler: lerPelaPg(cli), conexao: conexaoPelaPg(cli), log: () => {} });
-  let parar = false;
-  for (const s of ['SIGTERM', 'SIGINT']) process.on(s, () => { parar = true; });
-  // pg.Client não reconecta e o advisory lock vai com a conexão: cair é melhor que girar em falso (systemd: Restart=always)
-  cli.on('error', (x) => { console.error(`conexão com o banco caiu: ${x.message}`); process.exit(1); });
-  cli.on('end', () => { if (!parar) process.exit(1); });
-  do {
-    const inicio = new Date();
-    let estado = null, erro = null;
-    try { estado = await passo(cli, executar, { aoErro: (m) => { erro = m; } }); } catch (x) { erro = String(x?.message ?? x); }
-    try { await registrar(cli, inicio, estado, erro); } catch { /* a linha de saúde não derruba o robô */ }
-    if (erro) console.error(`${new Date().toISOString()} ${erro}`);
-    if (process.argv.includes('--uma-vez')) break;
-    for (let i = 0; i < 60 && !parar; i++) await new Promise((r) => setTimeout(r, 1000));
-  } while (!parar);
-  await cli.end();
+  await servir(cli, executar, { umaVez: process.argv.includes('--uma-vez') });
 }

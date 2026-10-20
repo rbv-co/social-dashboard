@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lerPelaPg, conexaoPelaPg, passo, semResposta, ROBO } from './espelho-da-vessel-na-vps.mjs';
+import { EventEmitter } from 'node:events';
+import { lerPelaPg, conexaoPelaPg, passo, semResposta, servir, ROBO } from './espelho-da-vessel-na-vps.mjs';
 
 test('a leitura recusa tabela e colunas fora do formato (nada de SQL vindo da consulta)', async () => {
   const cli = { query: async () => { throw new Error('não devia consultar'); } };
@@ -105,4 +106,32 @@ test('a leitura sai no formato do PostgREST (ISO e numeric como número)', { ski
     assert.deepEqual(l, { id: 1, nome: 'Ana', criado_em: '2026-01-02T10:00:00+00:00', valor: 12.50 });
     assert.deepEqual((await lerPelaPg(m.cli)({ tabela: 'pessoas', colunas: '*' }))[0].id, 1);
   } finally { await m.fim(); }
+});
+
+// Cliente falso: nada toca produção. `end()` dispara 'end' como o pg.Client de verdade.
+function clienteFalso() {
+  const cli = new EventEmitter();
+  cli.consultas = [];
+  cli.query = async (sql) => { cli.consultas.push(sql); return { rows: [{ espera: false, recente: false }], rowCount: 0 }; };
+  cli.end = async () => { cli.emit('end'); };
+  return cli;
+}
+
+test('--uma-vez dá um passo, fecha a conexão sem tratar o fim como queda (não sai com 1) e não reentra no laço', async () => {
+  const cli = clienteFalso(), saidas = [];
+  const t0 = Date.now();
+  await servir(cli, async () => {}, { umaVez: true, sair: (c) => saidas.push(c), esperaS: 60 });
+  assert.deepEqual(saidas, []);
+  assert.ok(Date.now() - t0 < 10_000, 'não esperou o intervalo do laço');
+  assert.equal(cli.consultas.filter((q) => /insert into robos_execucoes/.test(q)).length, 1, 'um passo só');
+});
+
+test('no laço, a conexão que cai (end sem sinal) ainda derruba o processo com 1', async () => {
+  const cli = clienteFalso(), saidas = [];
+  const rodando = servir(cli, async () => {}, { sair: (c) => saidas.push(c), esperaS: 60 });
+  await new Promise((r) => setTimeout(r, 100));
+  cli.emit('end');
+  assert.deepEqual(saidas, [1]);
+  process.emit('SIGTERM'); // encerra o laço do teste
+  await rodando;
 });
