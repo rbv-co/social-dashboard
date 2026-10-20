@@ -54,11 +54,7 @@ const TECIDO = /TECIDO|IMPREGNAD|KROYAL|LONA|CANVAS|SINTETIC|SINTÉTIC|YORK|ARTE
 async function baixarDoBling() {
   const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
   await cli.connect()
-  const token = await CORE_BLING.token(async () => {
-    const { rows: [t] } = await cli.query('select access_token from bling_tokens order by id desc limit 1')
-    if (!t?.access_token) throw new Error('não há token do Bling guardado.')
-    return t.access_token
-  })
+  const token = await CORE_BLING.token()
   const cab = { Authorization: `Bearer ${token}`, Accept: 'application/json' }
   const nomes = new Map()
   const pega = async (u) => {

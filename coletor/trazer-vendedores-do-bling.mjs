@@ -25,22 +25,14 @@ const CORE_BLING = blingDoColetor();
 const ensaio = process.argv.includes('--ensaio');
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * O token. Com CORE_BLING_PROXY=true nem é lido (o core põe o token). No caminho antigo
- * só se LÊ `bling_tokens`: ESTE ROBÔ NÃO RENOVA (o refresh do Bling é de uso único e quem
- * renova é o core / o bling-proxy). Vencido = o Bling responde 401 e o robô para, em voz alta.
- */
-const pegarToken = (cli) => CORE_BLING.token(async () => {
-  const { rows: [t] } = await cli.query('select access_token from bling_tokens order by id desc limit 1');
-  if (!t?.access_token) throw new Error('não há token do Bling guardado.');
-  return t.access_token;
-});
+/** O token não existe aqui: o core põe o dele em toda chamada (este robô nunca lê nem renova token do Bling). */
+const pegarToken = () => CORE_BLING.token();
 
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
 
 try {
-  const token = await pegarToken(cli);
+  const token = await pegarToken();
   const cabecalho = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
 
   // ── 1. a lista inteira ────────────────────────────────────────────────────

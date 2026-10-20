@@ -35,6 +35,6 @@ grant usage on schema public to robo_selo;
 -- refaz do zero: reaplicar tira o que saiu deste arquivo
 revoke all on all tables in schema public from robo_selo;
 revoke all on all sequences in schema public from robo_selo;
-grant select (id, access_token) on bling_tokens to robo_selo;
+-- (sem bling_tokens: o token do Bling é do Core, o robô fala pelo proxy dele; plano 05 C. Reaplicar este arquivo tira o acesso antigo.)
 grant select (id, modelo, cor, sku, fotos, criado_em) on vessel_lotes to robo_selo;
 grant update (cor, fotos) on vessel_lotes to robo_selo;

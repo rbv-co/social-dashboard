@@ -85,11 +85,12 @@ const DE_CLIENTE = new Set([
 /**
  * ⚠️ CREDENCIAL NÃO VAI PARA A CÓPIA, EM TEXTO PURO OU EM QUALQUER FORMA.
  *
- * A cópia mora num drive compartilhado. Quatro tabelas guardam chave de
+ * A cópia mora num drive compartilhado. Cinco tabelas guardam chave de
  * verdade — medido nas colunas, não suposto:
  *
  *   segredos_de_cron.segredo      o que destranca os robôs agendados
  *   bling_tokens.*                acesso ao ERP: pedidos, estoque, contatos
+ *   estoque_do_site_estado.valor  token da Shopify (junto do mapa SKU→id do Bling)
  *   acessos_conexoes.*            acesso ao Zoho — inclusive a este backup
  *   accounts.access_token         acesso às contas de anúncio na Meta
  *
@@ -105,6 +106,7 @@ const SEM_O_VALOR = {
   usuarios: ['senha_hash'],          // a senha (bcrypt) que a API Go copiou do Supabase Auth
   segredos_de_cron: ['segredo'],
   bling_tokens: ['access_token', 'refresh_token', 'client_secret'],
+  estoque_do_site_estado: ['valor'],  // jsonb: guarda o token da Shopify; a linha fica, o valor sai
   acessos_conexoes: ['client_secret', 'refresh_token', 'access_token'],
   accounts: ['access_token'],
 };

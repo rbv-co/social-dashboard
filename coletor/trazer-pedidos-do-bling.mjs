@@ -70,12 +70,7 @@ const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
 
 try {
-  const tokenBling = await CORE_BLING.token(async () => {
-    const { rows: [tk] } = await cli.query(
-      'select access_token from bling_tokens order by id desc limit 1');
-    if (!tk?.access_token) throw new Error('não há token do Bling guardado.');
-    return tk.access_token;
-  });
+  const tokenBling = await CORE_BLING.token();
 
   // ⚠️ C5 (revisão final, 17/09/2026): este robô roda da `main` todo dia às
   // 07h34 UTC. Se a migration que cria `observacoes`/`observacoes_internas`

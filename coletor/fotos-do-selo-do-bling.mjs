@@ -184,12 +184,7 @@ async function main() {
   await cliente.connect()
   let publicou = false
   try {
-    const token = await CORE_BLING.token(async () => {
-      const { rows: tokens } = await cliente.query(
-        'select access_token from public.bling_tokens order by id desc limit 1')
-      return tokens[0]?.access_token
-    })
-    if (!token) { console.log('Sem token do Bling. Nada a fazer.'); return }
+    const token = await CORE_BLING.token()
 
     const { rows: lotes } = await cliente.query(
       'select id, modelo, cor, sku, fotos from public.vessel_lotes order by criado_em desc')
