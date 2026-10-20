@@ -133,3 +133,40 @@ test('pg: se não der para ler, LANÇA (robô que não lê a correção para, n�
   const cli = { query: async () => { throw new Error('connection terminated'); } };
   await assert.rejects(ajustesDeValorPg(cli), /não deu para ler bling_pedido_ajuste_valor: connection terminated/);
 });
+
+// ── propagarAjustesPg: contra Postgres de verdade (sem TEST_DATABASE_URL, pula) ──
+// Cenário do 2656: ajuste cadastrado DEPOIS do pedido, pedido fora da janela do robô,
+// e o Core (ou o Bling) reescrevendo o total do pedido por cima.
+import { propagarAjustesPg } from './ajustes-de-valor.mjs';
+import pg from 'pg';
+
+const URL_TESTE = process.env.TEST_DATABASE_URL;
+
+test('propagarAjustesPg: ajuste vence o total reescrito, é idempotente e só toca quem difere',
+  { skip: !URL_TESTE && 'sem TEST_DATABASE_URL' }, async () => {
+    const cli = new pg.Client({ connectionString: URL_TESTE });
+    await cli.connect();
+    try {
+      await cli.query('begin');
+      await cli.query(`create temp table vessel_pedidos (bling_pedido_id bigint primary key,
+        total_do_bling numeric(12,2), total_corrigido numeric(12,2), receita_liquida numeric(12,2))`);
+      await cli.query(`create temp table bling_pedido_ajuste_valor (pedido_id bigint primary key,
+        total_corrigido numeric(12,2) not null)`);
+      await cli.query(`insert into vessel_pedidos values (26851358889, 1900, null, 1900), (2, 50, null, 50)`);
+      await cli.query(`insert into bling_pedido_ajuste_valor values (26851358889, 1615)`);
+
+      assert.equal(await propagarAjustesPg(cli), 1, 'só o pedido com ajuste muda');
+      const lido = () => cli.query('select bling_pedido_id::text id, total_corrigido::text c, receita_liquida::text r from vessel_pedidos order by 1');
+      assert.deepEqual((await lido()).rows,
+        [{ id: '2', c: null, r: '50.00' }, { id: '26851358889', c: '1615.00', r: '1615.00' }]);
+
+      // o espelho reescreve o pedido (total novo, receita recalculada do zero): o ajuste volta a valer
+      await cli.query(`update vessel_pedidos set total_do_bling = 1700, receita_liquida = 1700 where bling_pedido_id = 26851358889`);
+      assert.equal(await propagarAjustesPg(cli), 1);
+      assert.equal((await lido()).rows[1].r, '1615.00');
+
+      assert.equal(await propagarAjustesPg(cli), 0, 'segunda passada não toca nada');
+    } finally {
+      await cli.query('rollback'); await cli.end();
+    }
+  });

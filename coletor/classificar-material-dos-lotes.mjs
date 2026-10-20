@@ -32,6 +32,7 @@ import './lib/carregar-env.mjs'
 import pg from 'pg'
 import { blingDoColetor } from './lib/bling-token.mjs'
 import { writeFileSync } from 'node:fs'
+import { leituraDoCoreLigada, clienteDoEspelho, produtosDoCorePorSku, doMapa } from './lib/produto-do-core.mjs'
 import { classificarMaterial } from '../src/ferramentas/autenticidade/material-do-produto.js'
 
 const BLING = 'https://api.bling.com.br/Api/v3'
@@ -100,6 +101,26 @@ async function estruturaDoSku(sku, cabecalho) {
   return { componentes: nomes, ncm: produto?.tributacao?.ncm ?? '' }
 }
 
+// O mesmo que `estruturaDoSku`, lendo do espelho do Core (CORE_LEITURA_PRODUTO_DETALHE=true): nenhuma
+// chamada ao Bling. Os nomes dos componentes vêm de `produtos_bling.descricao`, numa leitura por lista.
+async function estruturaDoSkuNoCore(sku, mapa, core) {
+  const achado = doMapa(mapa, sku)
+  if (!achado) return { erro: 'SKU não encontrado (com detalhe) no Core' }
+  const produto = achado.produto
+  const componentesIds = produto?.estrutura?.componentes
+  if (!Array.isArray(componentesIds) || !componentesIds.length) {
+    return { erro: `sem estrutura de componentes no Core (formato "${produto?.formato ?? '?'}")` }
+  }
+  const ids = componentesIds.map((c) => c?.produto?.id).filter((id) => id != null)
+  const faltam = ids.filter((id) => !nomeDoComponente.has(id))
+  if (faltam.length) {
+    const { linhas } = await core.todas('produtos_bling', { campos: ['id_bling', 'descricao'], id_bling: faltam })
+    const nomes = new Map(linhas.map((l) => [String(l.id_bling), l.descricao]))
+    for (const id of faltam) nomeDoComponente.set(id, nomes.get(String(id)) ?? `(id ${id}, fora do Core)`)
+  }
+  return { componentes: ids.map((id) => nomeDoComponente.get(id)), ncm: produto?.tributacao?.ncm ?? '' }
+}
+
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
 
@@ -114,6 +135,9 @@ try {
   const skusUnicos = [...new Set(lotes.map((l) => l.sku).filter(Boolean))]
   console.log(`${skusUnicos.length} SKUs distintos — é isso que vai bater no Bling, não os ${lotes.length} lotes.`)
 
+  const core = leituraDoCoreLigada(process.env) ? clienteDoEspelho(process.env) : null
+  const mapaDoCore = core ? await produtosDoCorePorSku(core, skusUnicos) : null
+
   // ── CACHE POR SKU ──────────────────────────────────────────────────────
   const resultadoPorSku = new Map()
   let i = 0
@@ -121,7 +145,7 @@ try {
     i += 1
     process.stdout.write(`  [${i}/${skusUnicos.length}] ${sku} ... `)
     try {
-      const est = await estruturaDoSku(sku, cabecalho)
+      const est = core ? await estruturaDoSkuNoCore(sku, mapaDoCore, core) : await estruturaDoSku(sku, cabecalho)
       if (est.erro) {
         resultadoPorSku.set(sku, { semEstrutura: true, motivoSemEstrutura: est.erro })
         console.log(`sem estrutura (${est.erro})`)

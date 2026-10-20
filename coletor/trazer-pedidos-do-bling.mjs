@@ -39,7 +39,7 @@ import { blingDoColetor } from './lib/bling-token.mjs';
 import { loginServico, blingProxy, blingFormasDePagamento } from './lib/bling-comercial.mjs';
 import { linhasDeFormaPagamento } from './lib/forma-pagamento.mjs';
 import { aplicarValorCorrigido } from '../supabase/functions/_shared/valor-corrigido.js';
-import { ajustesDeValorPg } from './lib/ajustes-de-valor.mjs';
+import { ajustesDeValorPg, propagarAjustesPg } from './lib/ajustes-de-valor.mjs';
 import { colunasExistem } from './lib/colunas-existem.mjs';
 import { contasDoItem } from './lib/preco-do-item.mjs';
 import { indiceDeLeads, leadDoPedido } from './lib/lead-do-pedido.mjs';
@@ -427,6 +427,14 @@ try {
                 0), 2)
         where p.id = $1`, [linha.id]);
     gravados++;
+  }
+
+  // ── 5b. ajuste de pedido FORA da janela ────────────────────────────────────
+  // O laço acima só regrava o que a janela devolveu; o ajuste vale para qualquer
+  // pedido. Ver `propagarAjustesPg`.
+  if (!ensaio) {
+    const propagados = await propagarAjustesPg(cli);
+    if (propagados) console.log(`valor corrigido levado a ${propagados} pedido(s) fora da janela`);
   }
 
   // ── 6. A CONFERÊNCIA: o que a nossa base diz, e o que o Bling diz AGORA ────
