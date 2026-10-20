@@ -89,7 +89,7 @@ test('recusa bucket fora da lista da API e caminho que sai do destino', async ()
   const { srv, url } = await storageFalso({ publico: { '../fora.png': Buffer.from('X'), 'ok.png': Buffer.from('OK') } });
   const dir = await mkdtemp(join(tmpdir(), 'copia-storage-'));
   try {
-    let r = await rodar(url, [dir, 'fotos-modelo']);
+    let r = await rodar(url, [dir, 'nao-existe']);
     assert.equal(r.codigo, 1);
     assert.match(r.erro, /fora da lista/);
     r = await rodar(url, [dir, 'publico']);

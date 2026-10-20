@@ -86,8 +86,8 @@ func TestMatrizBucketPorPessoa(t *testing.T) {
 	if st, _, _ := m.pede(t, "", "GET", "/arquivos/conteudo", ""); st != 401 {
 		t.Errorf("sem sessão = %d, esperava 401", st)
 	}
-	if st, _, _ := m.pede(t, "super", "GET", "/arquivos/fotos-modelo", ""); st != 404 {
-		t.Errorf("bucket de fora (fotos-modelo) = %d, esperava 404", st)
+	if st, _, _ := m.pede(t, "super", "GET", "/arquivos/nao-existe", ""); st != 404 {
+		t.Errorf("bucket de fora = %d, esperava 404", st)
 	}
 	// vessel-curriculos: só o serviço (e o super) lê e apaga; ninguém envia por sessão (só a rota de currículo)
 	m.planta(t, "vessel-curriculos", "consultor-tivoli/cv.pdf", pdf)
@@ -459,7 +459,7 @@ func TestUrlPublica(t *testing.T) {
 	if st, _, h := m.publico(t, "/storage/v1/object/public/avatars/u.png"); st != 200 || h.Get("Cache-Control") != "public, max-age=3600" || h.Get("Content-Type") != "image/png" {
 		t.Errorf("público = %d %q %q", st, h.Get("Cache-Control"), h.Get("Content-Type"))
 	}
-	for _, c := range []string{"/storage/v1/object/public/conteudo/c.jpg", "/storage/v1/object/public/vessel-curriculos/x", "/storage/v1/object/public/fotos-modelo/x.png",
+	for _, c := range []string{"/storage/v1/object/public/conteudo/c.jpg", "/storage/v1/object/public/vessel-curriculos/x", "/storage/v1/object/public/fotos-modelo/nao-existe.png",
 		"/storage/v1/object/public/avatars/nao-existe.png", "/storage/v1/object/public/nao-existe/x"} {
 		if st, _, _ := m.publico(t, c); st != 404 {
 			t.Errorf("%s = %d, esperava 404", c, st)
