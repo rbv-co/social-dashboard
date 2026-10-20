@@ -22,6 +22,7 @@ const colunasUso = `t.id, t.veiculo_id, t.pessoa_id, t.pessoa_nome, t.saida_em, 
 var consultaUsos = dados.Consulta{Tabela: "frota_uso", Alias: "t", SQL: `select ` + colunasUso + ` from frota_uso t`,
 	Filtros: []dados.Filtro{
 		{Param: "aberta", SQL: "(t.volta_em is null) = @aberta::boolean", Tipo: "booleano"},
+		{Param: "tipo", SQL: "t.tipo = @tipo::text", Tipo: "texto"}, // viagem | posse (MCP: "quem está na rua" é só viagem)
 		{Param: "veiculo_id", SQL: "t.veiculo_id = @veiculo_id::uuid", Tipo: "uuid"},
 		{Param: "saida_de", SQL: "t.saida_em >= @saida_de::date", Tipo: "data"},
 		{Param: "saida_ate", SQL: "t.saida_em <= @saida_ate::date", Tipo: "data"},

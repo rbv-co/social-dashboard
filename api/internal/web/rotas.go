@@ -29,6 +29,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/github"
 	"github.com/rbv-co/social-dashboard/api/internal/ia"
 	"github.com/rbv-co/social-dashboard/api/internal/mapa"
+	"github.com/rbv-co/social-dashboard/api/internal/mcp"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/microsoft"
 	"github.com/rbv-co/social-dashboard/api/internal/paineis"
@@ -67,6 +68,10 @@ const (
 	// ~7 s e o PDF a 600 dpi vem em fluxo; o de domínio (30 s) cortaria o download.
 	PrazoCartao = 60 * time.Second
 
+	// MCP da Frota: cada ferramenta tem o PrazoDominio dela (as internas são rotas de domínio); a folga cobre a
+	// sessão e o ator carregados antes.
+	PrazoMCP = PrazoDominio + 5*time.Second
+
 	// Plano 07a: o proxy do Acessos varre o Graph/WorkDrive (centenas de chamadas na Auditoria). Cabe sob o WriteTimeout.
 	PrazoAcessos = 120 * time.Second
 
@@ -87,6 +92,20 @@ var FuncoesRPC = slices.Concat(
 	frota.FuncoesRPC,        // Plano 5.3
 	atendimentos.FuncoesRPC, // Plano 5.11
 )
+
+// comEmissor: sem API_URL_PUBLICA não há issuer para o OAuth do MCP: ele fica desligado (404), em vez de publicar
+// metadados com endereço vazio.
+func comEmissor(emissor string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if emissor == "" {
+				http.Error(w, `{"error":"mcp_desligado"}`, http.StatusNotFound)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
 func comPrazo(d time.Duration) func(http.Handler) http.Handler {
@@ -160,6 +179,49 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		(&acessos.OAuth{Zoho: zc, MS: mc, APIPublica: cfg.APIURLPublica, Retorno: cfg.EnderecoPadrao + "/"}).Montar(r)
 	})
 	av := &meta.AoVivo{Pool: p, Core: cli}
+	reserva := &frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}
+
+	// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
+	// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de
+	// banco.ComUsuario, RPC pelo registro (lista branca). Rota nova de domínio entra AQUI, nunca solta num grupo:
+	// é este mesmo conjunto que o painel (grupo de sessão, lá embaixo) e o MCP da Central montam.
+	dominio := func(r chi.Router) {
+		r.Post("/rpc/{nome}", rpcs.ServeHTTP)
+		redes.Montar(r, p)   // Plano 5.6
+		acesso.Montar(r, p)  // Plano 5.1
+		trafego.Montar(r, p) // Plano 5.7
+		// Plano 5.2: patrimônio e cadastros compartilhados (as 5 RPCs entram por FuncoesRPC).
+		patrimonio.Montar(r, p)
+		// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
+		fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
+		conteudo.Montar(r, p)     // Plano 5.9
+		acessos.Montar(r, p)      // Plano 5.4: colaboradores e acessos (cadastro)
+		vessel.Montar(r, p)       // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
+		vendas.Montar(r, p)       // Plano 5.5: Comercial (Bling e Shopify)
+		atendimentos.Montar(r, p) // Plano 12: as 7 leituras de Atendimentos, Base de Leads e Abandono (as 62 RPCs vão por FuncoesRPC)
+		frota.Montar(r, p)        // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
+		// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
+		if err := paineis.Montar(r, p, autz.Producao); err != nil {
+			panic(err) // declaração errada: a API não sobe
+		}
+	}
+
+	// MCP da Central (ChatGPT): OAuth 2.1 próprio e POST /mcp. Públicas, com limite por IP: o registro e o token se
+	// defendem pelo PKCE e pelos hosts de retorno; /mcp exige o token de tipo 'mcp' lá dentro. Sem API_URL_PUBLICA
+	// (o issuer) respondem 404. Desenho: docs/superpowers/specs/2026-10-19-mcp-frota-chatgpt-design.md.
+	oa := &mcp.OAuth{Pool: p, Sessoes: s, Emissor: cfg.APIURLPublica, Front: cfg.EnderecoPadrao}
+	r.Group(func(r chi.Router) {
+		r.Use(auth.LimitarPorIP(120, time.Minute), comEmissor(cfg.APIURLPublica)) // o teto antes de tudo, até do 404
+		r.Get("/.well-known/oauth-protected-resource", oa.MetadadosDoRecurso)
+		r.Get("/.well-known/oauth-protected-resource/mcp", oa.MetadadosDoRecurso)
+		r.Get("/.well-known/oauth-authorization-server", oa.MetadadosDoServidor)
+		r.With(auth.LimitarPorIP(10, time.Hour), auth.LimitarGlobal(200, time.Hour)).Post("/oauth/registrar", oa.Registrar)
+		r.Get("/oauth/autorizar", oa.Autorizar)
+		r.With(comPrazo(30*time.Second)).Post("/oauth/token", oa.Token)
+		r.With(comPrazo(PrazoMCP)).Post("/mcp", mcp.NovoServidor(p, s, cfg.APIURLPublica, mcp.Dominio{
+			Montar: dominio, Avisar: reserva, RPCs: FuncoesRPC, Contrato: contratoDaTela}).ServeHTTP)
+	})
+
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Exigir(p, s))
 		r.Post("/auth/sair", h.Sair)
@@ -173,7 +235,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		// Plano 4: o mesmo portão da edge (superadmin ou permissions['frota.aprovar'] com 'ver').
 		// Quem entrou como outra pessoa não dispara o aviso (push em nome do aprovador): dados.SoSessaoPropria.
 		r.With(auth.ExigirPermissao("frota.aprovar", "ver"), dados.SoSessaoPropria(dados.FraseEntrarComo)).Post("/avisar-decisao-de-reserva",
-			(&frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}).ServeHTTP)
+			reserva.ServeHTTP)
+		// MCP da Central: a tela de consentimento. Conta do painel (403 com a frase para a tela).
+		r.With(mcp.SoPainel, comEmissor(cfg.APIURLPublica)).Get("/oauth/pedido", oa.Pedido)
+		r.With(mcp.SoPainel, dados.SoSessaoPropria(dados.FraseEntrarComo), comEmissor(cfg.APIURLPublica)).Post("/oauth/decidir", oa.Decidir)
 
 		// Plano 5.7: proxies de IA (chave em ANTHROPIC_API_KEY_TRAFEGO) e de mapa (Nominatim). Portões = os das edges.
 		// No grupo de SESSÃO: o prazo do grupo de domínio (30 s) cortaria a IA.
@@ -210,30 +275,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			arq.Montar(r)
 		})
 
-		// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
-		// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de
-		// banco.ComUsuario, RPC pelo registro (lista branca). Prazo (PrazoDominio) e escopo vêm do grupo:
-		// rota nova de domínio entra AQUI, nunca solta no grupo de cima. Os sub-planos 5.1+ acrescentam aqui.
+		// Plano 5: rotas de DOMÍNIO (ver dominio, acima). Prazo (PrazoDominio) e escopo vêm do grupo.
 		r.Group(func(r chi.Router) {
 			r.Use(comPrazo(PrazoDominio), autz.ComEscopo(p))
-			r.Post("/rpc/{nome}", rpcs.ServeHTTP)
-			redes.Montar(r, p)   // Plano 5.6
-			acesso.Montar(r, p)  // Plano 5.1
-			trafego.Montar(r, p) // Plano 5.7
-			// Plano 5.2: patrimônio e cadastros compartilhados (as 5 RPCs entram por FuncoesRPC).
-			patrimonio.Montar(r, p)
-			// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
-			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
-			conteudo.Montar(r, p)     // Plano 5.9
-			acessos.Montar(r, p)      // Plano 5.4: colaboradores e acessos (cadastro)
-			vessel.Montar(r, p)       // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
-			vendas.Montar(r, p)       // Plano 5.5: Comercial (Bling e Shopify)
-			atendimentos.Montar(r, p) // Plano 12: as 7 leituras de Atendimentos, Base de Leads e Abandono (as 62 RPCs vão por FuncoesRPC)
-			frota.Montar(r, p)        // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
-			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
-			if err := paineis.Montar(r, p, autz.Producao); err != nil {
-				panic(err) // declaração errada: a API não sobe
-			}
+			dominio(r)
 		})
 	})
 	return r

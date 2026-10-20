@@ -181,7 +181,7 @@ export const ROTAS_SEM_CHAVE = {
   inicio: 'a tela de Início: cada cartão se esconde sozinho',
   login: 'antes de entrar não há permissão para conferir',
   'nao-encontrada': 'só redireciona para o Início',
-  'oauth-consentimento': 'ligar o ChatGPT à Frota: quem decide é o servidor (edge mcp-frota ou API Go; só gestor da Frota)',
+  'oauth-consentimento': 'ligar o ChatGPT à Central: quem decide é a API (conta do painel; a permissão vale rota a rota)',
 }
 
 // Rotas só de super-admin (não são permissão concedível: é a coluna
