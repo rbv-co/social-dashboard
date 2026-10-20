@@ -14,3 +14,7 @@ select 'O gatilhos ' || count(*) from pg_trigger t join pg_class c on c.oid = t.
 select 'O views '    || count(*) from pg_views where schemaname = 'public';
 select 'O papeis '   || count(*) from pg_roles where rolname !~ '^pg_' and rolname <> 'postgres';  -- o contêiner de teste tem `postgres`; o api-db só `api`
 select 'O grants '   || md5(string_agg(c.relname || ':' || coalesce(c.relacl, acldefault((case c.relkind when 'S' then 's' else 'r' end)::"char", c.relowner))::text, ',' order by c.relname)) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p','v','S');
+-- GRANTs das funções (EXECUTE de PUBLIC incluído; padrão do dono normalizado): o dump do Supabase voltava com PUBLIC EXECUTE
+-- e o revogar-execute-public.sql tira; a restauração tem de trazer o estado de produção, não o de fábrica.
+select 'O grants_funcoes ' || count(*) || ' ' || md5(string_agg(p.oid::regprocedure::text || ':' || (select string_agg((case a.grantee when 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end) || a.privilege_type || a.is_grantable::text || pg_get_userbyid(a.grantor), ',' order by (case a.grantee when 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end), a.privilege_type) from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a), ',' order by p.oid::regprocedure::text))
+  from pg_proc p where p.pronamespace = 'public'::regnamespace;

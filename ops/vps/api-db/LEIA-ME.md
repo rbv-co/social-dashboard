@@ -71,7 +71,7 @@ Passo a passo de restaurar (volume perdido, dado apagado, VPS perdida) e os núm
 - `provar-restauracao.sh [pasta] [N]` + `paridade-tabelas.sql`: tira, numa transação `REPEATABLE READ` somente leitura,
   a impressão digital do banco vivo (linhas + md5 por tabela, sequences, objetos, GRANTs) e o dump do MESMO instante;
   restaura N vezes e exige paridade de 100%. Mede o tempo.
-- `rotina-backup.teste.sh`: prova a rotina (roda NA VPS, só lê o banco: `ssh op sh /root/prova-07/rotina-backup.teste.sh`).
+- `rotina-backup.teste.sh`: prova a rotina (roda NA VPS, só lê o banco: `ssh op sh /root/api-db/rotina-backup.teste.sh`).
 - Para ensaiar fora da VPS: `BACKUP_DIR`, `BACKUP_RETENCAO_DIAS`, `API_DB_CONTAINER`, e
   `TESTE_CONTAINER` (o nome deve terminar em `-teste`).
 
@@ -267,3 +267,12 @@ Quem grava `ROBO_*_DATABASE_URL` no `/etc/robos.env` é o `ops/virada/robos-troc
   estar de pé antes (é ele quem cria a rede).
 - Atualização de versão menor (17.x): `docker compose -f /root/api-db/docker-compose.yml pull && docker compose -f /root/api-db/docker-compose.yml up -d --no-deps api-db`,
   em janela sem operação em andamento.
+
+## Resiliência e carga (provas do plano 07, 20/10/2026)
+
+- `queda-worker.sh <crash|gracioso> <epoch> <saida>`: espera o instante (o minuto 5 da hora, quando a `meta-hora` está rodando, 24 s),
+  derruba o `api-worker-1` no meio dela (`docker kill`, ou `compose up -d --no-deps --force-recreate worker`) e mede a retomada:
+  trava de advisory solta, fila (`checkout_abandono`) sem linha em `enviando`, nenhuma execução duplicada no mesmo minuto,
+  intervalo entre os ticks de 1 min, 5xx da API. Uma linha `enviando` presa vira `falhou/travada_sem_confirmacao` em 10 min
+  (`liberar_mensagens_travadas`): nunca reenvia (no pior caso uma mensagem se perde, nunca duplica).
+- `monitora-carga.sh <segundos>`: amostra a cada 5 s load, CPU/RAM de `api-api-1` e `api-db`, conexões do Postgres e steal.
