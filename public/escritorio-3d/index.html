@@ -28,8 +28,6 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
 <script src="acesso.js"></script>
 <script>
 (function(){
-  var U='https://kounqtdoioootxqegkij.supabase.co';
-  var AK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM';
   var el=document.getElementById('porteiro');
   function nega(msg){
     el.innerHTML='<div><div style="font-size:16px;color:#e8ecf8;margin-bottom:8px;">'+msg+'</div>'+
@@ -51,54 +49,9 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
       .then(function(j){ return (j&&j.id) ? {superadmin:j.superadmin,permissoes:j.permissoes,modulos:j.modulos} : null; });
   }
 
-  // 2) SESSÃO DO SUPABASE (antes da virada e no ROLLBACK para ele). Também é o plano B se a API
-  //    não responder, mas só quando existe uma sessão do Supabase guardada.
-  function viaSupabase(){
-    var chave=null;
-    try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(/^sb-.*-auth-token$/.test(k)){chave=k;break;} } }catch(e){}
-    var tok=null;
-    if(chave){ try{ tok=JSON.parse(localStorage.getItem(chave)); }catch(e){} }
-    if(!tok||!tok.access_token) return Promise.resolve({sessao:false});
-    var uid=(tok.user&&tok.user.id)||'';
-    if(!uid) return Promise.resolve({sessao:true,erro:'Não consegui identificar sua sessão. Entre de novo.'});
-    // BUSCA O PERFIL, E SABE RENOVAR A SESSÃO ANTES DE DESISTIR.
-    //
-    // Visto ao vivo em 04/08/2026: o porteiro barrou um SUPERADMIN dizendo "não
-    // consegui ler seu perfil", e a MESMA chamada dava 200 segundos depois. O
-    // motivo é que esta página é ESTÁTICA — ela não tem o supabase-js cuidando da
-    // sessão como o aplicativo tem. Com o `access_token` guardado já vencido (ou
-    // recém-trocado), a leitura volta 401.
-    //
-    // Negar por dúvida é o padrão certo para PERMISSÃO. Só que isto não era
-    // dúvida de permissão: era sessão velha — e tratar as duas como a mesma coisa
-    // tranca do lado de fora justamente quem tem a chave.
-    function perfil(token){
-      return fetch(U+'/rest/v1/profiles?select=role,is_superadmin,permissions,features&id=eq.'+encodeURIComponent(uid),
-        {headers:{apikey:AK,Authorization:'Bearer '+token}})
-        .then(function(r){ return r.status===401 ? null : r.json(); });
-    }
-    function renovar(){
-      if(!tok.refresh_token) return Promise.resolve(null);
-      return fetch(U+'/auth/v1/token?grant_type=refresh_token',
-        {method:'POST',headers:{apikey:AK,'Content-Type':'application/json'},
-         body:JSON.stringify({refresh_token:tok.refresh_token})})
-        .then(function(r){ return r.ok ? r.json() : null; })
-        .then(function(j){ return (j&&j.access_token)||null; });
-    }
-    return perfil(tok.access_token)
-      .then(function(d){
-        // UMA tentativa de renovar, e só quando a primeira falhou por sessão.
-        // Repetir em laço transformaria problema de login em martelada no
-        // servidor de autenticação.
-        if(d) return d;
-        return renovar().then(function(novo){ return novo ? perfil(novo) : null; });
-      })
-      .then(function(d){
-        var p=(d&&d[0])||null;
-        if(!p) return {sessao:true,erro:'Não consegui ler seu perfil. Tente entrar de novo.'};
-        return {sessao:true,perfil:{superadmin:p.is_superadmin,permissoes:p.permissions,modulos:p.features}};
-      });
-  }
+  // 2) O Supabase foi desligado (D+14, plano 08 do pós-virada): não há mais sessão dele para conferir. Quem chega sem
+  //    sessão da API válida é mandado entrar na Central.
+  function viaSupabase(){ return Promise.resolve({sessao:false}); }
 
   function decide(r){
     if(!r.sessao){ nega('Entre na Central para ver o Escritório 3D.'); return; }
@@ -112,7 +65,7 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
   window.__porteiro=(tApi ? viaApi(tApi).catch(function(){ return null; }) : Promise.resolve(null))
     .then(function(perfilApi){
       if(perfilApi) return {sessao:true,perfil:perfilApi,viaApi:true};
-      return viaSupabase();   // sem sessão da API, ou ela caiu/venceu: tenta a do Supabase
+      return viaSupabase();   // sem sessão da API, ou ela caiu/venceu: pede login
     })
     .then(decide)
     .catch(function(){ nega('Não consegui conferir seu acesso agora.'); });
@@ -124,7 +77,6 @@ header h1{font-size:14px;margin:0;font-weight:800}.badge{font-size:11px;color:#d
 <div id="loading">montando o HQ…</div>
 <div id="card"><button class="close" onclick="document.getElementById('card').classList.remove('show')">×</button><div class="top"><div class="r2" id="c-r2"></div><div class="nm" id="c-nm"></div></div><div class="body" id="c-body"></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 window.addEventListener('error',e=>{var D=document.getElementById('loading');if(D){D.style.display='flex';D.textContent='⚠️ '+(e.message||'')+' (linha '+(e.lineno||'')+')';}});
 if(typeof THREE==='undefined'){document.getElementById('loading').textContent='⚠️ Three.js não carregou (precisa de internet).';}
@@ -279,7 +231,7 @@ const WK=[];L.walkers.forEach(w=>{const m=person({shirt:w.shirt});scene.add(m);W
 function updW(dt){for(const w of WK){const a=w.path[w.i],b=w.path[(w.i+1)%w.path.length];const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz)||1;w.t+=w.spd*dt/len;if(w.t>=1){w.t=0;w.i=(w.i+1)%w.path.length;}const x=a[0]+dx*w.t,z=a[1]+dz*w.t;w.m.position.set(x,Math.abs(Math.sin(w.t*Math.PI*8))*0.025,z);w.m.rotation.y=Math.atan2(dx,dz);}}
 
 /* ---- STATUS (anel+feixe+crachá+supabase) ---- */
-let sb=null;try{sb=window.supabase.createClient("https://kounqtdoioootxqegkij.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM");}catch(e){}
+let sb=null; // Supabase desligado: sem cliente (o ramo `sb` do refresh() só existia para o porteiro antigo)
 const STCFG={'Assistente de Social Media':{cad:'Diário',load:3,t:'daily_snapshots',c:'captured_at',mh:30,def:'working',api:'/redes/seguidores'},
  'Analista de Dados':{cad:'Diário',load:3,t:'bling_pedido_vendedor',c:null,mh:30,def:'working',api:'/comercial/pedidos-vendedor'},
  'Analista de Mercado':{cad:'A cada 3 dias',load:2,t:'coletor_log',c:'run_at',mh:96,def:'working'},
