@@ -101,7 +101,7 @@ t-1|-1|t-28|A|nenhuma sessão ativa no Supabase
 t+0|0|t-1|A|Supabase CONGELADO
 t+0.5|0.5|t+0|-|foto 1 das escritas do Supabase
 t+1|1|t+0.5|A|api-db recriado vazio
-t+1-ensaio|1|t+1|A|corte: dump, restore, usuários, contagens (V1 a V4)
+t+1-ensaio|1|t+1|A|corte: dump, restore, ACL de trabalho no api, usuários, contagens (V1 a V4)
 t+7-papeis|7|t+1-ensaio|A|papéis no api-db
 t+7-clone|7|t+7-papeis|A|clone api_corte, dump, marca PRODUCAO
 t+8-hosts|8|t+7-clone|A|host do Storage trocado no banco
@@ -209,7 +209,10 @@ p_tmais1_ensaio() {
   mkdir -p "$D/corte"
   exe env ALVO_DATABASE_URL="$ALVO" ORIGEM_DATABASE_URL="$SB" ENSAIO_SAIDA="$D/corte" \
     sh "$V/ops/migracao/ensaio.sh" --permitir-alvo-remoto --sem-storage --manter || return 1
-  confere "ensaio.sh" 'ENSAIO OK'
+  confere "ensaio.sh" 'ENSAIO OK' || return 1
+  # o dump saiu DEPOIS do t+0: o api-db veio com a ACL congelada. Devolve a ACL de antes do congelamento, só no banco `api` (desvio 2 da janela de 20/10)
+  exe sh "$V/ops/virada/reaplicar-acl.sh" "$ALVO" "$D/sb/reverter-acl.sql" "$D" || return 1
+  confere "ACL reaplicada" 'ACL de trabalho reaplicada no api: [0-9]+ GRANTs'
 }
 # $V/ops/vps/api-db/papel-*.sql e ops/virada/papel-da-api.sql da main têm de ser os da VPS (o robô de pedidos ganhou grant em 19/10)
 sincroniza_sql() {

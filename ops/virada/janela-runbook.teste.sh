@@ -119,6 +119,12 @@ done
 [ "$(grep -c '^OK$' "$T/dry.txt")" = 35 ] || fail "--dry: esperava 35 OK"
 [ ! -s "$T/D/estado" ] || fail "--dry gravou estado"
 sed -E 's#.*(ops/[A-Za-z0-9_./-]+\.(sh|mjs|py|sql)).*#\1#p; d' "$T/dry.txt" | sort -u | while read -r f; do [ -e "$RAIZ/$f" ] || fail "o runbook cita $f que não existe"; done
+# desvio 2 (20/10): a ordem é congela -> dump/restore (ensaio.sh) -> ACL de trabalho reaplicada no api (reaplicar-acl.sh) -> conferir (t+9)
+ln() { grep -n -- "$1" "$T/dry.txt" | head -n 1 | cut -d: -f1; }
+a=$(ln 'supabase.sh congelar'); b=$(ln 'ensaio.sh'); c=$(ln 'reaplicar-acl.sh'); d=$(ln 'vps_b1 conferir')
+[ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ -n "$d" ] && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ] || fail "ordem congela($a) < dump($b) < ACL($c) < conferir($d) quebrada"
+grep 'reaplicar-acl.sh' "$T/dry.txt" | grep -q 'reverter-acl.sql' || fail "reaplicar-acl.sh sem o reverter-acl.sql da janela"
+! grep 'reaplicar-acl.sh' "$T/dry.txt" | grep -q "$SEGREDO" || fail "reaplicar-acl.sh com a URL do Supabase"
 # os scripts que o runbook chama por ssh (nomes em /root/virada) existem no repositório
 for f in t10-nginx.sh t14-core-go.sh t16-chatwoot-go.sh; do [ -e "$RAIZ/ops/virada/vps/$f" ] || fail "falta ops/virada/vps/$f"; done
 for f in t11-front.sh t17-pdv.sh t17-robos.sh t19-vessel.sh t20-worker.sh t29-fase-a.sh t17-site.sh t17-actions.sh vps-b1.sh; do [ -e "$RAIZ/ops/virada/janela/$f" ] || fail "falta ops/virada/janela/$f"; done
