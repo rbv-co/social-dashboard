@@ -8,8 +8,10 @@
 do $mig$
 begin
   if to_regclass('public.bling_pedido_ajuste_valor') is null or to_regclass('public.audit_log') is null then
+    raise notice 'auditoria do ajuste de valor NÃO instalada: falta bling_pedido_ajuste_valor ou audit_log';
     return;
   end if;
+  set local lock_timeout = '5s';   -- reaplicar não pode prender a fila atrás de uma leitura longa
   execute $f$
 create or replace function public.auditar_ajuste_valor() returns trigger
 language plpgsql
@@ -19,7 +21,8 @@ as $g$
 begin
   insert into public.audit_log (action, detail)
   values ('ajuste_valor_' || lower(TG_OP),
-          jsonb_build_object('tabela', TG_TABLE_NAME, 'por', session_user, 'papel', current_user,
+          jsonb_build_object('tabela', TG_TABLE_NAME, 'por', session_user, 'papel', current_setting('role'),
+                             'ip', inet_client_addr()::text, 'aplicacao', current_setting('application_name'),
                              'antes', case when TG_OP in ('UPDATE', 'DELETE') then to_jsonb(OLD) end,
                              'depois', case when TG_OP in ('INSERT', 'UPDATE') then to_jsonb(NEW) end));
   return null;
