@@ -64,7 +64,8 @@ func soSuper(e *autz.Escopo, _ *auth.Ator, _ string) bool { return e != nil && e
 //   - fabrica-criativos: gestor-envios/ = papel admin ou módulo meta.gestor; o resto, a Fábrica (papel admin, super ou a chave meta.fabrica);
 //   - vessel-curriculos: o anônimo só ENVIA, e só nas pastas consultor-* (rota própria, curriculo.go).
 //
-// ig-cache e fotos-modelo ficam fora (arquivos estáticos, decisão do Plano 6).
+// fotos-modelo fica fora (nada no banco aponta para ele). ig-cache entra SÓ PARA LEITURA: as imagens das Notícias
+// (noticias_concorrentes.imagem_url e produtos) apontam para ele desde a troca de host da virada, e sem o bucket davam 404.
 // Os buckets sem policy no repositório (arquivos, avatars, profile-pics, publico) seguem as telas que os usam: o
 // Banco confere permissions.banco (ver/criar/excluir); avatars é do Admin; profile-pics é do robô de coleta.
 func padrao() map[string]*bucket {
@@ -101,6 +102,9 @@ func padrao() map[string]*bucket {
 			Ler: conteudo, Escrever: conteudo, Apagar: conteudo},
 		{Nome: "fabrica-criativos", Publico: true, Max: 100 * MiB, Tipos: conjunto(append(slices.Clone(imagens), "video/mp4", "video/quicktime")...),
 			Ler: todos, Escrever: criativos, Apagar: criativos},
+		{Nome: "ig-cache", Publico: true, Max: 25 * MiB, Tipos: conjunto(append(slices.Clone(imagens), "video/mp4")...), Ler: todos,
+			Escrever: func(*autz.Escopo, *auth.Ator, string) bool { return false },
+			Apagar:   func(*autz.Escopo, *auth.Ator, string) bool { return false }},
 		{Nome: "profile-pics", Publico: true, Max: 5 * MiB, Tipos: conjunto(imagens...), Ler: todos, Escrever: roboDeMeta, Apagar: roboDeMeta},
 		{Nome: "publico", Publico: true, Max: 5 * MiB, Tipos: conjunto(append(slices.Clone(imagens), "application/pdf")...), Ler: todos, Escrever: soSuper, Apagar: soSuper},
 		// vessel-curriculos: leitura só do robô da triagem (sessão de serviço); o envio é a rota anônima/Core de curriculo.go
