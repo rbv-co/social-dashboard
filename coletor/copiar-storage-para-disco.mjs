@@ -3,7 +3,7 @@
 //
 // Uso:   SUPABASE_URL=https://<projeto>.supabase.co SUPABASE_SERVICE_KEY=... node coletor/copiar-storage-para-disco.mjs <destino> [bucket ...]
 //        --ensaio   só lista e conta, sem gravar
-// Padrão: todos os buckets da API (os de `arquivos/buckets.go`), nunca `ig-cache` nem `fotos-modelo`.
+// Padrão: todos os buckets da API (os de `arquivos/buckets.go`; `ig-cache` entrou em 20/10, só leitura), nunca `fotos-modelo`.
 //
 // Idempotente: objeto que já está no destino com o mesmo tamanho é pulado; rodar de novo só traz o que falta.
 // O destino precisa ser do mesmo usuário do serviço da API (ela lê e grava ali). A chave de serviço vem do ambiente e
@@ -11,7 +11,7 @@
 import { mkdir, stat, writeFile, rename } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 
-const BUCKETS = ['acessos-avatars', 'acessos-termos', 'arquivos', 'avatars', 'conteudo', 'fabrica-criativos', 'profile-pics', 'publico', 'vessel-curriculos'];
+const BUCKETS = ['acessos-avatars', 'acessos-termos', 'arquivos', 'avatars', 'conteudo', 'fabrica-criativos', 'ig-cache', 'profile-pics', 'publico', 'vessel-curriculos'];
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const ensaio = process.argv.includes('--ensaio');
 const [destino, ...pedidos] = args;
