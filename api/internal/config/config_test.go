@@ -352,3 +352,24 @@ func TestAPIURLPublica(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenDoEspelhoEhSegredoEFlagNasceDesligada(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("CORE_API_TOKEN", "tok")
+	t.Setenv("CORE_ESPELHO_TOKEN", " tok-espelho\n")
+	t.Setenv("CORE_LEITURA_SHOPIFY_PEDIDOS", "")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.CoreTokenEspelho != "tok-espelho" || !slices.Contains(c.Segredos(), "tok-espelho") {
+		t.Fatal("o token do consumidor do espelho precisa ser lido e sair dos logs (Segredos)")
+	}
+	if c.CoreLeituraShopifyPedidos {
+		t.Fatal("a leitura dupla nasce desligada")
+	}
+	t.Setenv("CORE_LEITURA_SHOPIFY_PEDIDOS", "true")
+	if c, _ = Carregar(); !c.CoreLeituraShopifyPedidos {
+		t.Fatal("CORE_LEITURA_SHOPIFY_PEDIDOS=true deveria ligar")
+	}
+}

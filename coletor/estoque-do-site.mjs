@@ -29,7 +29,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { loginServico, blingProxy, blingProdutos } from './lib/bling-comercial.mjs';
 import { calcularAjustes, donoDoEstoque } from '../supabase/functions/_shared/estoque-do-site.js';
 import { graphqlDoAmbiente, shopifyLeituraLigada, variantesDoSiteViaCore } from '../supabase/functions/_shared/core-shopify.js';
-import { clienteDoAmbiente, escolherFonte, saldoDoDepositoPorSku } from '../supabase/functions/_shared/core-leitura.js';
+import { clienteDoAmbiente, escolherFonte, limiteDeIdadeMin, saldoDoDepositoPorSku } from '../supabase/functions/_shared/core-leitura.js';
 
 // As credenciais do Shopify moram no .env da RAIZ do iamundi, e ELAS VENCEM as
 // do coletor/.env: lá existe um SHOPIFY_CLIENT_ID de OUTRO app (medido em
@@ -186,9 +186,11 @@ async function main() {
   const saldo = await escolherFonte('ESTOQUE_DO_SITE', process.env, {
     bling: async () => saldoDoIguatemi(await loginServico({ naApi: true }), skus),
     core: () => saldoDoDepositoPorSku(clienteDoAmbiente(process.env), {
-      skus, depositoId: DEPOSITO_IGUATEMI, maxIdadeMin: Number(process.env.CORE_ESPELHO_MAX_IDADE_MIN) || 0,
+      skus, depositoId: DEPOSITO_IGUATEMI, maxIdadeMin: limiteDeIdadeMin(process.env, 'estoque_depositos'),
     }),
   });
+  // Espelho defasado (03-E): saldo velho NUNCA decide publicação. Não grava nada e diz por quê.
+  if (saldo.defasado) { console.log(`DEFASADO: não publico estoque (${saldo.motivo}).`); return; }
   const { ajustes, semBling, iguais } = calcularAjustes(variantes, saldo);
 
   console.log(`${APLICAR ? 'APLICANDO' : 'ENSAIO (nada gravado)'} — ${variantes.length} variantes, ${iguais.length} já certas, ${ajustes.length} a corrigir, ${semBling.length} sem par no Bling`);

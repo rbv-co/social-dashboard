@@ -7,7 +7,7 @@
 // Uma leitura por LISTA de SKUs (em lotes de 50), nunca uma por lote: o balde do Core é 120/min por consumidor.
 // Falha de leitura LANÇA (o cliente já tenta 429/5xx de novo); ausência NÃO é falha: o SKU simplesmente
 // não aparece no Map e o robô diz "não achei", igual faz com o Bling.
-import { ligada, criarClienteCore } from '../../supabase/functions/_shared/core-leitura.js';
+import { ligada, clienteDoAmbiente } from '../../supabase/functions/_shared/core-leitura.js';
 import { achatar } from './fotos-do-selo.mjs';
 
 const LOTE = 50;
@@ -15,9 +15,7 @@ const MARGEM_DA_VALIDADE_MS = 60 * 60 * 1000;   // imagem que vence em menos de 
 
 export const leituraDoCoreLigada = (env) => ligada('PRODUTO_DETALHE', env);
 
-/** Consumidor próprio quando houver (`CORE_ESPELHO_TOKEN`, plano 03-G); senão o token de sempre. */
-export const clienteDoEspelho = (env, extra = {}) =>
-  criarClienteCore({ url: env?.CORE_URL, token: env?.CORE_ESPELHO_TOKEN || env?.CORE_API_TOKEN, ...extra });
+export const clienteDoEspelho = clienteDoAmbiente;   // consumidor próprio quando houver (CORE_ESPELHO_TOKEN)
 
 const objeto = (d) => (typeof d === 'string' ? JSON.parse(d) : d);
 

@@ -18,14 +18,20 @@ type Config struct {
 
 	// Plano 3 (edges do core). Todos opcionais na carga: a rota que precisa e não tem
 	// responde 503 (core) ou 401 (webhook); nunca sobe "aberta".
-	CoreURL         string   // CORE_URL; padrão https://core.rbvcompany.com
-	CoreToken       string   // CORE_API_TOKEN: Bearer deste consumidor no core
-	HostsDeMidia    []string // HOSTS_DE_MIDIA: hosts de onde o meta-proxy aceita imagem/vídeo
-	ShopifySegredos []string // SHOPIFY_WEBHOOK_SEGREDOS: admin, app e o do destino no fan-out do core
-	ChatwootSegredo string   // CHATWOOT_WEBHOOK_SEGREDO
-	VAPIDPublica    string   // VAPID_PUBLIC_KEY (base64url, 65 bytes)
-	VAPIDPrivada    string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
-	VAPIDAssunto    string   // VAPID_SUBJECT (ex.: mailto:...)
+	CoreURL   string // CORE_URL; padrão https://core.rbvcompany.com
+	CoreToken string // CORE_API_TOKEN: Bearer deste consumidor no core
+	// CoreTokenEspelho: CORE_ESPELHO_TOKEN, Bearer do consumidor `central-espelho` (balde próprio no core,
+	// só lê o espelho). Vazio = o espelho usa CoreToken.
+	CoreTokenEspelho string
+	// CoreLeituraShopifyPedidos: CORE_LEITURA_SHOPIFY_PEDIDOS liga a LEITURA DUPLA de shopify_pedidos
+	// (Central × espelho do core, divergência em log). A Central continua servindo o dado local.
+	CoreLeituraShopifyPedidos bool
+	HostsDeMidia              []string // HOSTS_DE_MIDIA: hosts de onde o meta-proxy aceita imagem/vídeo
+	ShopifySegredos           []string // SHOPIFY_WEBHOOK_SEGREDOS: admin, app e o do destino no fan-out do core
+	ChatwootSegredo           string   // CHATWOOT_WEBHOOK_SEGREDO
+	VAPIDPublica              string   // VAPID_PUBLIC_KEY (base64url, 65 bytes)
+	VAPIDPrivada              string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
+	VAPIDAssunto              string   // VAPID_SUBJECT (ex.: mailto:...)
 	// WORKER_TAREFAS_DESLIGADAS: tarefas que o worker NÃO agenda ("*" = todas); `api worker rodar <t> --forcar` ainda roda.
 	// Nome que não é "*" nem de tarefa registrada: o worker recusa subir (worker.ValidarDesligadas).
 	// O ensaio roda com banco restaurado de produção: ligue "*" (ou o push) para não mandar push de verdade.
@@ -68,7 +74,7 @@ type Config struct {
 // Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
 // (worker.Limpar troca cada um por ***).
 func (c Config) Segredos() []string {
-	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.AlertaWebhook,
+	return append([]string{c.CoreToken, c.CoreTokenEspelho, c.ChatwootSegredo, c.VAPIDPrivada, c.AlertaWebhook,
 		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente, c.ZeptoToken, c.AnthropicAdmin, c.OpenAIAdmin, c.IATrafego, c.GitHubPAT,
 		c.VesselInterno, c.ArquivosSegredo}, c.ShopifySegredos...)
 }
@@ -116,17 +122,19 @@ func loopback(h string) bool { return h == "localhost" || h == "127.0.0.1" || h 
 
 func Carregar() (Config, error) {
 	c := Config{
-		Addr:            os.Getenv("ADDR"),
-		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		Origens:         lista("ORIGENS_PERMITIDAS"),
-		CoreURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("CORE_URL")), "/"),
-		CoreToken:       strings.TrimSpace(os.Getenv("CORE_API_TOKEN")),
-		HostsDeMidia:    minusculas(lista("HOSTS_DE_MIDIA")),
-		ShopifySegredos: lista("SHOPIFY_WEBHOOK_SEGREDOS"),
-		ChatwootSegredo: strings.TrimSpace(os.Getenv("CHATWOOT_WEBHOOK_SEGREDO")),
-		VAPIDPublica:    os.Getenv("VAPID_PUBLIC_KEY"),
-		VAPIDPrivada:    os.Getenv("VAPID_PRIVATE_KEY"),
-		VAPIDAssunto:    os.Getenv("VAPID_SUBJECT"),
+		Addr:                      os.Getenv("ADDR"),
+		DatabaseURL:               os.Getenv("DATABASE_URL"),
+		Origens:                   lista("ORIGENS_PERMITIDAS"),
+		CoreURL:                   strings.TrimRight(strings.TrimSpace(os.Getenv("CORE_URL")), "/"),
+		CoreToken:                 strings.TrimSpace(os.Getenv("CORE_API_TOKEN")),
+		CoreTokenEspelho:          strings.TrimSpace(os.Getenv("CORE_ESPELHO_TOKEN")),
+		CoreLeituraShopifyPedidos: ligado(os.Getenv("CORE_LEITURA_SHOPIFY_PEDIDOS")),
+		HostsDeMidia:              minusculas(lista("HOSTS_DE_MIDIA")),
+		ShopifySegredos:           lista("SHOPIFY_WEBHOOK_SEGREDOS"),
+		ChatwootSegredo:           strings.TrimSpace(os.Getenv("CHATWOOT_WEBHOOK_SEGREDO")),
+		VAPIDPublica:              os.Getenv("VAPID_PUBLIC_KEY"),
+		VAPIDPrivada:              os.Getenv("VAPID_PRIVATE_KEY"),
+		VAPIDAssunto:              os.Getenv("VAPID_SUBJECT"),
 
 		TarefasDesligadas: lista("WORKER_TAREFAS_DESLIGADAS"),
 		WorkerAddr:        strings.TrimSpace(os.Getenv("WORKER_ADDR")),

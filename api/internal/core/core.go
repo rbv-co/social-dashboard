@@ -100,13 +100,17 @@ func ehTLS(err error) bool {
 }
 
 type Cliente struct {
-	URL       string // sem barra no fim
-	Token     string
-	HTTP      *http.Client
-	Prazo     time.Duration                                    // por tentativa no Bling; 0 = 11 s
-	Orcamento time.Duration                                    // da chamada inteira no Bling; 0 = 25 s
-	PrazoMeta time.Duration                                    // da chamada à Meta quando o ctx não tem prazo; 0 = 60 s
-	Dormir    func(ctx context.Context, d time.Duration) error // nil = espera de verdade (o teste troca)
+	URL   string // sem barra no fim
+	Token string
+	// TokenEspelho: Bearer do consumidor que lê o espelho (`central-espelho`, balde próprio no core);
+	// vazio = usa Token. Só a leitura do espelho o usa; bling/meta seguem com Token.
+	TokenEspelho string
+	UserAgent    string // opcional; os testes em produção usam `zz-prova-<plano>`
+	HTTP         *http.Client
+	Prazo        time.Duration                                    // por tentativa no Bling; 0 = 11 s
+	Orcamento    time.Duration                                    // da chamada inteira no Bling; 0 = 25 s
+	PrazoMeta    time.Duration                                    // da chamada à Meta quando o ctx não tem prazo; 0 = 60 s
+	Dormir       func(ctx context.Context, d time.Duration) error // nil = espera de verdade (o teste troca)
 	// RitmoMeta: intervalo mínimo entre duas chamadas à Meta deste cliente (0 = sem ritmo). O core
 	// limita 120 chamadas/min por consumidor nas rotas da Meta (vessel-core-go@e8a06e8c3,
 	// services/core/cmd/core/meta.go:40 e internal/config/config.go:172); o worker anda abaixo disso.
