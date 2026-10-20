@@ -1,0 +1,6 @@
+# Robô dos contatos da lista de espera no Bling (plano 07 da INTEGRACAO-CORE-2026-10). UTC. Um processo por vez (flock).
+# Instalar como /etc/cron.d/vessel-contatos SÓ depois de VESSEL_CONTATOS_BLING=1 em /root/secrets/vessel-servicos.env (com a flag desligada o robô sai calado).
+# O env também precisa de CORE_API_TOKEN (e CORE_URL, se não for o padrão): o robô fala com o Bling só pelo proxy do Core.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+* * * * * root flock -n /var/lock/vessel-contatos.lock /usr/local/sbin/vessel-servico contatos >> /var/log/robos/vessel-contatos.log 2>&1

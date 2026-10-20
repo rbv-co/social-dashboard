@@ -43,6 +43,31 @@ export function conexaoPelaPg(cli) {
 /** Timeout ou queda de rede: a chamada ao Zoho pode ter chegado e a resposta não (nunca presumir que falhou). */
 export const semResposta = (x) => ['AbortError', 'TimeoutError'].includes(x?.name) || (x instanceof TypeError && /fetch failed/i.test(x.message));
 
+/** Marca a lista com o resultado da rodada (era o que a edge fazia, index.ts:561-584; o robô da VPS não gravava `planilha_em`).
+ *  Sucesso: `planilha_em` só nas linhas criadas ATÉ o instante em que a rodada começou a ler (quem chegou durante o envio não
+ *  entrou na planilha e fica para a próxima). Falha: o motivo vai nas linhas que ainda esperam (ou, se nenhuma espera, na mais nova);
+ *  o estado do robô de contatos (`ultimo_erro` que começa por "bling ") nunca é sobrescrito. Relança o erro. */
+export function comMarcaNaLista(cli, executar) {
+  return async () => {
+    const { rows: [{ t }] } = await cli.query('select now()::text as t');
+    try {
+      await executar();
+    } catch (x) {
+      const frase = String(x?.message ?? x).slice(0, 400);
+      const { rowCount } = await cli.query(`update vessel_lista_espera set ultimo_erro = $1 where planilha_em is null
+         and (ultimo_erro is null or ultimo_erro not like 'bling %')`, [frase]);
+      if (!rowCount) {
+        await cli.query(`update vessel_lista_espera set ultimo_erro = $1 where id = (select max(id) from vessel_lista_espera
+           where planilha_em is not null and (ultimo_erro is null or ultimo_erro not like 'bling %'))`, [frase]);
+      }
+      throw x;
+    }
+    await cli.query(`update vessel_lista_espera set planilha_em = now() where planilha_em is null and criado_em <= $1::timestamptz`, [t]);
+    // planilha em dia: o erro dela (inclusive o que ficou na linha mais nova quando nenhuma esperava) deixa de valer
+    await cli.query(`update vessel_lista_espera set ultimo_erro = null where ultimo_erro is not null and ultimo_erro not like 'bling %' and planilha_em is not null`);
+  };
+}
+
 /** Um passo: devolve 'sem_pedido' | 'cedo' | 'feito' | 'falhou' | 'incerto'. `executar` roda a rodada (injetável no teste);
  *  `aoErro` recebe a mensagem quando falhou/incerto (a linha de saúde precisa dela). */
 export async function passo(cli, executar, { intervaloMin = INTERVALO_MIN, aoErro = () => {} } = {}) {
@@ -115,6 +140,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // Sem prazo, uma chamada travada do Zoho prende o único processo (e quem leva 'atendendo' a 'incerto' é ele mesmo).
   const fetchOriginal = globalThis.fetch;
   globalThis.fetch = (u, o = {}) => fetchOriginal(u, { signal: AbortSignal.timeout(120_000), ...o });
-  const executar = () => rodada({ ler: lerPelaPg(cli), conexao: conexaoPelaPg(cli), log: () => {} });
+  const executar = comMarcaNaLista(cli, () => rodada({ ler: lerPelaPg(cli), conexao: conexaoPelaPg(cli), log: () => {} }));
   await servir(cli, executar, { umaVez: process.argv.includes('--uma-vez') });
 }
