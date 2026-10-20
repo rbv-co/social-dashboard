@@ -204,24 +204,27 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
 }
 
 // Lista o catálogo de produtos (id → nome/código/preço). Bounded por segurança.
-export async function blingProdutos(token, maxPaginas = 20) {
+// `estado.incompleto` = true quando a lista do Bling NÃO foi lida até o fim (página que falhou ou teto de páginas
+// atingido): quem zera estoque pela ausência (relatorios-comerciais.mjs) só pode confiar numa lista completa.
+export async function blingProdutos(token, maxPaginas = 20, estado = {}) {
   // CORE_LEITURA_CATALOGO=true lê o catálogo do espelho do core (ativos). Desligada: Bling, como sempre.
   return escolherFonte('CATALOGO', process.env, {
-    bling: () => blingProdutosDoBling(token, maxPaginas),
+    bling: () => blingProdutosDoBling(token, maxPaginas, estado),
     core: () => catalogoDoCore(clienteDoAmbiente(process.env)),
   });
 }
 
-async function blingProdutosDoBling(token, maxPaginas) {
+async function blingProdutosDoBling(token, maxPaginas, estado = {}) {
   const prod = {};
   for (let pagina = 1; pagina <= maxPaginas; pagina++) {
     let resp;
     try { resp = await blingProxy(token, 'produtos', { pagina, limite: 100 }); }
-    catch (e) { console.warn('  produtos pág ' + pagina + ' falhou (segue com o que tem):', e.message); break; }
+    catch (e) { console.warn('  produtos pág ' + pagina + ' falhou (segue com o que tem):', e.message); estado.incompleto = true; break; }
     const d = resp.data;
     if (!Array.isArray(d) || !d.length) break;
     for (const p of d) prod[String(p.id)] = { nome: (p.nome || '').slice(0, 60), codigo: p.codigo || '', preco: Number(p.preco) || 0 };
     if (d.length < 100) break;
+    if (pagina === maxPaginas) estado.incompleto = true; // página cheia no teto: pode haver mais produtos
   }
   return prod;
 }
@@ -232,7 +235,8 @@ async function blingProdutosDoBling(token, maxPaginas) {
 // deposito de uma loja nova chegava aqui e era descartado numa linha, sem erro
 // nenhum: a loja simplesmente nao existia na Gestao a Vista ate alguem editar
 // codigo. Agora nada e descartado; quem decide o que mostrar e a tela.
-export async function blingSaldoFoco(token, prodMap) {
+// `estado.lotesComFalha` conta os lotes de 40 produtos que falharam (o saldo deles NÃO foi lido nesta rodada).
+export async function blingSaldoFoco(token, prodMap, estado = {}) {
   const ids = Object.keys(prodMap);
   const saldoPorDep = {};            // deposito_id → { produtoId → saldo }
   for (let i = 0; i < ids.length; i += 40) {
@@ -241,7 +245,7 @@ export async function blingSaldoFoco(token, prodMap) {
     batch.forEach((id, k) => { params['idsProdutos[' + k + ']'] = id; });
     let resp;
     try { resp = await blingProxy(token, 'estoques/saldos', params); }
-    catch (e) { console.warn('  saldo lote ' + (i / 40 | 0) + ' falhou (segue):', e.message); continue; }
+    catch (e) { console.warn('  saldo lote ' + (i / 40 | 0) + ' falhou (segue):', e.message); estado.lotesComFalha = (estado.lotesComFalha || 0) + 1; continue; }
     for (const row of (resp.data || [])) {
       const pid = String(row.produto?.id || '');
       for (const dep of (row.depositos || [])) {
