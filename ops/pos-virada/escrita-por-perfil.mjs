@@ -1,6 +1,6 @@
 // POS-VIRADA plano 05, item B: um fluxo de escrita curto por perfil, pela TELA, em produção, só com dado `zz-prova-05-*`.
 //   admin:     Banco de Arquivos (envia, outra sessão vê, baixa e confere o hash, exclui) e Patrimônio (cria, edita, outra sessão vê, exclui)
-//   frota:     Frota (cria veículo, edita; o espelho no Patrimônio é conferido)
+//   frota:     Frota (cria veículo, edita só o cartão de prova)
 //   comercial: Praças (cria, lista, outra sessão vê)
 //   admin:     Central de Conteúdo (cria peça)
 // A conferência no banco é SELECT por ssh no api-db (só leitura). A limpeza do que sobrar fica no fim (apagar-prova05.sql).
@@ -43,6 +43,10 @@ async function passo(pg, nome, fn) {
   console.log(l); log.push(l)
 }
 const ir = async (pg, rota) => { await pg.goto(BASE + rota, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {}); await pg.getByRole('button', { name: /^pular$/i }).click({ timeout: 800 }).catch(() => {}) }
+// passo destrutivo (excluir): só roda se NENHUM passo anterior do fluxo falhou (senão o alvo pode não ser o de prova)
+const semFalhaAntes = () => { if (log.some((l) => l.includes('FALHA'))) throw new Error('pulado: um passo anterior falhou') }
+// o menor container que tem o NOME de prova e o botão: o botão dessa linha, nunca o de outra
+const daLinha = (pg, nome, botao) => { const l = pg.locator('*', { hasText: nome }).filter({ has: pg.getByRole('button', { name: botao }) }).last(); return l.getByRole('button', { name: botao }).first() }
 const corpo = (pg) => pg.locator('body').innerText()
 
 const FLUXOS = {
@@ -57,14 +61,15 @@ const FLUXOS = {
     await passo(sup, 'outra sessão (super) vê', async () => { await ir(sup, '/banco'); await sup.getByPlaceholder('Buscar arquivo…').fill(U); await sup.waitForTimeout(600); if (!(await corpo(sup)).includes(nome)) throw new Error('não aparece para a outra sessão') })
     await passo(adm, 'baixar e conferir hash', async () => {
       await adm.getByPlaceholder('Buscar arquivo…').fill(U); await adm.waitForTimeout(600)
-      const [dl] = await Promise.all([adm.waitForEvent('download', { timeout: 15000 }), adm.getByRole('button', { name: /baixar|download/i }).first().click(T)])
+      const [dl] = await Promise.all([adm.waitForEvent('download', { timeout: 15000 }), daLinha(adm, nome, /baixar|download/i).click(T)])
       const p = join(tmpdir(), 'baixado-' + nome); await dl.saveAs(p)
       const h1 = createHash('sha256').update(readFileSync(p)).digest('hex')
       if (h1 !== h0) throw new Error(`hash diferente ${h0.slice(0, 12)} x ${h1.slice(0, 12)}`)
       console.log(`   hash ${h0.slice(0, 16)}… igual (${dados.length} bytes)`)
     })
     await passo(adm, 'excluir', async () => {
-      await adm.getByRole('button', { name: /exclu|remov|apagar/i }).first().click(T); await adm.waitForTimeout(600)
+      semFalhaAntes()
+      await daLinha(adm, nome, /exclu|remov|apagar/i).click(T); await adm.waitForTimeout(600)
       await adm.getByRole('button', { name: /confirm|sim|exclu|apagar/i }).last().click({ timeout: 2000 }).catch(() => {}); await adm.waitForTimeout(2000)
       const h = noDisco(nome); if (h !== 'AUSENTE') throw new Error('objeto continua no disco: ' + h.slice(0, 12))
     })
@@ -90,6 +95,8 @@ const FLUXOS = {
     await passo(adm, 'excluir', async () => {
       await adm.getByRole('button', { name: /^Limpar$/ }).first().click({ timeout: 1500 }).catch(() => {}); await adm.getByPlaceholder(/Buscar por item/).fill(U); await adm.waitForTimeout(700)
       await adm.locator('tbody tr:visible, .pat-card-nome:visible', { hasText: nome }).first().click(T)
+      semFalhaAntes()
+      const aberto = await adm.getByPlaceholder('Ex.: Macbook Air M4').inputValue(); if (!aberto.startsWith(U)) throw new Error('o bem aberto não é o de prova: ' + aberto.slice(0, 30))
       await adm.getByRole('button', { name: /exclu|remov|apagar/i }).first().click(T); await adm.waitForTimeout(500)
       await adm.getByRole('button', { name: /confirm|sim|exclu|apagar/i }).last().click({ timeout: 2000 }).catch(() => {}); await adm.waitForTimeout(1500)
       if (sql(`select count(*) from patrimonio_bens where nome like '${U}%'`) !== '0') throw new Error('não excluiu')
@@ -119,7 +126,8 @@ const FLUXOS = {
     console.log(`   placa=${placa} (limpeza em apagar-prova05.sql)`)
   },
   async pracas() {
-    const co = await sessao('comercial'); const sup = await sessao('super'); const sigla = 'ZZ' + String.fromCharCode(65 + (Date.now() % 26)) // sigla = 3 LETRAS; ZZx não existe em produção
+    const co = await sessao('comercial'); const sup = await sessao('super'); const sigla = 'ZZ' + String.fromCharCode(65 + (Date.now() % 26)) // sigla = 3 LETRAS
+    if (sql(`select count(*) from vessel_pracas where sigla='${sigla}'`) !== '0') throw new Error('sigla ' + sigla + ' já existe: não vou criar por cima')
     await passo(co, 'abrir', () => ir(co, '/pracas'))
     await passo(co, 'criar praça', async () => {
       await co.getByPlaceholder('LIM').fill(sigla); await co.locator('label', { hasText: /^\s*Nome/ }).locator('input').first().fill(U)

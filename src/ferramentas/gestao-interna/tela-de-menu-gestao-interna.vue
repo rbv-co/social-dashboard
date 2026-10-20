@@ -137,7 +137,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
    Aqui está tudo explícito, inclusive os `none`, para nada de antes vazar.
 
    CELULAR (até 767): um card sob o outro, largura cheia.
-   TABLET PRA CIMA (768+): quadrados lado a lado, numa fileira só. */
+   TABLET PRA CIMA (768+): quadrados lado a lado; quebram linha (base 200px) para o título nunca ser cortado. */
 @media(max-width:767px){
   .tela-menu-gestao-interna .gimenu-cards{display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:12px;width:100%;max-width:none;margin-inline:0;}
   .tela-menu-gestao-interna .gimenu-card{width:100%;max-width:none;min-width:0;min-height:auto;flex:none;}
