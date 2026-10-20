@@ -11,7 +11,8 @@ erro() { echo "$(date '+%F %T') $*" >&2; }
 mkdir -p "$DIR"; chmod 700 "$DIR"
 ARQ="$DIR/api-db-$(date +%F-%H%M).dump"
 # qualquer falha (ou INT/HUP/TERM, que o dash não trata no EXIT) não deixa lixo parcial
-trap 'rm -f "$ARQ.tmp"' EXIT
+GLOB="${ARQ%.dump}.globals.sql"
+trap 'rm -f "$ARQ.tmp" "$GLOB.tmp"' EXIT
 trap 'exit 130' INT HUP TERM
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 docker exec "$CT" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$ARQ.tmp"
@@ -22,8 +23,13 @@ docker exec -i "$CT" pg_restore -f /dev/null < "$ARQ.tmp" \
 # o piso de tamanho é só defesa extra: um dump de banco SEM tabelas passa de 1 KB, então exige TABLE no índice
 docker exec -i "$CT" pg_restore -l < "$ARQ.tmp" | grep -q ' TABLE public ' \
   || { erro "backup sem nenhuma tabela do schema public (banco vazio?)"; exit 1; }
-mv "$ARQ.tmp" "$ARQ"
+# o pg_dump -Fc de UM banco não leva os papéis (são do cluster): sem eles o pg_restore falha nos GRANTs.
+# Os papéis (com o hash das senhas) vão num arquivo à parte; modo 600, nunca sai da VPS sem cifra.
+docker exec "$CT" sh -c 'pg_dumpall -U "$POSTGRES_USER" --globals-only' > "$GLOB.tmp"
+grep -q '^CREATE ROLE ' "$GLOB.tmp" || { erro "backup dos papéis sem nenhum CREATE ROLE"; exit 1; }
+mv "$ARQ.tmp" "$ARQ"; mv "$GLOB.tmp" "$GLOB"
 ( cd "$DIR" && sha "$(basename "$ARQ")" > "$(basename "$ARQ").sha256" )
-chmod 600 "$ARQ" "$ARQ.sha256"
+chmod 600 "$ARQ" "$ARQ.sha256" "$GLOB"
 find "$DIR" -name 'api-db-*.dump*' -mtime +"$RET" -delete
+find "$DIR" -name 'api-db-*.globals.sql' -mtime +"$RET" -delete
 echo "$(date '+%F %T') backup ok: $ARQ ($(du -h "$ARQ" | cut -f1))"

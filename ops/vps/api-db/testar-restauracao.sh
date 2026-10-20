@@ -32,7 +32,16 @@ done
 ESPERADO=$(docker exec -i "$CT" pg_restore -l < "$ARQ" | awk '/ TABLE public /{for(i=1;i<NF;i++) if($i=="public"){n=$(i+1); for(j=i+2;j<NF;j++) n=n" "$j; print n; break}}' | LC_ALL=C sort)
 [ -n "$ESPERADO" ] || { erro "o índice do dump não lista nenhuma TABLE public"; exit 1; }
 docker exec "$CT" createdb -U postgres teste
-docker exec -i "$CT" pg_restore -U postgres -d teste --no-owner --exit-on-error < "$ARQ"
+# papéis ANTES do pg_restore (o dump traz GRANT para api_app, robo_*...); sem o arquivo (dumps de antes de 20/10), sem ACL
+GLOB="${ARQ%.dump}.globals.sql"
+if [ -f "$GLOB" ]; then
+  docker exec -i "$CT" psql -U postgres -v ON_ERROR_STOP=1 -q -f - < "$GLOB" >/dev/null
+  OPC=""
+else
+  erro "aviso: $GLOB não existe; restaurando sem donos nem ACL (o dump não prova os GRANTs)"
+  OPC="--no-owner --no-acl"
+fi
+docker exec -i "$CT" pg_restore -U postgres -d teste $OPC --exit-on-error < "$ARQ"
 RESTAURADAS=$(docker exec "$CT" psql -U postgres -d teste -Atc "select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p')" | LC_ALL=C sort)
 [ -n "$RESTAURADAS" ] || { erro "restauração sem tabelas"; exit 1; }
 [ "$RESTAURADAS" = "$ESPERADO" ] || { erro "restauração difere: o dump lista [$(echo $ESPERADO)], restaurou [$(echo $RESTAURADAS)]"; exit 1; }
