@@ -308,3 +308,21 @@ func TestAvisoDoBootCobreAsMensagens(t *testing.T) {
 		t.Fatalf("tudo desligado não avisa nada: %q", p)
 	}
 }
+
+// A leitura dupla da Shopify (plano 04-D) só existe com a flag; desligada, a lista de produção não muda.
+func TestLeituraDuplaSoComAFlag(t *testing.T) {
+	tem := func(cfg config.Config) bool {
+		for _, tf := range tarefas(nil, cfg, worker.Novo(nil)) {
+			if tf.Nome == "leitura-dupla-shopify-pedidos" {
+				return true
+			}
+		}
+		return false
+	}
+	if tem(config.Config{}) {
+		t.Fatal("tarefa registrada com a flag desligada")
+	}
+	if !tem(config.Config{CoreLeituraShopifyPedidos: true}) {
+		t.Fatal("tarefa ausente com a flag ligada")
+	}
+}

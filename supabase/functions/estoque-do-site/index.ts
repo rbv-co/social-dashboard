@@ -27,7 +27,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { calcularAjustes, donoDoEstoque } from '../_shared/estoque-do-site.js';
-import { clienteDoAmbiente, escolherFonte, ligada, saldoDoDepositoPorSku } from '../_shared/core-leitura.js';
+import { clienteDoAmbiente, escolherFonte, ligada, limiteDeIdadeMin, saldoDoDepositoPorSku } from '../_shared/core-leitura.js';
 import { graphqlDoAmbiente, shopifyLeituraLigada, variantesDoSiteViaCore } from '../_shared/core-shopify.js';
 import { blingPeloCore } from '../_shared/core-bling-proxy.js';
 
@@ -223,9 +223,13 @@ Deno.serve(async (req: Request) => {
     const saldo: Map<string, number> = await escolherFonte('ESTOQUE_DO_SITE', env, {
       bling: () => saldoDoIguatemi(sb, tBling!, skus),
       core: () => saldoDoDepositoPorSku(clienteDoAmbiente(env), {
-        skus, depositoId: DEPOSITO_IGUATEMI, maxIdadeMin: Number(env.CORE_ESPELHO_MAX_IDADE_MIN) || 0,
+        skus, depositoId: DEPOSITO_IGUATEMI, maxIdadeMin: limiteDeIdadeMin(env, 'estoque_depositos'),
       }),
     });
+    // Espelho defasado (03-E): saldo velho NUNCA decide publicação.
+    if ((saldo as Map<string, number> & { defasado?: boolean }).defasado) {
+      return json({ defasado: true, motivo: (saldo as { motivo?: string }).motivo }, 503);   // vermelho de propósito: estoque parado em silêncio é pior
+    }
     const { ajustes, semBling, iguais } = calcularAjustes(variantes, saldo);
     const falhas: string[] = [];
     for (const a of ajustes) {

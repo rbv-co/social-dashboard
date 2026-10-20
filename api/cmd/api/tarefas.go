@@ -11,6 +11,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/fabrica"
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
+	"github.com/rbv-co/social-dashboard/api/internal/leituradupla"
 	"github.com/rbv-co/social-dashboard/api/internal/mensagens"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
@@ -41,6 +42,11 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 		aoMontar(cli, msg)
 	}
 	ts = append(ts, msg.Tarefa())
+	// Leitura dupla (plano 04-D): só existe com CORE_LEITURA_SHOPIFY_PEDIDOS ligada; só mede, não troca a fonte.
+	if cfg.CoreLeituraShopifyPedidos {
+		ts = append(ts, (&leituradupla.ShopifyPedidos{Fonte: leituradupla.CentralPG{Pool: p}, Core: cli,
+			MaxIdade: core.LimiteDeIdade(os.Getenv("CORE_ESPELHO_MAX_IDADE_MIN"), "shopify_pedidos")}).Tarefa())
+	}
 	return ts
 }
 
@@ -59,6 +65,7 @@ func mensagensDeProducao(p *pgxpool.Pool) *mensagens.Mensagens {
 func clienteDoCore(cfg config.Config) *core.Cliente {
 	cli := core.Novo(cfg.CoreURL, cfg.CoreToken)
 	cli.RitmoMeta = 600 * time.Millisecond
+	cli.TokenEspelho = cfg.CoreTokenEspelho
 	return cli
 }
 

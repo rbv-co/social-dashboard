@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ligada, escolherFonte, criarClienteCore, clienteDoAmbiente, catalogoDoCore, saldoDoDepositoPorSku,
+  idadeDoEspelho, limiteDeIdadeMin,
 } from './core-leitura.js';
 
 const resp = (corpo, status = 200) => ({ ok: status < 400, status, json: async () => corpo });
@@ -100,11 +101,11 @@ test('catalogoDoCore: formato de blingProdutos, so ativos, nome cortado em 60', 
   assert.equal(new URL(chamadas[0].url).searchParams.get('id_situacaocadastro'), '1');
 });
 
-function espelho({ produtos, saldos, espelhadoEm = new Date().toISOString() }) {
+function espelho({ produtos, saldos, espelhadoEm = new Date().toISOString(), sincronia }) {
   return falso((u) => {
     if (u.pathname.endsWith('/produtos_bling')) return resp({ data: produtos, proximo_cursor: null });
     assert.equal(u.searchParams.get('deposito_id'), '14888726277');
-    return resp({ data: saldos, proximo_cursor: null, espelhado_em: espelhadoEm });
+    return resp({ data: saldos, proximo_cursor: null, espelhado_em: espelhadoEm, ...(sincronia ? { sincronia } : {}) });
   });
 }
 
@@ -124,14 +125,39 @@ test('saldoDoDepositoPorSku: espelho sem nenhum saldo do deposito lanca (vazio n
     { skus: new Set(['A']), depositoId: '14888726277' }), /sem saldos/);
 });
 
-test('saldoDoDepositoPorSku: maxIdadeMin barra espelho velho; 0 nao checa', async () => {
+test('saldoDoDepositoPorSku: idade vem do bloco sincronia e devolve defasado, nao erro', async () => {
   const velho = new Date(Date.now() - 3 * 3600e3).toISOString();
-  const mk = () => criarClienteCore({ token: 't', fetchImpl: espelho({
-    produtos: [{ id_bling: 1, codigo: 'A' }], saldos: [{ id_bling: 1, saldo: 5 }], espelhadoEm: velho }).fetchImpl });
+  const mk = (sincronia) => criarClienteCore({ token: 't', fetchImpl: espelho({
+    produtos: [{ id_bling: 1, codigo: 'A' }], saldos: [{ id_bling: 1, saldo: 5 }], sincronia }).fetchImpl });
   const args = { skus: new Set(['A']), depositoId: '14888726277' };
-  await assert.rejects(saldoDoDepositoPorSku(mk(), { ...args, maxIdadeMin: 60 }), /parado/);
-  assert.equal((await saldoDoDepositoPorSku(mk(), { ...args, maxIdadeMin: 0 })).get('A'), 5);
-  assert.equal((await saldoDoDepositoPorSku(mk(), { ...args, maxIdadeMin: 600 })).get('A'), 5);
+  const velha = { ultimo_ok: velho, periodo_s: 900, atrasado: false };
+  const m = await saldoDoDepositoPorSku(mk(velha), { ...args, maxIdadeMin: 60 });
+  assert.equal(m.get('A'), 5, 'o saldo continua legivel');
+  assert.equal(m.defasado, true);
+  assert.match(m.motivo, /60 min/);
+  assert.equal((await saldoDoDepositoPorSku(mk(velha), { ...args, maxIdadeMin: 0 })).defasado, false, '0 = sem limite');
+  assert.equal((await saldoDoDepositoPorSku(mk(velha), { ...args, maxIdadeMin: 600 })).defasado, false);
+  assert.equal((await saldoDoDepositoPorSku(mk({ atrasado: true }), args)).defasado, true, 'o core diz atrasado');
+  assert.equal((await saldoDoDepositoPorSku(mk({ tempo_real: false }), args)).defasado, true, 'webhook mudo');
+});
+
+test('saldoDoDepositoPorSku: SEM bloco sincronia nao acusa, mesmo com espelhado_em velho e limite ligado', async () => {
+  const velho = new Date(Date.now() - 30 * 24 * 3600e3).toISOString();
+  const core = criarClienteCore({ token: 't', fetchImpl: espelho({
+    produtos: [{ id_bling: 1, codigo: 'A' }], saldos: [{ id_bling: 1, saldo: 5 }], espelhadoEm: velho }).fetchImpl });
+  const m = await saldoDoDepositoPorSku(core, { skus: new Set(['A']), depositoId: '14888726277', maxIdadeMin: 1 });
+  assert.equal(m.defasado, false);
+  assert.equal(idadeDoEspelho(null, { maxIdadeMin: 1 }).semSincronia, true);
+});
+
+test('limiteDeIdadeMin: numero vale para todas; tabela=min por tabela; torto vira 0', () => {
+  assert.equal(limiteDeIdadeMin({}, 'x'), 0);
+  assert.equal(limiteDeIdadeMin({ CORE_ESPELHO_MAX_IDADE_MIN: '30' }, 'x'), 30);
+  const env = { CORE_ESPELHO_MAX_IDADE_MIN: 'estoque_depositos=2160, shopify_pedidos=30, 60' };
+  assert.equal(limiteDeIdadeMin(env, 'estoque_depositos'), 2160);
+  assert.equal(limiteDeIdadeMin(env, 'shopify_pedidos'), 30);
+  assert.equal(limiteDeIdadeMin(env, 'contatos'), 60, 'o número solto é o padrão');
+  assert.equal(limiteDeIdadeMin({ CORE_ESPELHO_MAX_IDADE_MIN: 'abc,x=-5' }, 'x'), 0);
 });
 
 // Core LENTO/pendurado: sem prazo o robô ficava parado até o limite do wrapper (30 min) sem dizer nada.
@@ -154,4 +180,17 @@ test('core 200 com corpo que nao e JSON: lanca', async () => {
   const f = falso(() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }));
   const core = criarClienteCore({ token: 't', fetchImpl: f.fetchImpl, esperar: semEspera });
   await assert.rejects(core.todas('pedidos'), /Unexpected token/);
+});
+
+test('consumidor do espelho: CORE_ESPELHO_TOKEN vence CORE_API_TOKEN; sem ele, o de sempre', async () => {
+  const { fetchImpl, chamadas } = falso(() => resp({ data: [], proximo_cursor: null }));
+  await clienteDoAmbiente({ CORE_API_TOKEN: 'a', CORE_ESPELHO_TOKEN: 'b' }, { fetchImpl }).todas('contatos');
+  await clienteDoAmbiente({ CORE_API_TOKEN: 'a' }, { fetchImpl }).todas('contatos');
+  assert.deepEqual(chamadas.map((c) => c.init.headers.Authorization), ['Bearer b', 'Bearer a']);
+});
+
+test('idadeDoEspelho: ultimo_ok ilegivel com limite ligado e defasado (dado torto nao vale como fresco)', () => {
+  assert.equal(idadeDoEspelho({ ultimo_ok: 'ontem' }, { maxIdadeMin: 30 }).defasado, true);
+  assert.equal(idadeDoEspelho({ ultimo_ok: 'ontem' }, { maxIdadeMin: 0 }).defasado, false);
+  assert.equal(idadeDoEspelho({}, { maxIdadeMin: 30 }).defasado, false, 'bloco sem ultimo_ok nao inventa');
 });

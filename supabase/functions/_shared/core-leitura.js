@@ -41,7 +41,7 @@ function queryString(params) {
 
 /**
  * Cliente do core. `todas` segue `proximo_cursor` até acabar e devolve
- * `{ linhas, espelhadoEm }`. Falha de leitura LANÇA (nunca devolve lista parcial:
+ * `{ linhas, espelhadoEm, sincronia }`. Falha de leitura LANÇA (nunca devolve lista parcial:
  * quem consome decide estoque com isto), inclusive Core sem responder em `prazoMs`.
  */
 export const PRAZO_PADRAO_MS = 30_000;
@@ -68,13 +68,15 @@ export function criarClienteCore({ url, token, fetchImpl = globalThis.fetch, esp
     const linhas = [];
     let cursor = null;
     let espelhadoEm = null;
+    let sincronia = null;           // bloco do core (03-E); null enquanto o core não o manda
     for (let p = 0; p < maxPaginas; p++) {
       const j = await get(`/api/interno/espelho/${tabela}`, { limite: 1000, ...params, cursor });
       if (!Array.isArray(j?.data)) throw new Error(`core ${tabela} sem lista`);
       linhas.push(...j.data);
       espelhadoEm = j.espelhado_em ?? espelhadoEm;
+      sincronia = j.sincronia ?? sincronia;
       cursor = j.proximo_cursor;
-      if (!cursor) return { linhas, espelhadoEm };
+      if (!cursor) return { linhas, espelhadoEm, sincronia };
     }
     throw new Error(`core ${tabela}: paginas demais (${maxPaginas})`);
   }
@@ -84,9 +86,13 @@ export function criarClienteCore({ url, token, fetchImpl = globalThis.fetch, esp
   return { get, todas, contagem };
 }
 
-/** Cliente a partir do ambiente (`CORE_URL`, `CORE_API_TOKEN`). */
+/**
+ * Cliente do ESPELHO a partir do ambiente (`CORE_URL`, e o token do consumidor `central-espelho` em
+ * `CORE_ESPELHO_TOKEN` — balde próprio no core —, ou `CORE_API_TOKEN` enquanto ele não existir).
+ * Só serve leitura do espelho: bling/proxy e meta/graph seguem com o token de sempre.
+ */
 export const clienteDoAmbiente = (env, extra = {}) =>
-  criarClienteCore({ url: env?.CORE_URL, token: env?.CORE_API_TOKEN, ...extra });
+  criarClienteCore({ url: env?.CORE_URL, token: env?.CORE_ESPELHO_TOKEN || env?.CORE_API_TOKEN, ...extra });
 
 /**
  * Catálogo no formato de `blingProdutos`: { [id_bling]: { nome, codigo, preco } }.
@@ -103,6 +109,42 @@ export async function catalogoDoCore(core) {
 }
 
 /**
+ * Limite de idade da sincronização POR TABELA: `CORE_ESPELHO_MAX_IDADE_MIN` aceita um número (vale para
+ * todas) ou `tabela=min,tabela=min` (com um número solto como padrão), ex.: `estoque_depositos=2160,30`.
+ * Vazio/ausente = 0 = sem limite (o estado de antes). Valor torto vira 0: não inventa limite.
+ */
+export function limiteDeIdadeMin(env, tabela) {
+  let padrao = 0;
+  for (const parte of String(env?.CORE_ESPELHO_MAX_IDADE_MIN ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    const [chave, valor] = parte.includes('=') ? parte.split('=').map((x) => x.trim()) : [null, parte];
+    const n = Number(valor);
+    if (!Number.isFinite(n) || n < 0) continue;
+    if (chave === tabela) return n;
+    if (chave === null) padrao = n;
+  }
+  return padrao;
+}
+
+/**
+ * A leitura está defasada? Decide pelo bloco `sincronia` do core (03-E): `atrasado`, `ultimo_ok` mais velho
+ * que o limite, ou `tempo_real === false` (webhook mudo). SEM o bloco NÃO acusa: `espelhado_em` é só a última
+ * mudança de linha, e tabela quieta não é tabela parada. Devolve `{ defasado, motivo }`, nunca lança.
+ */
+export function idadeDoEspelho(sincronia, { maxIdadeMin = 0, agora = Date.now() } = {}) {
+  if (!sincronia) return { defasado: false, semSincronia: true };
+  if (sincronia.atrasado === true) return { defasado: true, motivo: 'o core marcou a sincronização como atrasada' };
+  if (sincronia.tempo_real === false) return { defasado: true, motivo: 'o core está sem receber evento em tempo real' };
+  const t = Date.parse(sincronia.ultimo_ok || '');
+  if (maxIdadeMin > 0 && sincronia.ultimo_ok && !Number.isFinite(t)) {
+    return { defasado: true, motivo: 'o core mandou `ultimo_ok` ilegível' };   // dado torto não vale como "fresco"
+  }
+  if (maxIdadeMin > 0 && Number.isFinite(t) && agora - t > maxIdadeMin * 60e3) {
+    return { defasado: true, motivo: `última sincronização boa há mais de ${maxIdadeMin} min (${sincronia.ultimo_ok})` };
+  }
+  return { defasado: false };
+}
+
+/**
  * Saldo físico de UM depósito por SKU, do espelho. Devolve Map sku → saldo só dos
  * SKUs que o espelho conhece (produto ativo COM linha de saldo nesse depósito).
  *
@@ -110,26 +152,24 @@ export async function catalogoDoCore(core) {
  * ausente = "o espelho não sabe" (produto novo ainda não sincronizado) e o SKU fica
  * FORA do Map, logo INTOCADO no Shopify — nunca vira esgotado por lacuna do espelho.
  *
- * Travas: espelho sem NENHUMA linha do depósito lança (espelho vazio ≠ estoque zero);
- * e, se `maxIdadeMin` > 0, `espelhado_em` (maior updated_at da tabela) mais velho que isso também lança.
+ * Travas: espelho sem NENHUMA linha do depósito lança (espelho vazio ≠ estoque zero). Idade: o Map vem com
+ * `defasado` (boolean) e `motivo` (ver `idadeDoEspelho`); quem PUBLICA decide com isso não gravar. Não lança por
+ * idade: defasado é um estado a mostrar, não um erro.
  */
 export async function saldoDoDepositoPorSku(core, { skus, depositoId, maxIdadeMin = 0, agora = Date.now() }) {
-  const [{ linhas: prods }, { linhas: saldos, espelhadoEm }] = await Promise.all([
+  const [{ linhas: prods }, { linhas: saldos, sincronia }] = await Promise.all([
     core.todas('produtos_bling', { campos: ['id_bling', 'codigo'], id_situacaocadastro: 1 }),
     core.todas('estoque_depositos', { campos: ['id_bling', 'saldo'], deposito_id: depositoId }),
   ]);
   if (!saldos.length) throw new Error(`core: espelho sem saldos do deposito ${depositoId}`);
-  if (maxIdadeMin > 0) {
-    const t = Date.parse(espelhadoEm || '');
-    if (!t || agora - t > maxIdadeMin * 60e3) {
-      throw new Error(`core: espelho de estoque parado ha mais de ${maxIdadeMin} min (espelhado_em ${espelhadoEm})`);
-    }
-  }
   const saldoPorId = new Map(saldos.map((s) => [String(s.id_bling), Number(s.saldo) || 0]));
   const saldo = new Map();
   for (const p of prods) {
     const sku = String(p.codigo || '').trim();
     if (skus.has(sku) && saldoPorId.has(String(p.id_bling))) saldo.set(sku, saldoPorId.get(String(p.id_bling)));
   }
+  const idade = idadeDoEspelho(sincronia, { maxIdadeMin, agora });
+  saldo.defasado = idade.defasado;
+  saldo.motivo = idade.motivo;
   return saldo;
 }
