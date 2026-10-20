@@ -2,8 +2,13 @@ import { calcularModoEntrarComo } from './modo-entrar-como.js'
 import { areaNaApi } from './api.js'
 import { opcoesDoSupabase } from './opcoes-do-supabase.js'
 
-export const SUPABASE_URL = 'https://kounqtdoioootxqegkij.supabase.co'
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM'
+// O SUPABASE FOI DESLIGADO (D+14, plano 08 do pos-virada): a Central fala so com a API em Go. Estas duas constantes
+// ficam porque ~16 telas ainda as importam no ramo `areaNaApi(...) ? api : supabase` (ramo morto, o build da API
+// liga todas as areas), mas SEM host nem chave de verdade: `.invalid` e um TLD reservado (RFC 2606), entao qualquer
+// chamada que escape do ramo da API falha na hora em vez de chegar a um servidor. O createClient exige URL valida e
+// chave nao vazia, por isso nao sao strings vazias. A chave anon antiga era publica, mas nao precisa mais estar no bundle.
+export const SUPABASE_URL = 'https://supabase-desligado.invalid'
+export const SUPABASE_ANON_KEY = 'supabase-desligado'
 
 // A sessao do Supabase mora no localStorage por padrao -- compartilhado entre
 // TODAS as abas da mesma origem. A aba de "Entrar como" (tela-de-admin.vue)
