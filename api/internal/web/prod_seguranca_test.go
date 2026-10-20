@@ -43,6 +43,19 @@ var prodCorposValidos = map[string]string{
 	"POST /arquivos/{bucket}/copiar": `{"de":"zz-prova/a.txt","para":"zz-prova/b.txt"}`,
 }
 
+// corpoValidoSeguro: quem pode receber o corpo VÁLIDO dessas rotas em produção: só quem o portão tem de barrar. O
+// impersonado passa o portão de módulo do /bling-proxy (esperado() o deixa passar), e aí o corpo válido sairia ao Bling:
+// ele só recebe corpo válido nas rotas de arquivo (escrita que o "entrar como" não pode fazer).
+func corpoValidoSeguro(chave, pf string) bool {
+	switch pf {
+	case "anonimo", "cliente", "sem-permissao":
+		return true
+	case "impersonado":
+		return chave != "POST /bling-proxy"
+	}
+	return false
+}
+
 func prodBase(t *testing.T) string {
 	b := strings.TrimRight(os.Getenv("PROD_BASE"), "/")
 	if b == "" {
@@ -174,7 +187,7 @@ func enviar(l linha, pf string, temParam bool, chave string) bool {
 	if chave == "POST /auth/sair" { // a matriz o chama de leitura, mas ele REVOGA a sessão: só quem o portão barra o envia
 		return pf == "anonimo" || pf == "cliente"
 	}
-	if _, ok := prodCorposValidos[chave]; ok && l.g != gPublica && pf != "anonimo" && pf != "cliente" && pf != "impersonado" && pf != "sem-permissao" {
+	if _, ok := prodCorposValidos[chave]; ok && l.g != gPublica && !corpoValidoSeguro(chave, pf) {
 		return false // bling-proxy etc.: chamariam o serviço externo de verdade
 	}
 	switch {
@@ -298,7 +311,7 @@ func TestProdMatriz(t *testing.T) {
 				if metodo != "GET" && metodo != "HEAD" {
 					ct = "application/json"
 					corpo = corpoMalformado // o portão vem antes do corpo: 400 = passou, nenhum handler grava
-					if cv, ok := prodCorposValidos[j.chave]; ok && (j.pf == "anonimo" || j.pf == "cliente" || j.pf == "impersonado" || j.pf == "sem-permissao") {
+					if cv, ok := prodCorposValidos[j.chave]; ok && corpoValidoSeguro(j.chave, j.pf) {
 						corpo = cv // o portão fino está DENTRO do handler e depende do corpo; nomes zz-prova, e só barrados enviam
 					}
 					lc.corpo = corpo
@@ -576,7 +589,7 @@ func TestProdIsolamentoContas(t *testing.T) {
 		t.Fatal("as duas contas de prova apontam para a mesma conta")
 	}
 	var linhas []string
-	cobertas, totalRotas := 0, 0
+	cobertas, totalRotas, viuA, viuB := 0, 0, 0, 0
 	for _, chave := range rotasDoRoteador(t) {
 		metodo, rota, _ := strings.Cut(chave, " ")
 		l := matriz[chave]
@@ -597,6 +610,17 @@ func TestProdIsolamentoContas(t *testing.T) {
 				contasNoJSON(v, vistos[pf], rota == "/redes/contas")
 			}
 		}
+		for _, pf := range []string{"conta-a", "conta-b", "conta-0"} {
+			if st[pf] != st["superadmin"] {
+				t.Errorf("%s: %s respondeu %d e o superadmin %d (token vencido ou rota barrada: o isolamento não foi exercido)", rota, pf, st[pf], st["superadmin"])
+			}
+		}
+		if vistos["conta-a"][A] {
+			viuA++
+		}
+		if vistos["conta-b"][B] {
+			viuB++
+		}
 		for id := range vistos["conta-a"] {
 			if id != A {
 				t.Errorf("S1? %s: conta-a (só %s) viu a conta %s", rota, A, id)
@@ -616,9 +640,12 @@ func TestProdIsolamentoContas(t *testing.T) {
 		linhas = append(linhas, fmt.Sprintf("%s,super=%d(%d contas),a=%d(%d),b=%d(%d),zero=%d(%d)", rota, st["superadmin"], len(vistos["superadmin"]), st["conta-a"], len(vistos["conta-a"]), st["conta-b"], len(vistos["conta-b"]), st["conta-0"], len(vistos["conta-0"])))
 	}
 	sort.Strings(linhas)
-	resumo := fmt.Sprintf("rotas GET de listagem varridas=%d; em que o superadmin vê 2 contas ou mais (controle positivo: nelas o isolamento foi de fato exercido)=%d\n", totalRotas, cobertas)
+	resumo := fmt.Sprintf("controle positivo: conta-a viu a própria conta em %d rotas, conta-b em %d\n", viuA, viuB) + fmt.Sprintf("rotas GET de listagem varridas=%d; em que o superadmin vê 2 contas ou mais (controle positivo: nelas o isolamento foi de fato exercido)=%d\n", totalRotas, cobertas)
 	_ = os.WriteFile(filepath.Join(out, "cruzado.txt"), []byte(resumo+"rota,super,conta-a,conta-b,conta-0\n"+strings.Join(linhas, "\n")+"\n"), 0o644)
 	t.Log(resumo)
+	if viuA < 3 || viuB < 3 {
+		t.Errorf("controle positivo: conta-a viu a própria conta em %d rotas e conta-b em %d (esperava ao menos 3 cada)", viuA, viuB)
+	}
 	if cobertas < 5 {
 		t.Errorf("só %d rotas carregam as duas contas no superadmin: o teste de isolamento não prova o suficiente", cobertas)
 	}

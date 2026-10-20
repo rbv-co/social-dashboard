@@ -6,6 +6,9 @@
 -- frota_fechar_posse_orfa...): quem tivesse a senha de QUALQUER papel de robô as executaria com os poderes do dono. Os papéis de robô
 -- foram desenhados para não poder isso (papel-robo-*.sql: "nenhuma função além das listadas").
 --
+-- ATENÇÃO: sobram funções invoker com PUBLIC; as travas dos papel-robo-*.sql/papel-pdv.sql ("PUBLIC sem EXECUTE em nenhuma função")
+-- seguem recusando reaplicar um papel até elas serem tratadas (GRANT explícito ao robô que as usa e revoke de PUBLIC).
+--
 -- Não mexe em ALTER DEFAULT PRIVILEGES: função nova do api_app continua nascendo com PUBLIC (mudar isso muda o contrato de
 -- `api conferir`, que espera EXECUTE do `authenticated` nas RPCs); quem criar função definer nova reaplica este arquivo.
 --
