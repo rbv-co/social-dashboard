@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -23,7 +24,10 @@ type LeitorDoBling interface {
 //
 // NUNCA RECUSA: o pedido da cliente já está guardado e cai na fila de gente quando o Bling responde e a compra não está
 // lá. Bling que NÃO responde direito (timeout, 429, 5xx, resposta ilegível) não é "compra não achada": a resposta é 503
-// "tente de novo" (o pedido segue pendente e repetir é seguro) e a falha vai para o log (`garantia_bling_falha`). NADA DO BLING VOLTA PARA A PÁGINA: a resposta diz "aprovado" ou "pendente".
+// "tente de novo" (o pedido segue pendente e repetir é seguro) e a falha vai para o log (`garantia_bling_falha`). Erro nosso que repetir não resolve
+// (4xx do Bling que não seja 408/429: token recusado, pedido malformado) vai para o log como ERRO e a resposta é pendente: a fila de
+// gente decide, a cliente não fica num "tente de novo" sem fim. NADA DO BLING VOLTA PARA A PÁGINA: a resposta diz "aprovado", "pendente"
+// ou, com o Bling fora, 503 `falhou`.
 // Três entradas: "É presente?" (`presente_de`), cliente logada (`token`) e o caminho antigo, sem token (a página no ar
 // de hoje depende dele; é tratado como era, inclusive na resposta quando a aprovação não passa).
 func (s *Servico) Garantia(b LeitorDoBling) Edge {
@@ -188,6 +192,10 @@ func (g *garantia) decidir(aberto map[string]any, conferencia any, senao any) an
 // para tentar de novo (o pedido já está guardado como pendente, e repetir é seguro: pendente não tranca a etiqueta).
 func (g *garantia) decidirPeloBling(aberto map[string]any, cpf string, senao any) (any, error) {
 	a, err := g.procurarACompra(onlyDigits(cpf), fmt.Sprint(valorOu(aberto["sku"], "")))
+	var eb *erroDoBling
+	if errors.As(err, &eb) && eb.permanente {
+		return pendente(aberto), nil // repetir não resolve: fila de gente (o log já saiu como erro)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -211,8 +219,9 @@ func (g *garantia) blingFora(w http.ResponseWriter, err error) bool {
 // erroDoBling: o Bling (pelo Core) não deu uma resposta que sirva. `classe` vai para o log (timeout, 429, 5xx, 4xx,
 // resposta_invalida); só o 404 é resposta definitiva ("não existe") e não chega aqui.
 type erroDoBling struct {
-	classe string
-	status int
+	classe     string
+	status     int
+	permanente bool // 4xx que repetir não resolve (token recusado, pedido malformado)
 }
 
 func (e *erroDoBling) Error() string { return fmt.Sprintf("bling: %s (status %d)", e.classe, e.status) }
@@ -240,7 +249,15 @@ type compra struct {
 func (g *garantia) lerBling(caminho string, query map[string]any) (map[string]any, error) {
 	r, err := g.b.Bling(g.ctx, core.PedidoBling{Metodo: http.MethodGet, Caminho: caminho, Query: query})
 	if err != nil || r == nil {
-		return nil, g.falhou(caminho, &erroDoBling{classe: "timeout"})
+		classe := "erro_core" // sem token, resposta grande demais, URL inválida: nosso, não é Bling lento
+		var sr *core.SemResposta
+		switch {
+		case errors.Is(err, context.Canceled):
+			classe = "cancelado" // a cliente fechou a página
+		case errors.As(err, &sr), errors.Is(err, context.DeadlineExceeded):
+			classe = "timeout"
+		}
+		return nil, g.falhou(caminho, &erroDoBling{classe: classe})
 	}
 	switch {
 	case r.Status == http.StatusNotFound:
@@ -249,8 +266,10 @@ func (g *garantia) lerBling(caminho string, query map[string]any) (map[string]an
 		return nil, g.falhou(caminho, &erroDoBling{classe: "429", status: r.Status})
 	case r.Status >= 500:
 		return nil, g.falhou(caminho, &erroDoBling{classe: "5xx", status: r.Status})
+	case r.Status == http.StatusRequestTimeout:
+		return nil, g.falhou(caminho, &erroDoBling{classe: "timeout", status: r.Status})
 	case r.Status < 200 || r.Status > 299:
-		return nil, g.falhou(caminho, &erroDoBling{classe: "4xx", status: r.Status})
+		return nil, g.falhou(caminho, &erroDoBling{classe: "4xx", status: r.Status, permanente: true})
 	}
 	var m map[string]any
 	dec := json.NewDecoder(bytes.NewReader(r.Corpo))
@@ -264,7 +283,11 @@ func (g *garantia) lerBling(caminho string, query map[string]any) (map[string]an
 // falhou registra a falha (classe contável: `evento=garantia_bling_falha`) sem o CPF: o caminho de /contatos não leva a
 // query, e o de pedido leva só o id do Bling.
 func (g *garantia) falhou(caminho string, e *erroDoBling) error {
-	slog.Warn("garantia: Bling não respondeu", "evento", "garantia_bling_falha", "classe", e.classe, "status", e.status, "caminho", caminho)
+	nivel := slog.LevelWarn
+	if e.permanente {
+		nivel = slog.LevelError
+	}
+	slog.Log(g.ctx, nivel, "garantia: Bling não respondeu", "evento", "garantia_bling_falha", "classe", e.classe, "status", e.status, "caminho", caminho)
 	return e
 }
 

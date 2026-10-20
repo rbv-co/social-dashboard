@@ -47,7 +47,7 @@ Uma transação, `lock_timeout` 5 s, sem CASCADE. Aborta (sem apagar nada) se `v
 ## 5. Reversão
 - **Só a etapa 1:** `1-revogar-reverter.sql` (devolve os GRANTs exatos de 20/10; provado no ensaio).
 - **A etapa 2:** `2-eliminar-reverter.sql` (recria o esquema vazio, idêntico ao de produção em 20/10, com dono `api_app` e SELECT do `copia`), depois os dados e as sequences:
-  `docker exec -i api-db pg_restore --data-only --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB" < <dump>` e, se quiser os GRANTs antigos, `1-revogar-reverter.sql`.
+  `ssh op 'docker exec -i api-db sh -c "pg_restore --data-only --single-transaction -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"" < /root/backups-api/<dump>'` (o dump fica na VPS; variáveis escapadas para o shell do CONTÊINER expandi-las) e, se quiser os GRANTs antigos, `1-revogar-reverter.sql`.
   Atenção: o `bling_tokens` restaurado é o de 20/10 e **não funciona** (o refresh é rotativo e quem renova é o Core); a restauração serve para recuperar o esquema, não para voltar a falar com o Bling por fora do Core.
 
 ## 6. O que fica fora (não faz parte do drop)

@@ -1,6 +1,6 @@
 -- Reverte a ETAPA 2: recria o ESQUEMA VAZIO das 3 tabelas (colunas, chaves, índice, FK, comentários e GRANTs da etapa 1
 -- já revogados NÃO voltam aqui: rode depois 1-revogar-reverter.sql se quiser os GRANTs antigos). Os DADOS voltam do backup:
---   docker exec -i api-db pg_restore --data-only --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB" < plano05-C-3-tabelas-<data>.dump
+--   docker exec -i api-db sh -c 'pg_restore --data-only --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < plano05-C-3-tabelas-<data>.dump
 -- (o dump é `pg_dump -Fc` só das 3 tabelas; o --data-only também reposiciona as sequences).
 -- Esquema copiado de `pg_dump -s` do api-db em 20/10/2026. `copia` precisa de SELECT para a cópia diária continuar completa.
 begin;

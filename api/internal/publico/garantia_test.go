@@ -151,7 +151,6 @@ func TestGarantiaBlingFalhandoPedeParaTentarDeNovo(t *testing.T) {
 		"429 no contato":    {func(b *falsoBling) { b.status = map[string]int{"/contatos": 429} }, 1},
 		"500 no pedido":     {func(b *falsoBling) { b.status = map[string]int{"/pedidos/vendas/777": 500} }, 3},
 		"503 na lista":      {func(b *falsoBling) { b.status = map[string]int{"/pedidos/vendas": 503} }, 2},
-		"401 do token":      {func(b *falsoBling) { b.status = map[string]int{"/contatos": 401} }, 1},
 		"resposta estranha": {func(b *falsoBling) { b.contatos = `isto não é json` }, 1},
 	}
 	for nome, c := range casos {
@@ -176,6 +175,22 @@ func TestGarantiaBlingFalhandoPedeParaTentarDeNovo(t *testing.T) {
 		st, r, o = m.edge(t, "vessel-registrar-garantia", registro("VBAAAA0002", cpfAna))
 		if st != 200 || o["estado"] != "aprovado" {
 			t.Errorf("%s: segunda tentativa = %d %s, esperava aprovado", nome, st, r)
+		}
+	}
+}
+
+// 4xx que repetir não resolve (token recusado, pedido malformado): ERRO no log e resposta PENDENTE (fila de gente), sem "tente de novo" sem fim.
+func TestGarantia4xxPermanenteVaiParaAFilaDeGente(t *testing.T) {
+	for _, st := range []int{400, 401, 403, 422} {
+		b := compraDeAna()
+		b.status = map[string]int{"/contatos": st}
+		m, _ := mundoDaGarantia(t, b)
+		code, r, o := m.edge(t, "vessel-registrar-garantia", registro("VBAAAA0002", cpfAna))
+		if code != 200 || o["estado"] != "pendente" || len(b.pedido) != 1 {
+			t.Errorf("status %d: %d %s (consultas %d), esperava 200 pendente após 1 consulta", st, code, r, len(b.pedido))
+		}
+		if m.um(t, `select count(*)::text from vessel_registros`) != "0" {
+			t.Errorf("status %d: aprovou sem a prova", st)
 		}
 	}
 }

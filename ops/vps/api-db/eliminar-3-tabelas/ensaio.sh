@@ -34,8 +34,10 @@ grant select (id, access_token) on bling_tokens to robo_selo, robo_pedidos_vesse
 SQLX
 acl() { adm -c "select c.relname, (select string_agg(x::text, ',' order by x::text) from unnest(c.relacl) x) from pg_class c where relnamespace = 'public'::regnamespace and relname in ('bling_tokens','estoque_do_site_estado','vessel_envios_ao_meta') order by 1" -c "select a.attname, a.attacl::text from pg_attribute a where attrelid = 'public.bling_tokens'::regclass and attacl is not null order by 1"; }
 antes="$(acl)"
-estrutura() { "${BIN}pg_dump" "$SERVIDOR/$NOME" -s --no-owner --no-privileges -t bling_tokens -t estoque_do_site_estado -t vessel_envios_ao_meta | grep -v '^\\\(un\)\?restrict'; }
-esq_antes="$(estrutura)"
+estrutura() { "${BIN}pg_dump" "$SERVIDOR/$NOME" -s --no-owner --no-privileges -t bling_tokens -t estoque_do_site_estado -t vessel_envios_ao_meta | grep -v '^\\\(un\)\?restrict\|^--'; }
+# o "antes" NÃO sai do próprio 2-eliminar-reverter.sql (seria circular): é o `pg_dump -s` REAL do api-db de 20/10/2026
+esq_antes="$(cat "$AQUI/esquema-producao-20261020.sql")"
+confere "esquema criado pelo reverter == esquema de produção (20/10)" "$(estrutura)" "$esq_antes"
 dump="$(mktemp)"; "${BIN}pg_dump" "$SERVIDOR/$NOME" -Fc -t bling_tokens -t estoque_do_site_estado -t vessel_envios_ao_meta > "$dump"
 
 # (1) etapa 1 tira o acesso; reverter devolve exatamente

@@ -210,7 +210,8 @@ export async function blingProdutos(token, maxPaginas = 20, estado = {}) {
   // CORE_LEITURA_CATALOGO=true lê o catálogo do espelho do core (ativos). Desligada: Bling, como sempre.
   return escolherFonte('CATALOGO', process.env, {
     bling: () => blingProdutosDoBling(token, maxPaginas, estado),
-    core: () => catalogoDoCore(clienteDoAmbiente(process.env)),
+    // Espelho do Core: não diz se está completo nem atrasado. Quem zera estoque por ausência não confia nele.
+    core: () => { estado.incompleto = true; return catalogoDoCore(clienteDoAmbiente(process.env)); },
   });
 }
 
@@ -221,7 +222,8 @@ async function blingProdutosDoBling(token, maxPaginas, estado = {}) {
     try { resp = await blingProxy(token, 'produtos', { pagina, limite: 100 }); }
     catch (e) { console.warn('  produtos pág ' + pagina + ' falhou (segue com o que tem):', e.message); estado.incompleto = true; break; }
     const d = resp.data;
-    if (!Array.isArray(d) || !d.length) break;
+    if (!Array.isArray(d)) { estado.incompleto = true; break; } // 2xx sem lista (ex.: corpo não-JSON do proxy): não é "fim da lista"
+    if (!d.length) break;
     for (const p of d) prod[String(p.id)] = { nome: (p.nome || '').slice(0, 60), codigo: p.codigo || '', preco: Number(p.preco) || 0 };
     if (d.length < 100) break;
     if (pagina === maxPaginas) estado.incompleto = true; // página cheia no teto: pode haver mais produtos
@@ -246,7 +248,12 @@ export async function blingSaldoFoco(token, prodMap, estado = {}) {
     let resp;
     try { resp = await blingProxy(token, 'estoques/saldos', params); }
     catch (e) { console.warn('  saldo lote ' + (i / 40 | 0) + ' falhou (segue):', e.message); estado.lotesComFalha = (estado.lotesComFalha || 0) + 1; continue; }
-    for (const row of (resp.data || [])) {
+    if (!Array.isArray(resp.data)) { // 2xx sem lista: o saldo desse lote NÃO foi lido
+      console.warn('  saldo lote ' + (i / 40 | 0) + ' veio sem lista (segue)');
+      estado.lotesComFalha = (estado.lotesComFalha || 0) + 1;
+      continue;
+    }
+    for (const row of resp.data) {
       const pid = String(row.produto?.id || '');
       for (const dep of (row.depositos || [])) {
         const did = String(dep.id);

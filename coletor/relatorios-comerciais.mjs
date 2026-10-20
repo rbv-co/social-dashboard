@@ -18,7 +18,7 @@ import {
   classificarItem, classificarItemDetalhado, categoriaDeEstoque, DEP_FOCO,
   blingDepositos,
 } from './lib/bling-comercial.mjs';
-import { linhasParaZerar, motivoParaNaoZerar } from './lib/estoque-parado.mjs';
+import { zerarOQueSumiu } from './lib/estoque-parado.mjs';
 
 // Preenchidos em main() por abrirRest(): REST do Supabase (rollback) ou pg com o papel robo_relatorios (REST_VIA_PG=1).
 let rest, REST, sb;
@@ -155,22 +155,6 @@ async function limparSobrasDoMes(mes, canalLojaId, carimbo) {
   if (apagadas.length) console.log(`      (${apagadas.length} linha(s) que deixaram de existir neste mês foram removidas)`);
 }
 
-// O que a rodada COMPLETA não viu com saldo > 0 neste depósito passa a valer 0 (nunca apaga a linha). Depois de gravar
-// as linhas vivas, como `limparSobrasDoMes`: se a rodada morrer no meio, o saldo fica velho (ruim), não zerado (pior).
-async function zerarOQueSumiu(depositoId, canal, vivas, leitura, produtos, carimbo) {
-  const motivo = motivoParaNaoZerar({
-    catalogoIncompleto: leitura.incompleto, lotesComFalha: leitura.lotesComFalha, produtos, linhasLidasNoDeposito: vivas.length,
-  });
-  if (motivo) { console.warn(`  ${canal}: NÃO zerei o que sumiu (${motivo})`); return; }
-  const antigas = await sbGetJson(`/gc_estoque_item?select=sku,saldo&deposito_id=eq.${depositoId}&saldo=neq.0&limit=20000`);
-  const zerar = linhasParaZerar(antigas, new Set(vivas.map((r) => r.sku)));
-  if (!zerar.length) return;
-  await upsert('gc_estoque_item', 'deposito_id,sku', zerar.map((l) => ({
-    deposito_id: Number(depositoId), sku: l.sku, saldo: 0, atualizado_em: carimbo,
-  })));
-  console.log(`    ${zerar.length} linha(s) que o Bling não lista mais com saldo foram zeradas`);
-}
-
 async function main() {
   rest = await abrirRest();   // banco fora: falha aqui, antes de qualquer escrita
   ({ REST, sb } = rest);
@@ -304,7 +288,12 @@ async function main() {
     });
     await upsert('gc_estoque_item', 'deposito_id,sku', rows);
     console.log(`  ${canal}: ${rows.length} SKUs com saldo`);
-    if (zerarParados) await zerarOQueSumiu(deposito_id, canal, rows, leitura, Object.keys(prodMap).length, carimboDoEstoque);
+    if (zerarParados) {
+      // falha aqui não pode impedir a gravação dos depósitos seguintes: o saldo velho (o de sempre) é o mal menor
+      try {
+        await zerarOQueSumiu({ depositoId: deposito_id, canal, vivas: rows, leitura, prodMap, carimbo: carimboDoEstoque, buscar: sbGetJson, gravar: upsert });
+      } catch (e) { console.warn(`  ${canal}: não consegui zerar o que sumiu (segue):`, e.message); }
+    }
   }
 
   // ── A VIGIA ───────────────────────────────────────────────────────────────
