@@ -433,6 +433,7 @@ func (t Tabela) regraTemSuasColunas(w http.ResponseWriter, cat *autz.Catalogo, e
 // RotaCriar: POST que lê o corpo C (struct de json.RawMessage), confere e grava em banco.ComUsuario.
 func RotaCriar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc {
 	declaradas := montar[C](cat, t)
+	anotar(t.Nome, func(d *Declaracao) { d.Criar = unir(d.Criar, declaradas) })
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := escopoOuErro(w, r)
 		if e == nil {
@@ -460,7 +461,8 @@ func RotaCriar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.Handle
 
 // RotaEditar: PATCH /…/{id} com o corpo C.
 func RotaEditar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc {
-	montar[C](cat, t)
+	cols := montar[C](cat, t)
+	anotar(t.Nome, func(d *Declaracao) { d.Editar = unir(d.Editar, cols) })
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := escopoOuErro(w, r)
 		if e == nil {
@@ -489,6 +491,7 @@ func RotaApagar(p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc 
 	if err := t.Validar(cat); err != nil {
 		panic(err)
 	}
+	anotar(t.Nome, func(d *Declaracao) { d.Apagar = true })
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := escopoOuErro(w, r)
 		if e == nil {

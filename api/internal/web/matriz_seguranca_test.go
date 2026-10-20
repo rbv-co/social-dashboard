@@ -56,7 +56,8 @@ type linha struct {
 }
 
 var matriz = map[string]linha{
-	// MCP da Frota: o OAuth e o /mcp (token 'mcp' no handler) são públicos; a tela de consentimento é de gestor.
+	// MCP da Central: o OAuth e o /mcp (token 'mcp' no handler) são públicos; a tela de consentimento é de qualquer conta
+	// do painel (SoPainel): o que o ChatGPT alcança depois é o que a permissão dela alcança, rota a rota.
 	"GET /.well-known/oauth-protected-resource":                      {gPublica, rwL},
 	"GET /.well-known/oauth-protected-resource/mcp":                  {gPublica, rwL},
 	"GET /.well-known/oauth-authorization-server":                    {gPublica, rwL},
@@ -64,8 +65,8 @@ var matriz = map[string]linha{
 	"GET /oauth/autorizar":                                           {gPublica, rwL},
 	"POST /oauth/token":                                              {gPublica, rwE},
 	"POST /mcp":                                                      {gPublica, rwE},
-	"GET /oauth/pedido":                                              {gModulo, rwL},
-	"POST /oauth/decidir":                                            {gModulo, rwE},
+	"GET /oauth/pedido":                                              {gSessao, rwL},
+	"POST /oauth/decidir":                                            {gSessao, rwE},
 	"DELETE /acessos/organizacoes/{id}":                              {gDominio, rwE},
 	"DELETE /acessos/pessoas/{id}":                                   {gDominio, rwE},
 	"GET /acessos/drive/marcas":                                      {gDominio, rwL},

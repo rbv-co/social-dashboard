@@ -14,26 +14,40 @@ import (
 	"time"
 )
 
-const instrucoes = `Ferramentas da Frota da RBV (carros da empresa). Valores em reais; datas em ISO 8601 com fuso ` +
-	`(ex.: 2026-10-20T14:00:00-03:00). Para agir sobre um carro, ache o id dele com listar_veiculos (pelo nome ou ` +
-	`placa). Antes de gravar, confirme com a pessoa os números que ela disse. Erro de regra volta com a frase do ` +
-	`sistema: repasse-a, não tente contornar.`
+const instrucoes = `A Central de Inteligência da RBV, com o acesso de quem ligou o ChatGPT: o que a pessoa não pode ` +
+	`na tela, não pode aqui (a recusa volta com a frase do sistema: repasse-a, não tente contornar). Para a Frota há ` +
+	`ferramentas próprias (listar_veiculos, pedir_carro etc.); para o resto, veja o mapa com catalogo e use ` +
+	`consultar, criar, editar, apagar e executar_rpc. Datas em ISO 8601 com fuso (ex.: 2026-10-20T14:00:00-03:00). ` +
+	`Antes de gravar, confirme com a pessoa o que ela disse; antes de apagar, peça confirmação explícita.`
 
 // ferramenta: rodar devolve o texto para o modelo e se é erro (isError do MCP).
 type ferramenta struct {
 	nome, titulo, descricao string
-	leitura                 bool
+	leitura, destrutiva     bool // destrutiva: altera ou apaga o que já existe (o ChatGPT pede confirmação)
 	esquema                 string
 	rodar                   func(c chamada, args json.RawMessage) (string, bool)
 }
 
+// tetoDaResposta: resposta maior que isto não cabe bem no contexto do modelo; ele refaz com filtro ou limite.
+const tetoDaResposta = 60_000
+
 var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// resultado: 2xx devolve o corpo como veio; o resto, a frase da rota ({"error","mensagem"}).
+// resultado: 2xx devolve o corpo sem os campos nulos (não informam nada e custam leitura ao modelo); o resto, a
+// frase da rota ({"error","mensagem"}).
 func resultado(status int, corpo []byte) (string, bool) {
 	if status >= 200 && status < 300 {
 		if len(corpo) == 0 {
 			return `{"ok":true}`, false
+		}
+		var v any
+		if json.Unmarshal(corpo, &v) == nil {
+			if b, err := json.Marshal(semNulos(v)); err == nil {
+				corpo = b
+			}
+		}
+		if len(corpo) > tetoDaResposta {
+			return fmt.Sprintf("A resposta tem %d KB, grande demais. Refaça com filtros ou limite menor.", len(corpo)/1000), true
 		}
 		return string(corpo), false
 	}
@@ -49,6 +63,24 @@ func resultado(status int, corpo []byte) (string, bool) {
 }
 
 func recusa(frase string) (string, bool) { return frase, true }
+
+func semNulos(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, e := range x {
+			if e == nil {
+				delete(x, k)
+			} else {
+				x[k] = semNulos(e)
+			}
+		}
+	case []any:
+		for i, e := range x {
+			x[i] = semNulos(e)
+		}
+	}
+	return v
+}
 
 // decodificar lê os argumentos no struct, recusando campo desconhecido (o modelo não inventa coluna).
 func decodificar(args json.RawMessage, dst any) error {
@@ -336,19 +368,32 @@ var camposDoVeiculo = []string{"nome", "marca", "ano", "cor", "combustivel", "ti
 	"situacao", "local_texto", "observacao", "seguro_seguradora", "seguro_apolice", "seguro_vence_em", "tag_pedagio",
 	"rastreador", "contato_nome", "contato_telefone", "contato_papel", "oficina_nome", "oficina_telefone"}
 
-var ferramentas = []ferramenta{
+var ferramentasDaFrota = []ferramenta{
 	{nome: "listar_veiculos", titulo: "Listar veículos", leitura: true,
-		descricao: "Lista os carros da frota com placa, nome, situação (ativo, em_manutencao, alienado, inativo), local, " +
-			"seguro e contatos. Use para achar o id de um carro pelo nome ou placa.",
-		esquema: `{"type":"object","properties":{},"additionalProperties":false}`,
-		rodar:   listar("/frota/veiculos", "nome")},
+		descricao: "Lista os carros da frota com placa, nome, situação de cadastro (ativo, em_manutencao, alienado, " +
+			"inativo), local, seguro, contatos e o estado de agora, com a mesma regra da tela: livre (ativo, sem viagem " +
+			"aberta, sem dono fixo nem posse, sem reserva aprovada valendo agora), fixo (com_quem: o dono fixo ou quem está " +
+			"com ele por posse), na_rua (viagem aberta), reservado (reservado_para, ate), oficina, parado, fora_da_frota. " +
+			`"Carros livres" = estado=livre; situacao=ativo inclui os fixos. Use busca (parte do nome ou da placa) para ` +
+			"achar o id de um carro.",
+		esquema: `{"type":"object","properties":{"busca":{"type":"string","description":"Parte do nome ou da placa (com ou sem hífen)."},` +
+			`"situacao":{"type":"string","enum":["ativo","em_manutencao","alienado","inativo"],"description":"Situação do cadastro (não diz se está livre)."},` +
+			`"estado":{"type":"string","enum":["livre","fixo","na_rua","reservado","oficina","parado","fora_da_frota"],"description":"Estado de agora; livre = pode pegar."},` +
+			`"limite":{"type":"integer","minimum":1,"maximum":200,"description":"Quantas linhas (padrão 100)."}},"additionalProperties":false}`,
+		rodar: listarVeiculos},
 	{nome: "listar_usos", titulo: "Listar retiradas e posses", leitura: true,
-		descricao: "Retiradas e posses dos carros (quem pegou, saída/volta, km). aberta=true mostra só os carros que estão fora agora.",
-		esquema: `{"type":"object","properties":{` + pVeiculo + `,"aberta":{"type":"boolean"},` +
+		descricao: "Retiradas e posses dos carros, das mais novas para as mais antigas. São duas coisas diferentes: " +
+			"tipo=viagem é uma retirada (alguém pegou o carro, tem km de saída e, ao voltar, km de volta); tipo=posse é o " +
+			"carro FIXO com uma pessoa (o responsável dele), que fica aberta enquanto ela for a responsável e não tem km " +
+			"nem devolução prevista: posse aberta antiga é normal, não é carro esquecido na rua. aberta=true mostra o que " +
+			`está em aberto; para "quais carros estão fora agora", use aberta=true com tipo=viagem.`,
+		esquema: `{"type":"object","properties":{` + pVeiculo + `,"aberta":{"type":"boolean"},"tipo":{"type":"string","enum":["viagem","posse"]},` +
 			`"saida_de":{"type":"string","format":"date"},"saida_ate":{"type":"string","format":"date"},` + pLimite + `},"additionalProperties":false}`,
-		rodar: listar("/frota/usos", "saida_em.desc", "veiculo_id", "aberta", "saida_de", "saida_ate")},
+		rodar: listar("/frota/usos", "saida_em.desc", "veiculo_id", "aberta", "tipo", "saida_de", "saida_ate")},
 	{nome: "listar_requisicoes", titulo: "Listar pedidos de carro", leitura: true,
-		descricao: "Pedidos (reservas) de carro, das retiradas previstas mais novas para as mais antigas.",
+		descricao: "Pedidos (reservas) de carro, das retiradas previstas mais novas para as mais antigas. uso_id preenchido " +
+			"= o carro foi retirado por esse pedido. Aprovado com retirada prevista já passada e sem uso_id = não foi " +
+			"retirado; o sistema não encerra sozinho: aponte isso e pergunte à pessoa se deve cancelar (decidir_requisicao).",
 		esquema: `{"type":"object","properties":{` + pVeiculo + `,"situacao":{"type":"string",` +
 			`"enum":["pendente","aprovada","recusada","cancelada","revogada","usada"]},` + pLimite + `},"additionalProperties":false}`,
 		rodar: listar("/frota/requisicoes", "retirada_prevista.desc", "veiculo_id", "situacao")},
@@ -391,13 +436,16 @@ var ferramentas = []ferramenta{
 			`"additionalProperties":false}`,
 		rodar: registrarAbastecimento},
 	{nome: "pedir_carro", titulo: "Pedir carro (criar requisição)",
-		descricao: "Cria um pedido de carro, que nasce pendente de aprovação.",
-		esquema: `{"type":"object","required":["veiculo_id","retirada_prevista"],"properties":{` + pVeiculo + `,` +
+		descricao: "Cria um pedido de carro, que nasce pendente de aprovação. ANTES de chamar, pergunte para quem é o " +
+			"carro (quem vai dirigir) se a pessoa não disse; nunca presuma que é quem está falando. O nome é conferido no " +
+			"cadastro de colaboradores (fica no nome dessa pessoa, que recebe o aviso da aprovação); para alguém de fora " +
+			"da empresa, mande de_fora=true com nome e sobrenome.",
+		esquema: `{"type":"object","required":["veiculo_id","retirada_prevista","pessoa_nome"],"properties":{` + pVeiculo + `,` +
 			`"retirada_prevista":{"type":"string","format":"date-time"},"devolucao_prevista":{"type":"string","format":"date-time"},` +
-			`"pessoa_nome":{"type":"string","description":"Quem vai usar."},"departamento":{"type":"string"},` +
+			`"pessoa_nome":{"type":"string","description":"Quem vai usar o carro (nome do colaborador). Obrigatório: pergunte."},` +
+			`"de_fora":{"type":"boolean","description":"true só se quem vai usar não é colaborador."},"departamento":{"type":"string"},` +
 			`"destino":{"type":"string"},"finalidade":{"type":"string"},"observacao":{"type":"string"}},"additionalProperties":false}`,
-		rodar: gravar(http.MethodPost, "/frota/requisicoes", false, []string{"veiculo_id", "retirada_prevista"},
-			[]string{"veiculo_id", "retirada_prevista", "devolucao_prevista", "pessoa_nome", "departamento", "destino", "finalidade", "observacao"})},
+		rodar: pedirCarro},
 	{nome: "decidir_requisicao", titulo: "Decidir pedido de carro",
 		descricao: "Aprova, recusa, cancela ou revoga um pedido de carro. Recusar, cancelar e revogar exigem motivo. " +
 			"Aprovar e recusar avisam no celular de quem pediu.",
@@ -428,3 +476,5 @@ var ferramentas = []ferramenta{
 			`"ativo":{"type":"boolean"}},"additionalProperties":false}`,
 		rodar: gravar(http.MethodPatch, "/frota/plano-revisao", true, nil, []string{"item", "a_cada_km", "observacao", "ordem", "ativo"})},
 }
+
+var ferramentas = slices.Concat(ferramentasDaFrota, ferramentasDaCentral)

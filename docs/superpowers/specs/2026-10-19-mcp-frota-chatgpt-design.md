@@ -1,4 +1,27 @@
-# MCP da Frota para o ChatGPT
+# MCP da Central para o ChatGPT (nasceu MCP da Frota)
+
+## 20/10: a Central inteira
+
+Decisão do dono (20/10): "ele deve ser autônomo a todo painel, desde que o usuário logado tenha permissão". Muda:
+
+- **Quem liga:** qualquer conta do painel (`SoPainel`: sessão de tipo `painel`, nunca "entrar como" nem cliente da
+  Vessel). O portão de gestor da Frota saiu: o que o ChatGPT alcança é o que a permissão da pessoa alcança, rota a rota,
+  na hora (tirar a permissão vale já).
+- **O que alcança:** `web.Rotas` monta as rotas de domínio por uma função só (`dominio`), que o painel e o MCP usam.
+  Rota nova de domínio entra no MCP sem mexer nele. Fora: contas, convites, senhas, "entrar como" e os proxies
+  externos (Meta, Bling, Acessos), que não são domínio.
+- **Ferramentas genéricas** (`internal/mcp/catalogo.go`): `catalogo` (áreas → tabelas → filtros, ordens, campos de
+  criar/editar, apagar; `area=rpc` lista as funções), `consultar`, `criar`, `editar`, `apagar`, `executar_rpc`.
+  O mapa sai do que a API já declara: a rota de cada tabela do contrato da tela (`contrato_front.json`, embutido), os
+  filtros/ordens/campos das declarações das rotas (`dados.Declaradas`, anotado em `Consulta.Handler`, `RotaCriar`,
+  `RotaEditar`, `RotaApagar`) e as RPCs da lista branca. A escrita segue a convenção de `banco-pela-api.js`.
+  `editar`, `apagar` e `executar_rpc` vão com `destructiveHint` (o ChatGPT pede confirmação).
+- **Frota** (as 13 ferramentas próprias continuam): `listar_veiculos` com `busca`, `situacao` e `estado` (livre,
+  fixo, na_rua, reservado, oficina, parado, fora_da_frota, a régua do selo da tela); `listar_usos` com `tipo`;
+  `pedir_carro` exige para quem é (cadastro de colaboradores; de fora só com `de_fora=true`).
+- Resposta sem campos nulos e com teto de 60 KB (o modelo refaz com filtro).
+
+O resto deste documento é o desenho de 19/10 (OAuth, sessão `mcp`, travas da Frota), que segue valendo.
 
 Data: 2026-10-19 · Estado: implementado na branch `worktree-mcp-frota-gpt`, merge só depois de D+1 da virada.
 

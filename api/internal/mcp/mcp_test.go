@@ -1,6 +1,6 @@
 package mcp_test
 
-// O MCP da Frota pela montagem REAL (web.Rotas): o OAuth de ponta a ponta, as portas que ele não pode abrir e as
+// O MCP da Central pela montagem REAL (web.Rotas): o OAuth de ponta a ponta, as portas que ele não pode abrir e as
 // ferramentas contra o esquema de produção (gatilhos e catálogo de autorização de verdade).
 
 import (
@@ -27,6 +27,7 @@ const (
 	idGestor  = "e1000000-0000-4000-a000-000000000001" // frota: ver, criar, editar, excluir
 	idMotor   = "e1000000-0000-4000-a000-000000000002" // frota: ver, editar (dirige, não administra)
 	idSuper   = "e1000000-0000-4000-a000-000000000003" // super pela ficha (para o "entrar como")
+	idCliente = "e1000000-0000-4000-a000-000000000004" // cliente da Vessel: sessão sem profile
 	veiculoV1 = "e1d00000-0000-4000-a000-000000000001"
 	reqR1     = "e1f00000-0000-4000-a000-000000000001" // pendente, pedida pelo motorista
 	verif     = "verificador-do-pkce-com-mais-de-quarenta-e-tres-caracteres-0123456789"
@@ -73,6 +74,12 @@ func novoMundo(t *testing.T) *mundo {
 		t.Fatal(err)
 	}
 	m.tok["impersonado"] = imp
+	if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, 'cliente@x.com')`, idCliente); err != nil {
+		t.Fatal(err)
+	}
+	if m.tok["cliente"], err = s.Criar(ctx, idCliente, "cliente", nil); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := p.Exec(ctx, `
 		insert into frota_veiculos (id, placa, nome) values ('`+veiculoV1+`', 'AAA1A11', 'Gol');
 		insert into frota_uso (veiculo_id, pessoa_nome, tipo, saida_em, volta_em, km_saida, km_volta)
@@ -166,8 +173,13 @@ func (m *mundo) trocar(t *testing.T, cliente, codigo, verificador string) *httpt
 // acesso: o fluxo inteiro como gestor; devolve cliente, token de acesso e refresh.
 func (m *mundo) acesso(t *testing.T) (string, string, string) {
 	t.Helper()
+	return m.acessoDe(t, "gestor")
+}
+
+func (m *mundo) acessoDe(t *testing.T, quem string) (string, string, string) {
+	t.Helper()
 	cliente := m.registrar(t)
-	st, codigo := m.consentir(t, "gestor", cliente)
+	st, codigo := m.consentir(t, quem, cliente)
 	if st != http.StatusOK {
 		t.Fatalf("consentir: %d %s", st, codigo)
 	}
@@ -228,9 +240,18 @@ func TestFluxoOAuthDePontaAPonta(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pode":true`) || campo(t, w.Body.Bytes(), "cliente") != "ChatGPT" {
 		t.Fatalf("pedido do gestor: %d %s", w.Code, w.Body)
 	}
+	// qualquer conta do painel liga (o que ela alcança é o que a permissão dela alcança); cliente da Vessel não
 	w = m.pedir(t, "GET", "/oauth/pedido?"+pedidoDe(cliente).Encode(), m.tok["motorista"], "", "")
-	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "Gestão") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pode":true`) {
 		t.Fatalf("pedido do motorista: %d %s", w.Code, w.Body)
+	}
+	w = m.pedir(t, "GET", "/oauth/pedido?"+pedidoDe(cliente).Encode(), m.tok["cliente"], "", "")
+	if w.Code != http.StatusForbidden { // o grupo do painel já barra; SoPainel é a segunda tranca
+		t.Fatalf("pedido do cliente: %d %s", w.Code, w.Body)
+	}
+	w = m.pedir(t, "GET", "/oauth/pedido?"+pedidoDe(cliente).Encode(), m.tok["impersonado"], "", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pode":false`) {
+		t.Fatalf("pedido no entrar como: %d %s", w.Code, w.Body)
 	}
 
 	_, codigo := m.consentir(t, "gestor", cliente)
@@ -250,7 +271,7 @@ func TestFluxoOAuthDePontaAPonta(t *testing.T) {
 	if w := m.pedir(t, "POST", "/mcp", acesso, "application/json", `{"jsonrpc":"2.0","method":"notifications/initialized"}`); w.Code != http.StatusAccepted {
 		t.Fatalf("notificação: %d", w.Code)
 	}
-	if _, v := m.rpc(t, acesso, "tools/list", `{}`); len(v["result"].(map[string]any)["tools"].([]any)) != 13 {
+	if _, v := m.rpc(t, acesso, "tools/list", `{}`); len(v["result"].(map[string]any)["tools"].([]any)) != 19 {
 		t.Fatalf("tools/list: %v", v)
 	}
 
@@ -297,8 +318,8 @@ func TestPortasQueOMCPNaoAbre(t *testing.T) {
 		!strings.Contains(w.Header().Get("Location"), "error=invalid_request") {
 		t.Fatalf("sem PKCE: %d %q", w.Code, w.Header().Get("Location"))
 	}
-	// motorista e "entrar como" não consentem; decidir sem sessão = 401
-	for _, quem := range []string{"motorista", "impersonado"} {
+	// cliente da Vessel e "entrar como" não consentem; decidir sem sessão = 401
+	for _, quem := range []string{"cliente", "impersonado"} {
 		if st, _ := m.consentir(t, quem, cliente); st != http.StatusForbidden {
 			t.Fatalf("%s consentindo deveria ser 403: %d", quem, st)
 		}
@@ -316,10 +337,13 @@ func TestPortasQueOMCPNaoAbre(t *testing.T) {
 	if st, _ := m.rpc(t, m.tok["gestor"], "ping", `{}`); st != 401 {
 		t.Fatalf("sessão de painel no /mcp deveria ser 401: %d", st)
 	}
-	// permissão tirada depois do consentimento vale na hora
-	m.q(t, `update profiles set permissions = '{"frota":["ver","editar"]}' where id = '`+idGestor+`' returning 'ok'`)
-	if st, _ := m.rpc(t, acesso, "ping", `{}`); st != http.StatusForbidden {
-		t.Fatalf("ex-gestor deveria ser 403: %d", st)
+	// permissão tirada depois do consentimento vale na hora: cada rota confere a dela a cada chamada
+	if txt, _ := m.ferramenta(t, acesso, "listar_veiculos", `{}`); !strings.Contains(txt, "AAA1A11") {
+		t.Fatalf("antes de tirar a permissão: %s", txt)
+	}
+	m.q(t, `update profiles set permissions = '{}', features = '{}' where id = '`+idGestor+`' returning 'ok'`)
+	if txt, _ := m.ferramenta(t, acesso, "listar_veiculos", `{}`); strings.Contains(txt, "AAA1A11") {
+		t.Fatalf("sem permissão ainda vê a frota: %s", txt)
 	}
 }
 

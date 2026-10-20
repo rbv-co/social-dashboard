@@ -181,7 +181,32 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 	av := &meta.AoVivo{Pool: p, Core: cli}
 	reserva := &frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}
 
-	// MCP da Frota (ChatGPT): OAuth 2.1 próprio e POST /mcp. Públicas, com limite por IP: o registro e o token se
+	// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
+	// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de
+	// banco.ComUsuario, RPC pelo registro (lista branca). Rota nova de domínio entra AQUI, nunca solta num grupo:
+	// é este mesmo conjunto que o painel (grupo de sessão, lá embaixo) e o MCP da Central montam.
+	dominio := func(r chi.Router) {
+		r.Post("/rpc/{nome}", rpcs.ServeHTTP)
+		redes.Montar(r, p)   // Plano 5.6
+		acesso.Montar(r, p)  // Plano 5.1
+		trafego.Montar(r, p) // Plano 5.7
+		// Plano 5.2: patrimônio e cadastros compartilhados (as 5 RPCs entram por FuncoesRPC).
+		patrimonio.Montar(r, p)
+		// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
+		fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
+		conteudo.Montar(r, p)     // Plano 5.9
+		acessos.Montar(r, p)      // Plano 5.4: colaboradores e acessos (cadastro)
+		vessel.Montar(r, p)       // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
+		vendas.Montar(r, p)       // Plano 5.5: Comercial (Bling e Shopify)
+		atendimentos.Montar(r, p) // Plano 12: as 7 leituras de Atendimentos, Base de Leads e Abandono (as 62 RPCs vão por FuncoesRPC)
+		frota.Montar(r, p)        // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
+		// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
+		if err := paineis.Montar(r, p, autz.Producao); err != nil {
+			panic(err) // declaração errada: a API não sobe
+		}
+	}
+
+	// MCP da Central (ChatGPT): OAuth 2.1 próprio e POST /mcp. Públicas, com limite por IP: o registro e o token se
 	// defendem pelo PKCE e pelos hosts de retorno; /mcp exige o token de tipo 'mcp' lá dentro. Sem API_URL_PUBLICA
 	// (o issuer) respondem 404. Desenho: docs/superpowers/specs/2026-10-19-mcp-frota-chatgpt-design.md.
 	oa := &mcp.OAuth{Pool: p, Sessoes: s, Emissor: cfg.APIURLPublica, Front: cfg.EnderecoPadrao}
@@ -193,7 +218,8 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.With(auth.LimitarPorIP(10, time.Hour), auth.LimitarGlobal(200, time.Hour)).Post("/oauth/registrar", oa.Registrar)
 		r.Get("/oauth/autorizar", oa.Autorizar)
 		r.With(comPrazo(30*time.Second)).Post("/oauth/token", oa.Token)
-		r.With(comPrazo(PrazoMCP)).Post("/mcp", mcp.NovoServidor(p, s, cfg.APIURLPublica, reserva).ServeHTTP)
+		r.With(comPrazo(PrazoMCP)).Post("/mcp", mcp.NovoServidor(p, s, cfg.APIURLPublica, mcp.Dominio{
+			Montar: dominio, Avisar: reserva, RPCs: FuncoesRPC, Contrato: contratoDaTela}).ServeHTTP)
 	})
 
 	r.Group(func(r chi.Router) {
@@ -210,9 +236,9 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		// Quem entrou como outra pessoa não dispara o aviso (push em nome do aprovador): dados.SoSessaoPropria.
 		r.With(auth.ExigirPermissao("frota.aprovar", "ver"), dados.SoSessaoPropria(dados.FraseEntrarComo)).Post("/avisar-decisao-de-reserva",
 			reserva.ServeHTTP)
-		// MCP da Frota: a tela de consentimento. Só gestor da Frota (403 com a frase para a tela).
-		r.With(mcp.SoGestor, comEmissor(cfg.APIURLPublica)).Get("/oauth/pedido", oa.Pedido)
-		r.With(mcp.SoGestor, dados.SoSessaoPropria(dados.FraseEntrarComo), comEmissor(cfg.APIURLPublica)).Post("/oauth/decidir", oa.Decidir)
+		// MCP da Central: a tela de consentimento. Conta do painel (403 com a frase para a tela).
+		r.With(mcp.SoPainel, comEmissor(cfg.APIURLPublica)).Get("/oauth/pedido", oa.Pedido)
+		r.With(mcp.SoPainel, dados.SoSessaoPropria(dados.FraseEntrarComo), comEmissor(cfg.APIURLPublica)).Post("/oauth/decidir", oa.Decidir)
 
 		// Plano 5.7: proxies de IA (chave em ANTHROPIC_API_KEY_TRAFEGO) e de mapa (Nominatim). Portões = os das edges.
 		// No grupo de SESSÃO: o prazo do grupo de domínio (30 s) cortaria a IA.
@@ -249,30 +275,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			arq.Montar(r)
 		})
 
-		// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
-		// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de
-		// banco.ComUsuario, RPC pelo registro (lista branca). Prazo (PrazoDominio) e escopo vêm do grupo:
-		// rota nova de domínio entra AQUI, nunca solta no grupo de cima. Os sub-planos 5.1+ acrescentam aqui.
+		// Plano 5: rotas de DOMÍNIO (ver dominio, acima). Prazo (PrazoDominio) e escopo vêm do grupo.
 		r.Group(func(r chi.Router) {
 			r.Use(comPrazo(PrazoDominio), autz.ComEscopo(p))
-			r.Post("/rpc/{nome}", rpcs.ServeHTTP)
-			redes.Montar(r, p)   // Plano 5.6
-			acesso.Montar(r, p)  // Plano 5.1
-			trafego.Montar(r, p) // Plano 5.7
-			// Plano 5.2: patrimônio e cadastros compartilhados (as 5 RPCs entram por FuncoesRPC).
-			patrimonio.Montar(r, p)
-			// Plano 5.8: Fábrica (leituras, 4 edges, rotas de robô). O despacho ao GitHub (15 s) cabe nos 30 s do grupo.
-			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
-			conteudo.Montar(r, p)     // Plano 5.9
-			acessos.Montar(r, p)      // Plano 5.4: colaboradores e acessos (cadastro)
-			vessel.Montar(r, p)       // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
-			vendas.Montar(r, p)       // Plano 5.5: Comercial (Bling e Shopify)
-			atendimentos.Montar(r, p) // Plano 12: as 7 leituras de Atendimentos, Base de Leads e Abandono (as 62 RPCs vão por FuncoesRPC)
-			frota.Montar(r, p)        // Plano 5.3: veículos, usos, reservas, checklists, manutenções (as 2 RPCs entram por FuncoesRPC)
-			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
-			if err := paineis.Montar(r, p, autz.Producao); err != nil {
-				panic(err) // declaração errada: a API não sobe
-			}
+			dominio(r)
 		})
 	})
 	return r

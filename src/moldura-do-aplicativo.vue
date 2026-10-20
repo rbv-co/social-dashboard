@@ -291,7 +291,7 @@ const route = useRoute()
 const menuAberto = ref(false)
 const naTelaLogin = computed(() => route.name === 'login')
 const naTelaInicio = computed(() => route.name === 'inicio')
-// Quem chega do ChatGPT para ligar a Frota veio decidir uma coisa só: o convite de push não cobre essa decisão.
+// Quem chega do ChatGPT para ligar a Central veio decidir uma coisa só: o convite de push não cobre essa decisão.
 const naTelaDeConsentimento = computed(() => route.name === 'oauth-consentimento')
 // Fundo animado some em telas densas onde vira ruído visual (admin).
 /* O fundo animado (7 ícones, 3 orbes, 3 anéis) só existe onde alguém OLHA a

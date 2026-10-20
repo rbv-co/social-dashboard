@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -331,6 +332,13 @@ func (c Consulta) Handler(b Consultor, cat *autz.Catalogo) http.HandlerFunc {
 		panic(err)
 	}
 	sombra := c.tabelasDaSombra(amb)
+	anotar(c.Tabela, func(d *Declaracao) {
+		d.Ler = true
+		for _, f := range c.Filtros {
+			d.Filtros[f.Param] = f.Tipo
+		}
+		d.Ordens = unir(d.Ordens, slices.Collect(maps.Keys(c.Ordens)))
+	})
 	return func(w http.ResponseWriter, r *http.Request) {
 		q, ok := LerQuery(w, r)
 		if !ok {

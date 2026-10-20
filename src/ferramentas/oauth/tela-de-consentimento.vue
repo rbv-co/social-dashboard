@@ -1,21 +1,20 @@
 <template>
   <div class="tela-consentimento">
     <section class="card-base cs-caixa">
-      <h1 class="cs-titulo">Ligar à Frota</h1>
+      <h1 class="cs-titulo">Ligar à Central</h1>
 
       <p v-if="estado === 'carregando'" class="cs-texto">Conferindo o pedido…</p>
 
       <template v-else-if="estado === 'pedido'">
-        <p class="cs-recado"><strong>{{ cliente }}</strong> quer usar a Frota em seu nome.</p>
+        <p class="cs-recado"><strong>{{ cliente }}</strong> quer usar a Central em seu nome.</p>
         <h2 class="cs-etiqueta">O que ele vai poder fazer</h2>
         <ul class="cs-lista">
-          <li>Ver carros, retiradas, pedidos, abastecimentos e revisões.</li>
-          <li>Registrar abastecimento e lançar manutenção.</li>
-          <li>Pedir carro e aprovar, recusar, cancelar ou revogar pedidos.</li>
-          <li>Editar dados do carro e o plano de revisão.</li>
+          <li>Ver o que você vê na Central, em todas as áreas que a sua conta abre.</li>
+          <li>Criar, editar e apagar onde a sua conta pode, nem um pouco além.</li>
+          <li>Na Frota: pedir carro, decidir pedidos, abastecimento e manutenção.</li>
         </ul>
-        <p class="cs-texto">Ele não apaga nada, não mexe em checklist nem cadastra carro. Tudo o que fizer fica no seu nome,
-          e o ChatGPT pede sua confirmação antes de gravar.</p>
+        <p class="cs-texto">Tudo o que ele fizer fica no seu nome. O ChatGPT pede sua confirmação antes de alterar ou
+          apagar. Se a sua permissão mudar, vale na hora também para ele.</p>
         <p v-if="!pode" class="cs-aviso">{{ mensagem }}</p>
         <div class="cs-acoes">
           <button class="btn" :disabled="enviando" @click="decidir(false)">Negar</button>

@@ -245,6 +245,8 @@ var soSessao = map[string]bool{
 	"GET /arquivos/{bucket}": true, "GET /arquivos/{bucket}/*": true, "PUT /arquivos/{bucket}/*": true,
 	"DELETE /arquivos/{bucket}": true, "POST /arquivos/{bucket}/copiar": true, "POST /arquivos/{bucket}/assinar": true,
 	"POST /auth/sair": true, "GET /auth/eu": true, "GET /eu/canais": true,
+	// MCP da Central: qualquer conta do painel liga o ChatGPT (SoPainel); a permissão vale depois, rota a rota.
+	"GET /oauth/pedido": true, "POST /oauth/decidir": true,
 	// Plano 5.0: a conta de quem está logado; invite-user e entrar-como têm o portão das edges
 	// DENTRO do handler (400 com a frase da edge: TestContaPelaMontagemReal) e /rpc/{nome} só
 	// responde para nome registrado, cada um com o seu portão (sem registro: 404).

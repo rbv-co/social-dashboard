@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
 )
 
 const (
@@ -28,7 +29,7 @@ const (
 )
 
 // hostsDeRetorno: para onde um código pode voltar. O nome do cliente é escolhido por quem se registra (qualquer
-// um), então ESTA lista é o que impede um site qualquer de pedir o consentimento de um gestor e levar o código.
+// um), então ESTA lista é o que impede um site qualquer de pedir o consentimento de alguém e levar o código.
 // ponytail: lista fixa; vira variável de ambiente quando outro cliente (Claude, por exemplo) precisar entrar.
 var hostsDeRetorno = []string{"chatgpt.com", "chat.openai.com"}
 
@@ -39,12 +40,6 @@ type OAuth struct {
 	Sessoes *auth.Store
 	Emissor string
 	Front   string
-}
-
-// GestorDaFrota é quem vê a aba Gestão da tela (src/ferramentas/frota/areas-da-frota.js: `frota` com criar ou
-// excluir). Motorista tem is_frota_admin() mas não passa: a decisão do dono foi "só gestores".
-func GestorDaFrota(a *auth.Ator) bool {
-	return a.Pode("frota", "criar") || a.Pode("frota", "excluir")
 }
 
 func hashDe(t string) string {
@@ -245,21 +240,23 @@ func (o *OAuth) Autorizar(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// fraseSoGestor: a recusa que a tela de consentimento mostra.
-const fraseSoGestor = "Só quem administra a Frota (aba Gestão) pode ligar o ChatGPT a ela."
+// fraseSoPainel: a recusa que a tela de consentimento mostra a quem não é conta do painel.
+const fraseSoPainel = "Só contas da Central podem ligar o ChatGPT a ela."
 
-// SoGestor vai DEPOIS de auth.Exigir nas rotas da tela de consentimento.
-func SoGestor(next http.Handler) http.Handler {
+// SoPainel vai DEPOIS de auth.Exigir nas rotas da tela de consentimento. Qualquer conta do painel liga o ChatGPT
+// (decisão do dono, 20/10: "autônomo a todo painel, desde que o usuário tenha permissão"); o que ela alcança lá
+// dentro é o que a permissão dela alcança na tela. Cliente da Vessel não: o /mcp age como sessão de painel.
+func SoPainel(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !GestorDaFrota(auth.AtorDoContexto(r.Context())) {
-			responderJSON(w, http.StatusForbidden, map[string]string{"error": "sem_permissao", "mensagem": fraseSoGestor})
+		if a := auth.AtorDoContexto(r.Context()); a == nil || a.Tipo != "painel" {
+			responderJSON(w, http.StatusForbidden, map[string]string{"error": "sem_permissao", "mensagem": fraseSoPainel})
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// Pedido: GET /oauth/pedido (sessão do painel, gestor). A tela de consentimento pergunta quem está pedindo ANTES de
+// Pedido: GET /oauth/pedido (sessão do painel). A tela de consentimento pergunta quem está pedindo ANTES de
 // mostrar os botões; pode=false na sessão de "entrar como", que lê mas não consente.
 func (o *OAuth) Pedido(w http.ResponseWriter, r *http.Request) {
 	nome, err := o.conferir(r, pedidoDaQuery(r.URL.Query()))
@@ -268,7 +265,7 @@ func (o *OAuth) Pedido(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := map[string]any{"cliente": nome, "pode": true}
 	if auth.AtorDoContexto(r.Context()).ImpersonadorID != nil {
-		resp["pode"], resp["mensagem"] = false, fraseSoGestor
+		resp["pode"], resp["mensagem"] = false, dados.FraseEntrarComo
 	}
 	responderJSON(w, http.StatusOK, resp)
 }
@@ -291,10 +288,10 @@ func recusou(w http.ResponseWriter, err error) bool {
 	return true
 }
 
-// Decidir: POST /oauth/decidir (sessão própria do painel, gestor). Permitir grava o código; negar devolve access_denied. A resposta
+// Decidir: POST /oauth/decidir (sessão própria do painel). Permitir grava o código; negar devolve access_denied. A resposta
 // traz o endereço de volta ao cliente, já conferido: a tela só navega para ele.
 func (o *OAuth) Decidir(w http.ResponseWriter, r *http.Request) {
-	a := auth.AtorDoContexto(r.Context()) // gestor e sessão própria: a rota já exigiu (SoGestor, dados.SoSessaoPropria)
+	a := auth.AtorDoContexto(r.Context()) // painel e sessão própria: a rota já exigiu (SoPainel, dados.SoSessaoPropria)
 	var p pedido
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&p) != nil {
 		responderJSON(w, http.StatusBadRequest, map[string]string{"error": "pedido_invalido", "mensagem": "Corpo inválido."})

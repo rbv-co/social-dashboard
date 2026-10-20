@@ -16,7 +16,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
-	"github.com/rbv-co/social-dashboard/api/internal/frota"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 )
 
 // prazoDaFerramenta: o mesmo PrazoDominio do grupo de domínio de web.Rotas.
@@ -27,22 +27,36 @@ var versoes = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 // Servidor é o POST /mcp: Streamable HTTP SEM estado (cada POST é uma mensagem JSON-RPC e a resposta é JSON; sem
 // SSE nem Mcp-Session-Id), que é o que o ChatGPT usa para ferramentas.
 type Servidor struct {
-	Pool    *pgxpool.Pool
-	Sessoes *auth.Store
-	Emissor string
-	interno http.Handler
+	Pool     *pgxpool.Pool
+	Sessoes  *auth.Store
+	Emissor  string
+	interno  http.Handler
+	catalogo *catalogo
 }
 
-// NovoServidor monta, por dentro, as MESMAS rotas da Frota que a tela usa, atrás do mesmo autz.ComEscopo: cada
-// ferramenta é uma requisição a elas, com a autorização do catálogo, os gatilhos e as frases de erro de sempre.
-// avisar é o handler de POST /avisar-decisao-de-reserva (frota.Reserva), com o portão que web.Rotas lhe põe.
-func NovoServidor(p *pgxpool.Pool, s *auth.Store, emissor string, avisar http.Handler) *Servidor {
+// Dominio: o que o MCP monta por dentro. Montar põe as MESMAS rotas de domínio do painel (web.Rotas) e Avisar é o
+// handler de POST /avisar-decisao-de-reserva (frota.Reserva); RPCs e Contrato descrevem as tabelas e funções ao modelo.
+type Dominio struct {
+	Montar   func(chi.Router)
+	Avisar   http.Handler
+	RPCs     []rpc.Funcao
+	Contrato []byte // contrato_front.json: tabela → rota, como a tela
+}
+
+// NovoServidor monta, por dentro, as rotas de domínio do painel atrás do mesmo autz.ComEscopo: cada ferramenta é
+// uma requisição a elas, com a autorização do catálogo, os gatilhos e as frases de erro de sempre. Rota nova de
+// domínio entra sozinha, e quem não pode na tela não pode aqui.
+func NovoServidor(p *pgxpool.Pool, s *auth.Store, emissor string, d Dominio) *Servidor {
 	r := chi.NewRouter()
 	r.Use(autz.ComEscopo(p))
-	frota.Montar(r, p)
+	d.Montar(r)
 	r.With(auth.ExigirPermissao("frota.aprovar", "ver"), dados.SoSessaoPropria(dados.FraseEntrarComo)).
-		Post("/avisar-decisao-de-reserva", avisar.ServeHTTP)
-	return &Servidor{Pool: p, Sessoes: s, Emissor: emissor, interno: r}
+		Post("/avisar-decisao-de-reserva", d.Avisar.ServeHTTP)
+	cat, err := montarCatalogo(r, d.Contrato, d.RPCs)
+	if err != nil {
+		panic(err) // contrato ilegível: a API não sobe
+	}
+	return &Servidor{Pool: p, Sessoes: s, Emissor: emissor, interno: r, catalogo: cat}
 }
 
 type mensagem struct {
@@ -84,17 +98,13 @@ func (s *Servidor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Dentro desta porta a pessoa age como no painel (o Ator de tipo 'mcp' não passaria em Pode), e só nas rotas
-	// da Frota montadas em NovoServidor. A sessão 'mcp' nunca é de "entrar como" (constraint no banco).
+	// de domínio montadas em NovoServidor: cada uma confere a permissão dela, na hora (tirar acesso vale já). A sessão
+	// 'mcp' nunca é de "entrar como" (constraint no banco) e só nasce do consentimento de conta do painel (SoPainel).
 	painel := *se
 	painel.Tipo = "painel"
 	a, err := auth.CarregarAtor(r.Context(), s.Pool, &painel)
 	if err != nil {
 		responderJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro_interno"})
-		return
-	}
-	if !GestorDaFrota(a) {
-		// permissão tirada depois do consentimento: vale na hora
-		responderJSON(w, http.StatusForbidden, map[string]string{"error": "sem_permissao", "mensagem": fraseSoGestor})
 		return
 	}
 	var m mensagem
@@ -127,7 +137,7 @@ func (s *Servidor) responder(ctx context.Context, m mensagem) (any, *erroRPC) {
 			v = p.Versao
 		}
 		return map[string]any{"protocolVersion": v, "capabilities": map[string]any{"tools": map[string]any{}},
-			"serverInfo":   map[string]string{"name": "frota-rbv", "title": "Frota RBV", "version": "1"},
+			"serverInfo":   map[string]string{"name": "central-rbv", "title": "Central RBV", "version": "2"},
 			"instructions": instrucoes}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -136,7 +146,7 @@ func (s *Servidor) responder(ctx context.Context, m mensagem) (any, *erroRPC) {
 		for i, f := range ferramentas {
 			lista[i] = map[string]any{"name": f.nome, "title": f.titulo, "description": f.descricao,
 				"inputSchema": json.RawMessage(f.esquema),
-				"annotations": map[string]bool{"readOnlyHint": f.leitura, "destructiveHint": false, "openWorldHint": false}}
+				"annotations": map[string]bool{"readOnlyHint": f.leitura, "destructiveHint": f.destrutiva, "openWorldHint": false}}
 		}
 		return map[string]any{"tools": lista}, nil
 	case "tools/call":

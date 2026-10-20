@@ -48,7 +48,7 @@ const rotasSemMeta = [
   { path: '/fabrica-estudio/:id', name: 'fabrica-campanha', component: () => import('./ferramentas/meta-ads/tela-de-fabrica-estudio.vue'), props: true },
   { path: '/gestao-comercial', name: 'gestao-comercial', component: () => import('./ferramentas/gestao-comercial/tela-de-gestao-comercial.vue') },
   { path: '/login', name: 'login', component: () => import('./ferramentas/login/tela-de-login.vue') },
-  // O ChatGPT manda a pessoa para cá ao ligar o MCP da Frota (api/internal/mcp).
+  // O ChatGPT manda a pessoa para cá ao ligar o MCP da Central (api/internal/mcp).
   { path: '/oauth/consentimento', name: 'oauth-consentimento', component: () => import('./ferramentas/oauth/tela-de-consentimento.vue') },
   { path: '/redes', name: 'redes', component: () => import('./ferramentas/redes-sociais/tela-de-menu-redes.vue') },
   { path: '/redes-sociais', name: 'redes-sociais', component: () => import('./ferramentas/redes-sociais/tela-de-redes-sociais.vue') },
