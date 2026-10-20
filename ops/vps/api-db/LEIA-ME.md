@@ -44,23 +44,44 @@ sh /root/api-db/backup-api-db.sh
 sh /root/api-db/testar-restauracao.sh
 ```
 
-Só com a restauração passando, agendar (`crontab -e` como root):
+Só com a restauração passando, agendar (`crontab -e` como root; as linhas completas estão em "Backup e restauração"):
 
 ```
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-40 3 * * * flock -n /run/backup-api-db.lock sh /root/api-db/backup-api-db.sh >> /var/log/backup-api-db.log 2>&1
+40 3 * * * flock -n /run/backup-api-db.lock sh /root/api-db/rotina-backup.sh >> /var/log/backup-api-db.log 2>&1
 ```
 
 ## Backup e restauração
 
-- `backup-api-db.sh`: `pg_dump -Fc` para `/root/backups-api/api-db-AAAA-MM-DD-HHMM.dump` + `.sha256`
-  (modo 600), retenção de 14 dias. Lê o dump inteiro com `pg_restore -f /dev/null` (pega truncamento)
-  e recusa arquivo ilegível, menor que 1 KB ou cujo índice não liste nenhuma `TABLE public` (apaga o parcial).
+Passo a passo de restaurar (volume perdido, dado apagado, VPS perdida) e os números medidos: **`RESTAURAR.md`**.
+
+- `rotina-backup.sh` (cron 03:40, é o que o cron chama): `backup-api-db.sh` + `backup-api-db-offsite.sh`, e **avisa**
+  (monitor do host: e-mail; o WhatsApp está fora desde 13/09) se qualquer etapa falhar. `rotina-backup.sh --conferir`
+  (cron 04:15) avisa se não existe dump de hoje (cron parado, flock preso, disco cheio).
+- `backup-api-db.sh`: `pg_dump -Fc` para `/root/backups-api/api-db-AAAA-MM-DD-HHMM.dump` + `.sha256` + `.globals.sql`
+  (os papéis do cluster com o hash das senhas, `pg_dumpall --globals-only`: o dump de um banco NÃO leva papéis e sem eles
+  o `pg_restore` falha nos GRANTs). Modo 600, retenção de 14 dias. Lê o dump inteiro com `pg_restore -f /dev/null` (pega
+  truncamento) e recusa arquivo ilegível, menor que 1 KB, sem `TABLE public` ou sem `CREATE ROLE` (apaga o parcial).
+- `backup-api-db-offsite.sh`: cifra (gpg AES256, mesma senha do `backup-offsite`) o dump, os papéis e os segredos
+  (`api-db.env`, `api.env`, `worker.env`, `*.senha`) e sobe para `gdrive:backups-vps-op/AAAA-MM-DD/`; confere com
+  `rclone check`; recusa dump de mais de 24 h. A retenção de 7 dias é a do `/usr/local/bin/backup-offsite`.
 - `testar-restauracao.sh [arquivo]`: confere o `.sha256`, restaura o mais recente num contêiner
-  temporário `api-db-teste` (sem rede, 1 GB, volume removido ao fim) e compara a lista de tabelas (`pg_class` r/p do `public`) com a do
-  índice do dump e a contagem de `public.usuarios`. Nunca toca o banco de verdade.
+  temporário `api-db-teste` (sem rede, 1 GB, volume removido ao fim), aplicando antes o `.globals.sql`, e compara a lista de
+  tabelas (`pg_class` r/p do `public`) com a do índice do dump e a contagem de `public.usuarios`. Nunca toca o banco de verdade.
+- `provar-restauracao.sh [pasta] [N]` + `paridade-tabelas.sql`: tira, numa transação `REPEATABLE READ` somente leitura,
+  a impressão digital do banco vivo (linhas + md5 por tabela, sequences, objetos, GRANTs) e o dump do MESMO instante;
+  restaura N vezes e exige paridade de 100%. Mede o tempo.
+- `rotina-backup.teste.sh`: prova a rotina (roda NA VPS, só lê o banco: `ssh op sh /root/prova-07/rotina-backup.teste.sh`).
 - Para ensaiar fora da VPS: `BACKUP_DIR`, `BACKUP_RETENCAO_DIAS`, `API_DB_CONTAINER`, e
   `TESTE_CONTAINER` (o nome deve terminar em `-teste`).
+
+Cron (root; `crontab -l`):
+
+```
+40 3 * * * flock -n /run/backup-api-db.lock sh /root/api-db/rotina-backup.sh >> /var/log/backup-api-db.log 2>&1
+15 4 * * * sh /root/api-db/rotina-backup.sh --conferir >> /var/log/backup-api-db.log 2>&1
+30 5 * * 0 sh /root/api-db/testar-restauracao.sh >> /var/log/backup-api-db.log 2>&1 || python3 /root/monitor/verificar.py --avisar "[TESTE DE RESTAURAÇÃO FALHOU] api-db" "testar-restauracao.sh falhou: ver /var/log/backup-api-db.log"
+```
 
 ## Cópia de segurança para o Zoho: papel `copia` (no corte, só com ok do dono)
 
