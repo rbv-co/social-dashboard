@@ -185,3 +185,31 @@ func TestPedidosRodadaSemNadaComparadoEhInconclusiva(t *testing.T) {
 		t.Fatalf("esperava inconclusiva:\n%s", saida)
 	}
 }
+
+func TestCompararPedidosLojaEVendedorETotais(t *testing.T) {
+	c1, c2, c3 := pedC("1", "100.00", 1, "100"), pedC("2", "50.00", 1, "50"), pedC("3", "10.00", 1, "10")
+	c1.Loja, c1.Vendedor = "L1", "V1"
+	c2.Loja, c2.Vendedor = "L1", "V1"
+	c3.Loja, c3.Vendedor = "L2", "V2"
+	k1, k2, k3 := pedK("1", "100.00", 1, 100), pedK("2", "50.00", 1, 50), pedK("3", "10.00", 1, 10)
+	k1.Loja, k1.Vendedor = "L1", "V1"
+	k2.Loja, k2.Vendedor = "L1", "V1"
+	k3.Loja = "L2" // o espelho não sabe o vendedor do 3: informativo, não é divergência
+	r := CompararPedidos([]PedidoCentral{c1, c2, c3}, map[string]PedidoCore{"1": k1, "2": k2, "3": k3}, false, time.Time{})
+	if !r.Limpo() || r.Iguais != 3 || r.SemVendedorNoCore != 1 {
+		t.Fatalf("igual nos dois lados deve ficar limpo: %+v", r)
+	}
+
+	k2.Loja, k2.Vendedor = "L2", "V9" // o 2 mudou de loja e de vendedor no espelho
+	r = CompararPedidos([]PedidoCentral{c1, c2, c3}, map[string]PedidoCore{"1": k1, "2": k2, "3": k3}, false, time.Time{})
+	campos := ""
+	for _, d := range r.Diferencas {
+		campos += d.Campo + ","
+	}
+	if r.Limpo() || campos != "loja,vendedor," || len(r.TotaisLoja) != 2 || len(r.TotaisVendedor) != 2 {
+		t.Fatalf("campos=%s totais_loja=%v totais_vendedor=%v", campos, r.TotaisLoja, r.TotaisVendedor)
+	}
+	if d := r.TotaisLoja[0]; d.ID != "L1" || d.Central != "150.00" || d.Core != "100.00" {
+		t.Fatalf("total da loja L1: %+v", d)
+	}
+}
