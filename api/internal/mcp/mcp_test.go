@@ -271,7 +271,7 @@ func TestFluxoOAuthDePontaAPonta(t *testing.T) {
 	if w := m.pedir(t, "POST", "/mcp", acesso, "application/json", `{"jsonrpc":"2.0","method":"notifications/initialized"}`); w.Code != http.StatusAccepted {
 		t.Fatalf("notificação: %d", w.Code)
 	}
-	if _, v := m.rpc(t, acesso, "tools/list", `{}`); len(v["result"].(map[string]any)["tools"].([]any)) != 19 {
+	if _, v := m.rpc(t, acesso, "tools/list", `{}`); len(v["result"].(map[string]any)["tools"].([]any)) != 20 {
 		t.Fatalf("tools/list: %v", v)
 	}
 

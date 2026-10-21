@@ -1,5 +1,18 @@
 # MCP da Central para o ChatGPT (nasceu MCP da Frota)
 
+## 21/10: revisão e responsável
+
+Decisões do dono (21/10), para o gestor da Frota fazer pelo ChatGPT o que faz na tela:
+
+- `lancar_manutencao` vira "Registrar revisão ou manutenção" (nome interno mantido: o ChatGPT conectado guarda a
+  lista), casa o nome do item com o plano e traz as travas de `lancamento-de-manutencao.js` (PR #450).
+- `trocar_responsavel` (nova): passar, devolver, recolher, trocar e tirar o dono fixo, pela mesma
+  `POST /frota/usos/trocar` da tela, com as regras de `posse.js`. Uma diferença deliberada: posse aberta de alguém de
+  fora (sem `pessoa_id`) também conta como empréstimo na troca do dono; `trocarDonoFixo` da tela a entrega ao dono
+  novo (dívida registrada na tela).
+- Continua fora: checklist e assinatura (são físicas). A aba Relatórios é só tela (`frota.relatorios`); os dados ela
+  lê pelas mesmas rotas que o MCP consulta.
+
 ## 20/10: a Central inteira
 
 Decisão do dono (20/10): "ele deve ser autônomo a todo painel, desde que o usuário logado tenha permissão". Muda:
