@@ -26,12 +26,14 @@ type Config struct {
 	// CoreLeituraShopifyPedidos: CORE_LEITURA_SHOPIFY_PEDIDOS liga a LEITURA DUPLA de shopify_pedidos
 	// (Central × espelho do core, divergência em log). A Central continua servindo o dado local.
 	CoreLeituraShopifyPedidos bool
-	HostsDeMidia              []string // HOSTS_DE_MIDIA: hosts de onde o meta-proxy aceita imagem/vídeo
-	ShopifySegredos           []string // SHOPIFY_WEBHOOK_SEGREDOS: admin, app e o do destino no fan-out do core
-	ChatwootSegredo           string   // CHATWOOT_WEBHOOK_SEGREDO
-	VAPIDPublica              string   // VAPID_PUBLIC_KEY (base64url, 65 bytes)
-	VAPIDPrivada              string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
-	VAPIDAssunto              string   // VAPID_SUBJECT (ex.: mailto:...)
+	// CoreLeituraPedidos: CORE_LEITURA_PEDIDOS liga a leitura dupla de vessel_pedidos/itens × pedidos/pedido_itens.
+	CoreLeituraPedidos bool
+	HostsDeMidia       []string // HOSTS_DE_MIDIA: hosts de onde o meta-proxy aceita imagem/vídeo
+	ShopifySegredos    []string // SHOPIFY_WEBHOOK_SEGREDOS: admin, app e o do destino no fan-out do core
+	ChatwootSegredo    string   // CHATWOOT_WEBHOOK_SEGREDO
+	VAPIDPublica       string   // VAPID_PUBLIC_KEY (base64url, 65 bytes)
+	VAPIDPrivada       string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
+	VAPIDAssunto       string   // VAPID_SUBJECT (ex.: mailto:...)
 	// WORKER_TAREFAS_DESLIGADAS: tarefas que o worker NÃO agenda ("*" = todas); `api worker rodar <t> --forcar` ainda roda.
 	// Nome que não é "*" nem de tarefa registrada: o worker recusa subir (worker.ValidarDesligadas).
 	// O ensaio roda com banco restaurado de produção: ligue "*" (ou o push) para não mandar push de verdade.
@@ -129,6 +131,7 @@ func Carregar() (Config, error) {
 		CoreToken:                 strings.TrimSpace(os.Getenv("CORE_API_TOKEN")),
 		CoreTokenEspelho:          strings.TrimSpace(os.Getenv("CORE_ESPELHO_TOKEN")),
 		CoreLeituraShopifyPedidos: ligado(os.Getenv("CORE_LEITURA_SHOPIFY_PEDIDOS")),
+		CoreLeituraPedidos:        ligado(os.Getenv("CORE_LEITURA_PEDIDOS")),
 		HostsDeMidia:              minusculas(lista("HOSTS_DE_MIDIA")),
 		ShopifySegredos:           lista("SHOPIFY_WEBHOOK_SEGREDOS"),
 		ChatwootSegredo:           strings.TrimSpace(os.Getenv("CHATWOOT_WEBHOOK_SEGREDO")),

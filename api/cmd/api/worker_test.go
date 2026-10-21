@@ -326,3 +326,20 @@ func TestLeituraDuplaSoComAFlag(t *testing.T) {
 		t.Fatal("tarefa ausente com a flag ligada")
 	}
 }
+
+func TestLeituraDuplaDePedidosSoComAFlag(t *testing.T) {
+	tem := func(cfg config.Config) bool {
+		for _, tf := range tarefas(nil, cfg, worker.Novo(nil)) {
+			if tf.Nome == "leitura-dupla-pedidos" {
+				return true
+			}
+		}
+		return false
+	}
+	if tem(config.Config{}) {
+		t.Fatal("tarefa registrada com a flag desligada")
+	}
+	if !tem(config.Config{CoreLeituraPedidos: true}) {
+		t.Fatal("tarefa ausente com a flag ligada")
+	}
+}

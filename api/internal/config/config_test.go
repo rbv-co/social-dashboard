@@ -372,4 +372,11 @@ func TestTokenDoEspelhoEhSegredoEFlagNasceDesligada(t *testing.T) {
 	if c, _ = Carregar(); !c.CoreLeituraShopifyPedidos {
 		t.Fatal("CORE_LEITURA_SHOPIFY_PEDIDOS=true deveria ligar")
 	}
+	if c.CoreLeituraPedidos {
+		t.Fatal("a leitura dupla de pedidos nasce desligada")
+	}
+	t.Setenv("CORE_LEITURA_PEDIDOS", "true")
+	if c, _ = Carregar(); !c.CoreLeituraPedidos {
+		t.Fatal("CORE_LEITURA_PEDIDOS=true deveria ligar")
+	}
 }
