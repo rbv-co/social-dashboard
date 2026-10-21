@@ -62,3 +62,61 @@ func TestFrotaLivreEPedidoComPessoa(t *testing.T) {
 		t.Fatalf("viagem na lista de posse: %s", txt)
 	}
 }
+
+// Passar o carro e trocar o dono fixo com as regras de posse.js: uma posse aberta por vez, empréstimo a terceiro
+// não muda com a troca do dono, devolver volta ao dono, recolher fecha e para o carro.
+func TestTrocarResponsavel(t *testing.T) {
+	m := novoMundo(t)
+	_, gestor, _ := m.acesso(t)
+	m.q(t, `with x as (insert into acessos_pessoas (id, nome, status) values
+		('e1a00000-0000-4000-a000-000000000001', 'Ana Souza', 'ativo'),
+		('e1a00000-0000-4000-a000-000000000002', 'Bruno Lima', 'ativo') returning 1) select 'ok'`)
+	troca := func(args, contem string, querErro bool) {
+		t.Helper()
+		txt, erro := m.ferramenta(t, gestor, "trocar_responsavel", `{"veiculo_id":"`+veiculoV1+`",`+args+`}`)
+		if erro != querErro || !strings.Contains(txt, contem) {
+			t.Fatalf("%s: erro=%v (queria %v), sem %q em %s", args, erro, querErro, contem, txt)
+		}
+	}
+	// quem tem posse aberta (no máximo uma), o dono fixo e a situação
+	quer := func(e string) {
+		t.Helper()
+		v := m.q(t, `select coalesce((select string_agg(pessoa_nome, ',') from frota_uso where veiculo_id = '`+veiculoV1+
+			`' and tipo = 'posse' and volta_em is null), '-') || '/' || coalesce((select p.nome from frota_veiculos v
+			join acessos_pessoas p on p.id = v.pessoa_id where v.id = '`+veiculoV1+`'), '-') || '/' ||
+			(select situacao from frota_veiculos where id = '`+veiculoV1+`')`)
+		if v != e {
+			t.Fatalf("estado %s, queria %s", v, e)
+		}
+	}
+
+	troca(`"acao":"sumir"`, "acao deve ser", true)
+	troca(`"acao":"trocar_dono_fixo","pessoa_nome":"Ana Souza","de_fora":true`, "de_fora só vale", true)
+	troca(`"acao":"devolver"`, "não está com ninguém", true)
+	troca(`"acao":"tirar_dono_fixo"`, "não tem dono fixo", true)
+	quer("-/-/ativo")
+
+	troca(`"acao":"trocar_dono_fixo","pessoa_nome":"ana souza"`, "Ana Souza é o novo dono fixo", false)
+	quer("Ana Souza/Ana Souza/ativo")
+	troca(`"acao":"trocar_dono_fixo","pessoa_nome":"Ana Souza"`, "já é o dono fixo", true)
+	troca(`"acao":"passar","pessoa_nome":"Ana Souza"`, "já está com Ana Souza", true)
+	troca(`"acao":"passar","pessoa_nome":"Felipe Modelista","de_fora":true`, "agora está com Felipe Modelista", false)
+	quer("Felipe Modelista/Ana Souza/ativo")
+
+	// emprestado: o dono muda, a posse fica com quem está com o carro; devolver entrega ao dono novo
+	troca(`"acao":"trocar_dono_fixo","pessoa_nome":"Bruno"`, "continua com Felipe Modelista", false)
+	quer("Felipe Modelista/Bruno Lima/ativo")
+	troca(`"acao":"devolver"`, "voltou para o dono fixo, Bruno Lima", false)
+	quer("Bruno Lima/Bruno Lima/ativo")
+
+	troca(`"acao":"recolher"`, "recolhido para o estoque", false)
+	quer("-/Bruno Lima/inativo")
+	troca(`"acao":"recolher"`, "já está no estoque", true)
+
+	troca(`"acao":"passar","pessoa_nome":"Ana"`, "agora está com Ana Souza", false)
+	troca(`"acao":"tirar_dono_fixo"`, "não tem mais dono fixo (era Bruno Lima)", false)
+	quer("-/-/inativo")
+	if n := m.q(t, `select count(*)::text from frota_uso where veiculo_id = '`+veiculoV1+`' and tipo = 'posse'`); n != "4" {
+		t.Fatalf("posses gravadas: %s", n)
+	}
+}

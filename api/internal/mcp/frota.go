@@ -297,3 +297,161 @@ func pedirCarro(c chamada, args json.RawMessage) (string, bool) {
 	}
 	return resultado(c.pedir(http.MethodPost, "/frota/requisicoes", nil, corpo))
 }
+
+var acoesDeResponsavel = []string{"passar", "devolver", "recolher", "trocar_dono_fixo", "tirar_dono_fixo"}
+
+type carroDaTroca struct {
+	ID       string  `json:"id"`
+	Nome     string  `json:"nome"`
+	Situacao string  `json:"situacao"`
+	PessoaID *string `json:"pessoa_id"`
+}
+
+// trocarResponsavel: o "passar o carro" (confirmarPasse em tela-de-frota.vue, com passarPara de
+// supabase/functions/_shared/posse.js) e a troca do dono fixo (salvarVeiculo, com trocarDonoFixo), pela mesma rota
+// da tela: POST /frota/usos/trocar fecha a posse aberta e abre a nova numa transação só. Tirar o dono fixo é só
+// zerar pessoa_id: o gatilho trg_frota_fechar_posse_orfa (migration 029) fecha a posse junto.
+func trocarResponsavel(c chamada, args json.RawMessage) (string, bool) {
+	var in struct {
+		VeiculoID  string `json:"veiculo_id"`
+		Acao       string `json:"acao"`
+		PessoaNome string `json:"pessoa_nome"`
+		DeFora     bool   `json:"de_fora"`
+	}
+	if err := decodificar(args, &in); err != nil {
+		return recusa(err.Error())
+	}
+	if !reUUID.MatchString(in.VeiculoID) {
+		return recusa("veiculo_id deve ser o uuid do carro (use listar_veiculos)")
+	}
+	if !slices.Contains(acoesDeResponsavel, in.Acao) {
+		return recusa("acao deve ser " + strings.Join(acoesDeResponsavel, ", "))
+	}
+	if in.DeFora && in.Acao != "passar" {
+		return recusa("de_fora só vale para acao=passar: o dono fixo é sempre um colaborador do cadastro.")
+	}
+	var carros []carroDaTroca
+	var posses []struct {
+		ID string `json:"id"`
+		usoAberto
+	}
+	var pessoas []pessoa
+	aberta := url.Values{"veiculo_id": {in.VeiculoID}, "aberta": {"true"}, "tipo": {"posse"}}
+	for _, l := range []struct {
+		metodo, caminho string
+		q               url.Values
+		dst             any
+	}{
+		{http.MethodGet, "/frota/veiculos", url.Values{"limite": {"200"}}, &carros},
+		{http.MethodGet, "/frota/usos", aberta, &posses},
+		{http.MethodPost, "/rpc/pessoas_para_escolher", nil, &pessoas},
+	} {
+		if err := lerJSON(c, l.metodo, l.caminho, l.q, l.dst); err != nil {
+			return recusa("Não mudei nada: " + err.Error())
+		}
+	}
+	i := slices.IndexFunc(carros, func(v carroDaTroca) bool { return v.ID == in.VeiculoID })
+	if i < 0 {
+		return recusa("Carro não encontrado (use listar_veiculos).")
+	}
+	carro, dono := carros[i], texto(carros[i].PessoaID)
+	nomeDe := func(id string) string {
+		if j := slices.IndexFunc(pessoas, func(p pessoa) bool { return p.ID == id }); j >= 0 {
+			return pessoas[j].Nome
+		}
+		return "o dono fixo"
+	}
+	// a posse aberta (o banco não deixa duas): com quem o carro está hoje
+	posseID, comQuem, comQuemNome := "", "", ""
+	if len(posses) > 0 {
+		posseID, comQuem, comQuemNome = posses[0].ID, texto(posses[0].PessoaID), texto(posses[0].PessoaNome)
+	}
+	agora := time.Now().Format(time.RFC3339)
+	pedido := map[string]any{"veiculo_id": in.VeiculoID}
+	fechar := func() {
+		if posseID != "" {
+			pedido["fechar"] = map[string]any{"id": posseID, "volta_em": agora}
+		}
+	}
+	abrir := func(id any, nome string) {
+		pedido["abrir"] = map[string]any{"pessoa_id": id, "pessoa_nome": nome, "saida_em": agora}
+	}
+	var frase string
+
+	switch in.Acao {
+	case "passar":
+		quem, erro := motoristaDoPedido(c, in.PessoaNome, in.DeFora)
+		if erro != "" {
+			return recusa(erro)
+		}
+		nome := quem["pessoa_nome"].(string)
+		if id, _ := quem["pessoa_id"].(string); id != "" && id == comQuem {
+			return recusa(fmt.Sprintf("O %s já está com %s.", carro.Nome, nome))
+		}
+		fechar()
+		abrir(quem["pessoa_id"], nome)
+		frase = fmt.Sprintf("Feito: o %s agora está com %s.", carro.Nome, nome)
+	case "devolver":
+		switch {
+		case dono == "" && posseID == "":
+			return recusa(fmt.Sprintf("O %s não está com ninguém: não há o que devolver.", carro.Nome))
+		case dono == "":
+			// rodízio: sem dono fixo, devolver só fecha ("livre" é o certo)
+			fechar()
+			frase = fmt.Sprintf("Feito: o %s voltou e está livre (não tem dono fixo).", carro.Nome)
+		case comQuem == dono:
+			return recusa(fmt.Sprintf("O %s já está com o dono fixo, %s.", carro.Nome, nomeDe(dono)))
+		default:
+			fechar()
+			abrir(dono, nomeDe(dono))
+			frase = fmt.Sprintf("Feito: o %s voltou para o dono fixo, %s.", carro.Nome, nomeDe(dono))
+		}
+	case "recolher":
+		fechar()
+		if carro.Situacao != "inativo" {
+			pedido["para_estoque"] = true
+		}
+		if len(pedido) == 1 {
+			return recusa(fmt.Sprintf("O %s já está no estoque, sem ninguém com ele.", carro.Nome))
+		}
+		frase = fmt.Sprintf("Feito: o %s foi recolhido para o estoque (situação inativo, sem ninguém com ele).", carro.Nome)
+	case "tirar_dono_fixo":
+		if dono == "" {
+			return recusa(fmt.Sprintf("O %s não tem dono fixo.", carro.Nome))
+		}
+		if txt, falhou := resultado(c.pedir(http.MethodPatch, "/frota/veiculos/"+in.VeiculoID, nil, map[string]any{"pessoa_id": nil})); falhou {
+			return txt, true
+		}
+		return fmt.Sprintf("Feito: o %s não tem mais dono fixo (era %s); a posse aberta foi fechada junto.", carro.Nome, nomeDe(dono)), false
+	case "trocar_dono_fixo":
+		quem, erro := motoristaDoPedido(c, in.PessoaNome, false)
+		if erro != "" {
+			return recusa(erro)
+		}
+		id, nome := quem["pessoa_id"].(string), quem["pessoa_nome"].(string)
+		if id == dono {
+			return recusa(fmt.Sprintf("%s já é o dono fixo do %s.", nome, carro.Nome))
+		}
+		if txt, falhou := resultado(c.pedir(http.MethodPatch, "/frota/veiculos/"+in.VeiculoID, nil, map[string]any{"pessoa_id": id})); falhou {
+			return txt, true
+		}
+		// emprestado a um terceiro: a posse não muda (diria que o dono novo esteve com o carro num dia em que nunca
+		// o viu); quando voltar, devolver entrega ao dono novo. Diferente de trocarDonoFixo em posse.js, gente de fora
+		// (posse sem pessoa_id) também conta como terceiro: lá ela perde a posse para o dono novo.
+		if posseID != "" && dono != "" && comQuem != dono {
+			return fmt.Sprintf("Feito: %s é o novo dono fixo do %s. O carro continua com %s, que estava com ele "+
+				"emprestado; quando voltar, use acao=devolver.", nome, carro.Nome, comQuemNome), false
+		}
+		fechar()
+		abrir(id, nome)
+		if txt, falhou := resultado(c.pedir(http.MethodPost, "/frota/usos/trocar", nil, pedido)); falhou {
+			return fmt.Sprintf("O dono fixo foi gravado (%s), mas não consegui registrar que o carro está com ele: %s "+
+				"Tente acao=passar para %s; se falhar de novo, avise quem administra a Frota.", nome, txt, nome), true
+		}
+		return fmt.Sprintf("Feito: %s é o novo dono fixo do %s e está com ele.", nome, carro.Nome), false
+	}
+	if txt, falhou := resultado(c.pedir(http.MethodPost, "/frota/usos/trocar", nil, pedido)); falhou {
+		return txt, true
+	}
+	return frase, false
+}

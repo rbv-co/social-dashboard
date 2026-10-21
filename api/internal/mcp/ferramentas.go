@@ -527,6 +527,18 @@ var ferramentasDaFrota = []ferramenta{
 			`"decisao":{"type":"string","enum":["aprovada","recusada","cancelada","revogada"]},"motivo":{"type":"string"}},` +
 			`"additionalProperties":false}`,
 		rodar: decidirRequisicao},
+	{nome: "trocar_responsavel", titulo: "Passar o carro ou trocar o dono fixo", destrutiva: true,
+		descricao: "Muda quem está com o carro, igual à tela. acao: passar (o carro vai para pessoa_nome, colaborador " +
+			"ou, com de_fora=true, alguém de fora; fecha a posse de quem estava), devolver (volta para o dono fixo; " +
+			"sem dono fixo fica livre), recolher (para o estoque: ninguém com ele e situação inativo), " +
+			"trocar_dono_fixo (pessoa_nome vira o responsável fixo do carro, também no Patrimônio) ou " +
+			"tirar_dono_fixo. Não é retirada para viagem (essa é pelo pedido de carro). ANTES de chamar, confirme " +
+			"com a pessoa o carro e para quem; nunca presuma que é quem está falando.",
+		esquema: `{"type":"object","required":["veiculo_id","acao"],"properties":{` + pVeiculo + `,` +
+			`"acao":{"type":"string","enum":["passar","devolver","recolher","trocar_dono_fixo","tirar_dono_fixo"]},` +
+			`"pessoa_nome":{"type":"string","description":"Para quem vai o carro (passar) ou o novo dono fixo (trocar_dono_fixo)."},` +
+			`"de_fora":{"type":"boolean","description":"true só em passar, se a pessoa não é colaborador."}},"additionalProperties":false}`,
+		rodar: trocarResponsavel},
 	{nome: "lancar_manutencao", titulo: "Registrar revisão ou manutenção",
 		descricao: "Cadastra revisão, manutenção ou serviço de oficina de um carro (troca de óleo, filtros, pneus, " +
 			"alinhamento...): uma visita à oficina com os itens trocados nela (de 1 a 30). Cada item vira uma revisão " +
