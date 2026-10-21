@@ -153,3 +153,16 @@ func TestGarantiaNoEspelhoDocumentoTortoNaoConsultaNada(t *testing.T) {
 		t.Fatalf("compra=%v err=%v consultas=%v", c, err, e.consulta)
 	}
 }
+
+// Falha que repetir não resolve (resposta grande demais, sem token) é permanente: pendente, não "tente de novo".
+func TestFalhouEspelhoClassifica(t *testing.T) {
+	g := &garantia{ctx: context.Background()}
+	for erro, permanente := range map[error]bool{
+		core.ErrRespostaGrande: true, core.ErrSemToken: true, core.ErrIndisponivel: false,
+	} {
+		e, ok := g.falhouEspelho("pedidos", erro).(*erroDoBling)
+		if !ok || e.permanente != permanente {
+			t.Errorf("%v: %+v", erro, e)
+		}
+	}
+}

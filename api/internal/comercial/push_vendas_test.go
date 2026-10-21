@@ -302,6 +302,9 @@ func TestPushVendasReexecucaoDepoisDeFalhaNoMeioDoLaco(t *testing.T) {
 
 // espelhoDoPush: o espelho do core com os pedidos de 08 e 09/10 (a mesma massa de pedidosPorDia) e os itens; conta as
 // leituras e recusa por dia sem pedido.
+// sincroniaDoPush: o `ultimo_ok` do espelho falso — 5 min antes do "agora" do ambientePush; os testes de defasagem o trocam.
+var sincroniaDoPush = "2026-10-10T00:55:00Z"
+
 func espelhoDoPush(t *testing.T, falha *atomic.Bool) (*core.Cliente, *atomic.Int32) {
 	t.Helper()
 	var n atomic.Int32
@@ -317,6 +320,15 @@ func espelhoDoPush(t *testing.T, falha *atomic.Bool) (*core.Cliente, *atomic.Int
 		var linhas []map[string]any
 		switch tabela {
 		case "pedidos":
+			if ids := r.URL.Query()["pedido_id_bling[]"]; len(ids) > 0 { // leitura por id (pedidos que entraram pela data da nota)
+				linhas = []map[string]any{}
+				for _, id := range ids {
+					if id == "1" || id == "2" || id == "3" {
+						linhas = append(linhas, map[string]any{"pedido_id_bling": id, "data": "2026-10-09", "total": 10})
+					}
+				}
+				break
+			}
 			switch r.URL.Query().Get("data_de") {
 			case "2026-10-09":
 				linhas = []map[string]any{{"pedido_id_bling": "1", "data": "2026-10-09", "total": 100, "loja_id_bling": "205657609"}, {"pedido_id_bling": "2", "data": "2026-10-09", "total": 50, "loja_id_bling": "205657609"}}
@@ -337,7 +349,8 @@ func espelhoDoPush(t *testing.T, falha *atomic.Bool) (*core.Cliente, *atomic.Int
 			json.NewEncoder(w).Encode(map[string]any{"linhas": len(linhas)})
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"data": linhas, "proximo_cursor": nil})
+		json.NewEncoder(w).Encode(map[string]any{"data": linhas, "proximo_cursor": nil,
+			"sincronia": map[string]any{"ultimo_ok": sincroniaDoPush, "atrasado": false}})
 	}))
 	t.Cleanup(srv.Close)
 	cli := core.Novo(srv.URL, "tok")
@@ -373,5 +386,58 @@ func TestPushVendasEspelhoForaNaoEnvia(t *testing.T) {
 	err := pv.Rodar(context.Background(), "hoje")
 	if err == nil || !strings.Contains(err.Error(), "espelho_indisponivel") || len(pf.recebidos) != 0 {
 		t.Fatalf("err=%v enviados=%v", err, pf.recebidos)
+	}
+}
+
+// Sincronia parada às 15h: às 22h o espelho daria um total menor que o do dia. Não envia, e diz por quê.
+func TestPushVendasEspelhoDefasadoNaoEnvia(t *testing.T) {
+	sincroniaDoPush = "2026-10-09T18:00:00Z"
+	t.Cleanup(func() { sincroniaDoPush = "2026-10-10T00:55:00Z" })
+	pv, f, pf, p := ambientePush(t, pedidosPorDia)
+	pv.Fonte = "push=espelho"
+	pv.Core, _ = espelhoDoPush(t, nil)
+	inscrever(t, p, "quer", "cccccccc-0000-0000-0000-000000000001")
+	err := pv.Rodar(context.Background(), "hoje")
+	if err == nil || !strings.Contains(err.Error(), "espelho_defasado") || len(pf.recebidos) != 0 || f.n() != 0 {
+		t.Fatalf("err=%v enviados=%v bling=%d", err, pf.recebidos, f.n())
+	}
+}
+
+func TestEspelhoServeAoPush(t *testing.T) {
+	agora := time.Date(2026, 10, 10, 1, 0, 0, 0, time.UTC) // 22h de 09/10 em SP
+	em := func(h, m int) *time.Time { x := time.Date(2026, 10, 10, h, m, 0, 0, time.UTC); return &x }
+	ontem := time.Date(2026, 10, 9, 2, 0, 0, 0, time.UTC) // 23h de 08/10 em SP
+	for nome, c := range map[string]struct {
+		s   *core.Sincronia
+		dia string
+		ok  bool
+	}{
+		"fresca hoje":            {&core.Sincronia{UltimoOK: em(0, 50)}, "2026-10-09", true},
+		"velha hoje":             {&core.Sincronia{UltimoOK: em(0, 20)}, "2026-10-09", false},
+		"atrasada":               {&core.Sincronia{UltimoOK: em(0, 55), Atrasado: true}, "2026-10-09", false},
+		"sem bloco":              {nil, "2026-10-09", false},
+		"sem ultimo_ok":          {&core.Sincronia{}, "2026-10-09", false},
+		"ontem depois da virada": {&core.Sincronia{UltimoOK: em(0, 5)}, "2026-10-08", true},
+		"ontem antes da virada":  {&core.Sincronia{UltimoOK: &ontem}, "2026-10-08", false},
+	} {
+		if err := espelhoServeAoPush(c.s, agora, c.dia); (err == nil) != c.ok {
+			t.Errorf("%s: err=%v", nome, err)
+		}
+	}
+}
+
+// Pedido que entrou pela data da nota (fora da lista do dia) ganha a contagem de itens do espelho, sem o Bling.
+func TestPushVendasContaItensDeFora(t *testing.T) {
+	pv, f, _, _ := ambientePush(t, pedidosPorDia)
+	pv.Core, _ = espelhoDoPush(t, nil)
+	cache := map[int64]int{1: 1}
+	if err := pv.contarItensNoEspelho(context.Background(), []*pedido{{ID: 1}, {ID: 2}}, cache); err != nil || cache[2] != 2 {
+		t.Fatalf("err=%v cache=%v", err, cache)
+	}
+	if err := pv.contarItensNoEspelho(context.Background(), []*pedido{{ID: 77}}, map[int64]int{}); err == nil || !strings.Contains(err.Error(), "fora do espelho") {
+		t.Fatalf("err=%v", err)
+	}
+	if f.n() != 0 {
+		t.Fatalf("chamou o Bling %d vez(es)", f.n())
 	}
 }

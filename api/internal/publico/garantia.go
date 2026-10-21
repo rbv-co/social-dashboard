@@ -433,6 +433,8 @@ func (g *garantia) falhouEspelho(tabela string, err error) error {
 		classe = "cancelado"
 	case errors.Is(err, core.ErrIndisponivel), errors.Is(err, context.DeadlineExceeded):
 		classe = "timeout"
+	case errors.Is(err, core.ErrRespostaGrande), errors.Is(err, core.ErrSemToken):
+		classe, permanente = "config", true // repetir não resolve: pendente, e o erro vai para o log
 	case strings.HasPrefix(err.Error(), "core: espelho respondeu 4"):
 		classe, permanente = "4xx", true
 	}
