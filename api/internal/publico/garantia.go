@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
+	"strings"
 
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 )
@@ -17,6 +19,11 @@ import (
 // LeitorDoBling lê o Bling pelo proxy do Core (internal/core.Cliente). Só GET: a página NUNCA escreve no Bling.
 type LeitorDoBling interface {
 	Bling(ctx context.Context, p core.PedidoBling) (*core.Resposta, error)
+}
+
+// LeitorDoEspelho lê o espelho do Core (core.Cliente.EspelhoTodas). Só leitura.
+type LeitorDoEspelho interface {
+	EspelhoTodas(ctx context.Context, tabela string, q url.Values) (*core.Leitura, error)
 }
 
 // Garantia é a edge vessel-registrar-garantia (supabase/functions/vessel-registrar-garantia/index.ts): a porta da
@@ -38,7 +45,7 @@ func (s *Servico) Garantia(b LeitorDoBling) Edge {
 			return
 		}
 		c := s.chamadas(r, ip)
-		g := &garantia{c: c, b: b, ctx: r.Context()}
+		g := &garantia{c: c, b: b, e: s.Espelho, ctx: r.Context()}
 		falhou := map[string]any{"ok": false, "motivo": "falhou"}
 
 		// "É PRESENTE?": a compra está no CPF de quem deu; só aprova com UM candidato cujo nome fecha.
@@ -170,6 +177,7 @@ func pendente(aberto map[string]any) map[string]any {
 type garantia struct {
 	c   *chamadasDoBanco
 	b   LeitorDoBling
+	e   LeitorDoEspelho // nil = procura no Bling
 	ctx context.Context
 }
 
@@ -191,7 +199,11 @@ func (g *garantia) decidir(aberto map[string]any, conferencia any, senao any) an
 // compra não está lá) = pendente. Erro = o Bling NÃO respondeu direito: não é "não achou", e quem chama pede à cliente
 // para tentar de novo (o pedido já está guardado como pendente, e repetir é seguro: pendente não tranca a etiqueta).
 func (g *garantia) decidirPeloBling(aberto map[string]any, cpf string, senao any) (any, error) {
-	a, err := g.procurarACompra(onlyDigits(cpf), fmt.Sprint(valorOu(aberto["sku"], "")))
+	procurar := g.procurarACompra
+	if g.e != nil {
+		procurar = g.procurarACompraNoEspelho
+	}
+	a, err := procurar(onlyDigits(cpf), fmt.Sprint(valorOu(aberto["sku"], "")))
 	var eb *erroDoBling
 	if errors.As(err, &eb) && eb.permanente {
 		return pendente(aberto), nil // repetir não resolve: fila de gente (o log já saiu como erro)
@@ -355,4 +367,74 @@ func (g *garantia) procurarACompra(cpf, sku string) (*compra, error) {
 		}
 	}
 	return nil, nil
+}
+
+// procurarACompraNoEspelho é procurarACompra sem o Bling: os pedidos do CPF vêm do espelho do Core (`numero_documento`,
+// coluna que só o consumidor social-dashboard enxerga) e os itens de `pedido_itens`, em 2 leituras no total. Nada de
+// `contatos`: telefone, endereço e e-mail do cliente não passam por aqui. Mesmo recorte de antes: os 20 pedidos mais
+// novos, o primeiro com item do modelo vence, e a resposta só diz aprovado/pendente. Falha do espelho = tente de novo
+// (503); recusa do Core (4xx: token sem a coluna, por exemplo) = erro nosso, a fila de gente decide.
+func (g *garantia) procurarACompraNoEspelho(cpf, sku string) (*compra, error) {
+	if len(cpf) != 11 && len(cpf) != 14 { // o espelho só filtra CPF/CNPJ inteiro; antes, documento torto não achava contato
+		return nil, nil
+	}
+	q := url.Values{"numero_documento": {cpf}, "campos": {"pedido_id_bling,numero,data,contato_id"}}
+	lp, err := g.e.EspelhoTodas(g.ctx, "pedidos", q)
+	if err != nil {
+		return nil, g.falhouEspelho("pedidos", err)
+	}
+	pedidos := lp.Linhas
+	slices.SortFunc(pedidos, func(a, b map[string]any) int { // do mais novo ao mais antigo
+		if c := strings.Compare(texto(b["data"]), texto(a["data"])); c != 0 {
+			return c
+		}
+		return strings.Compare(texto(b["pedido_id_bling"]), texto(a["pedido_id_bling"]))
+	})
+	pedidos = pedidos[:min(len(pedidos), 20)]
+	if len(pedidos) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, len(pedidos))
+	for i, p := range pedidos {
+		ids[i] = texto(p["pedido_id_bling"])
+	}
+	li, err := g.e.EspelhoTodas(g.ctx, "pedido_itens", url.Values{"pedido_id_bling[]": ids, "campos": {"pedido_id_bling,codigo"}})
+	if err != nil {
+		return nil, g.falhouEspelho("pedido_itens", err)
+	}
+	codigos := map[string][]string{}
+	for _, it := range li.Linhas {
+		id := texto(it["pedido_id_bling"])
+		codigos[id] = append(codigos[id], texto(it["codigo"]))
+	}
+	for i, p := range pedidos {
+		if !slices.ContainsFunc(codigos[ids[i]], func(c string) bool { return casaComOSku(c, sku) }) {
+			continue
+		}
+		numero := texto(p["numero"])
+		if numero == "" {
+			numero = ids[i]
+		}
+		var quando *string
+		if d := texto(p["data"]); d != "" {
+			quando = &d
+		}
+		return &compra{Pedido: numero, Contato: texto(p["contato_id"]), Quando: quando}, nil
+	}
+	return nil, nil
+}
+
+// falhouEspelho classifica a falha do espelho como o lerBling classifica a do Bling: indisponível/prazo = repetir resolve;
+// 4xx do Core (o token da API não vê o dado, por exemplo) = permanente, vai para o log como erro e a resposta é pendente.
+func (g *garantia) falhouEspelho(tabela string, err error) error {
+	classe, permanente := "erro_core", false
+	switch {
+	case errors.Is(err, context.Canceled):
+		classe = "cancelado"
+	case errors.Is(err, core.ErrIndisponivel), errors.Is(err, context.DeadlineExceeded):
+		classe = "timeout"
+	case strings.HasPrefix(err.Error(), "core: espelho respondeu 4"):
+		classe, permanente = "4xx", true
+	}
+	return g.falhou("espelho/"+tabela, &erroDoBling{classe: classe, permanente: permanente})
 }

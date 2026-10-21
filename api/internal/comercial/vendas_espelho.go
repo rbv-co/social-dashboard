@@ -331,7 +331,7 @@ func (v *VendasEspelho) ler(ctx context.Context, de, ate string, ids []string) (
 	if !v.reservarCarga() {
 		return nil, errMuitasCargas
 	}
-	pedidos, sinc, err := v.lerDoCore(ctx, de, ate, ids)
+	pedidos, sinc, err := lerPedidosDoEspelho(ctx, v.Core, de, ate, ids)
 	if err != nil {
 		if ctx.Err() == nil && (errors.Is(err, core.ErrIndisponivel) || errors.Is(err, core.ErrSemToken)) {
 			e.foto.Store(&fotoVendas{err: err, ate: v.agora().Add(vendasTTLFalha)})
@@ -365,7 +365,9 @@ func (v *VendasEspelho) reservarCarga() bool {
 	return true
 }
 
-func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []string) ([]pedidoEspelho, *core.Sincronia, error) {
+// lerPedidosDoEspelho lê os pedidos Atendido do período (ou os `ids`) com os itens, do espelho do core. Falha em qualquer
+// leitura = erro (nunca pedido com item faltando). Usada pela rota e pelo push de vendas.
+func lerPedidosDoEspelho(ctx context.Context, cli *core.Cliente, de, ate string, ids []string) ([]pedidoEspelho, *core.Sincronia, error) {
 	q := url.Values{}
 	if len(ids) > 0 {
 		q["pedido_id_bling[]"] = ids
@@ -375,7 +377,7 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 		q.Set("status_id_bling", situacaoAtendido)
 	}
 	q.Set("campos", "pedido_id_bling,numero,numero_loja,data,total,total_produtos,status_id_bling,loja_id_bling,loja_descricao,vendedor_id_bling")
-	lp, err := v.espelhoTodas(ctx, "pedidos", q)
+	lp, err := espelhoTodas(ctx, cli, "pedidos", q)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -412,7 +414,7 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 		qi := url.Values{}
 		qi["pedido_id_bling[]"] = todos[i:min(i+vendasLoteItens, len(todos))]
 		qi.Set("campos", "pedido_id_bling,codigo,descricao,unidade,quantidade,valor,desconto,produto_id")
-		li, err := v.espelhoTodas(ctx, "pedido_itens", qi)
+		li, err := espelhoTodas(ctx, cli, "pedido_itens", qi)
 		if err != nil {
 			return nil, nil, err // um lote que falha derruba a leitura: nunca pedido com item faltando
 		}
@@ -441,10 +443,10 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 
 // espelhoTodas é EspelhoTodas com UMA nova tentativa quando a conferência pela contagem falha ("leitura
 // incompleta"): pedido que entra entre a contagem e a página não pode virar 503 em horário de movimento.
-func (v *VendasEspelho) espelhoTodas(ctx context.Context, tabela string, q url.Values) (*core.Leitura, error) {
-	l, err := v.Core.EspelhoTodas(ctx, tabela, q)
+func espelhoTodas(ctx context.Context, cli *core.Cliente, tabela string, q url.Values) (*core.Leitura, error) {
+	l, err := cli.EspelhoTodas(ctx, tabela, q)
 	if err != nil && errors.Is(err, core.ErrIndisponivel) && strings.Contains(err.Error(), "leitura incompleta") {
-		l, err = v.Core.EspelhoTodas(ctx, tabela, q)
+		l, err = cli.EspelhoTodas(ctx, tabela, q)
 	}
 	return l, err
 }

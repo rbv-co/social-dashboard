@@ -38,6 +38,7 @@ type PushVendas struct {
 	VAPID webpush.VAPID
 	HTTP  *http.Client     // para o serviço de push; nil = padrão
 	Agora func() time.Time // nil = time.Now
+	Fonte string           // VENDAS_FONTE: com `push=espelho` (ou `espelho`) pedidos e itens vêm do espelho do core, sem o Bling
 }
 
 const (
@@ -118,6 +119,34 @@ func (pv *PushVendas) listarPedidos(ctx context.Context, dia string) ([]pedido, 
 	return todos, nil
 }
 
+// noEspelho: a fonte de pedidos e itens do push (VENDAS_FONTE, tela `push`).
+func (pv *PushVendas) noEspelho() bool { return FonteDeVendas(pv.Fonte, "push") == "espelho" }
+
+// listarPedidosEspelho é listarPedidos sem o Bling: os pedidos Atendido do dia e, de quebra, a quantidade de itens de
+// cada um (linhas de pedido_itens), que no caminho do Bling vinha do cache da Gestão à Vista ou de um detalhe por pedido.
+func (pv *PushVendas) listarPedidosEspelho(ctx context.Context, dia string) ([]pedido, map[int64]int, error) {
+	lidos, _, err := lerPedidosDoEspelho(ctx, pv.Core, dia, dia, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	todos, itens := make([]pedido, 0, len(lidos)), make(map[int64]int, len(lidos))
+	for _, p := range lidos {
+		id, err := p.ID.Int64()
+		if err != nil {
+			return nil, nil, fmt.Errorf("pedido com id torto: %q", p.ID)
+		}
+		np := pedido{ID: id, Data: p.Data, Total: p.Total}
+		if p.Loja != nil {
+			if l, err := p.Loja.ID.Int64(); err == nil {
+				np.LojaID = &l
+			}
+		}
+		todos = append(todos, np)
+		itens[id] = len(p.Itens)
+	}
+	return todos, itens, nil
+}
+
 // linhasDoDia: bling_pedido_nota que toca o dia (pela data da venda OU do pedido), com
 // nota_situacao — a coluna que as telas leem e que a regra de nota negada/autorizada exige.
 func (pv *PushVendas) linhasDoDia(ctx context.Context, dia string) ([]linhaDaNota, error) {
@@ -148,13 +177,21 @@ func (pv *PushVendas) Rodar(ctx context.Context, modo string) error {
 		diaRef, diaCmp, refLabel, cmpLabel = dia(1), dia(2), "ontem", "anteontem"
 	}
 
-	ref, err := pv.listarPedidos(ctx, diaRef)
-	if err != nil {
-		return fmt.Errorf("bling_indisponivel: %w", err)
+	// A fonte dos pedidos: o Bling (via core) ou o espelho do core, que também já traz a quantidade de itens.
+	listar, indisponivel := func(ctx context.Context, dia string) ([]pedido, map[int64]int, error) {
+		p, err := pv.listarPedidos(ctx, dia)
+		return p, nil, err
+	}, "bling_indisponivel"
+	if pv.noEspelho() {
+		listar, indisponivel = pv.listarPedidosEspelho, "espelho_indisponivel"
 	}
-	cmpDia, err := pv.listarPedidos(ctx, diaCmp)
+	ref, itensRef, err := listar(ctx, diaRef)
 	if err != nil {
-		return fmt.Errorf("bling_indisponivel: %w", err)
+		return fmt.Errorf("%s: %w", indisponivel, err)
+	}
+	cmpDia, itensCmp, err := listar(ctx, diaCmp)
+	if err != nil {
+		return fmt.Errorf("%s: %w", indisponivel, err)
 	}
 	lRef, err := pv.linhasDoDia(ctx, diaRef)
 	if err != nil {
@@ -195,6 +232,11 @@ func (pv *PushVendas) Rodar(ctx context.Context, modo string) error {
 	var qtd int
 	if _, err := pgx.ForEachRow(linhas, []any{&id, &qtd}, func() error { cache[id] = qtd; return nil }); err != nil {
 		return fmt.Errorf("itens_incompletos: %w", err)
+	}
+	for _, m := range []map[int64]int{itensRef, itensCmp} { // a contagem do espelho vale mais que a do cache
+		for k, n := range m {
+			cache[k] = n
+		}
 	}
 	if err := pv.detalharFaltantes(ctx, todos, cache); err != nil {
 		return fmt.Errorf("itens_incompletos: %w", err)

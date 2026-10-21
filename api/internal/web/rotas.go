@@ -166,6 +166,9 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 	// Plano 6: a Vessel anônima e o que o Core encaminha, no DIALETO DO SUPABASE (/rest/v1/rpc, /functions/v1): a virada
 	// troca só a base e a chave no Core e no site. Fora de auth.Exigir: a chave do Core ou nenhuma, limites e 415 lá dentro.
 	vs := &publico.Servico{Pool: p, Segredo: cfg.VesselInterno, SoCore: cfg.VesselSoCore, Origens: cfg.Origens}
+	if comercial.FonteDeVendas(cfg.VendasFonte, "garantia") == "espelho" { // plano 03-E: a compra pelo CPF vem do espelho do Core
+		vs.Espelho = cli
+	}
 	vs.Edges = map[string]publico.Edge{
 		"vessel-conta":              vs.Conta(&email.ZeptoMail{Token: cfg.ZeptoToken, De: cfg.ZeptoDe, Nome: "VESSEL Brasil"}),
 		"vessel-registrar-garantia": vs.Garantia(cli),

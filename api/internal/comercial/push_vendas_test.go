@@ -9,12 +9,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -295,5 +297,81 @@ func TestPushVendasReexecucaoDepoisDeFalhaNoMeioDoLaco(t *testing.T) {
 	p.Exec(ctx, `delete from push_subs where endpoint not like '%/b/e500'`)
 	if err := pv.Rodar(ctx, "hoje"); err == nil || !strings.Contains(err.Error(), "nenhum_push_entregue") {
 		t.Fatalf("só falha = erro: %v", err)
+	}
+}
+
+// espelhoDoPush: o espelho do core com os pedidos de 08 e 09/10 (a mesma massa de pedidosPorDia) e os itens; conta as
+// leituras e recusa por dia sem pedido.
+func espelhoDoPush(t *testing.T, falha *atomic.Bool) (*core.Cliente, *atomic.Int32) {
+	t.Helper()
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		if falha != nil && falha.Load() {
+			w.WriteHeader(500)
+			return
+		}
+		tabela := strings.TrimPrefix(r.URL.Path, "/api/interno/espelho/")
+		contagem := strings.HasSuffix(tabela, "/contagem")
+		tabela = strings.TrimSuffix(tabela, "/contagem")
+		var linhas []map[string]any
+		switch tabela {
+		case "pedidos":
+			switch r.URL.Query().Get("data_de") {
+			case "2026-10-09":
+				linhas = []map[string]any{{"pedido_id_bling": "1", "data": "2026-10-09", "total": 100, "loja_id_bling": "205657609"}, {"pedido_id_bling": "2", "data": "2026-10-09", "total": 50, "loja_id_bling": "205657609"}}
+			case "2026-10-08":
+				linhas = []map[string]any{{"pedido_id_bling": "3", "data": "2026-10-08", "total": 70, "loja_id_bling": "205657609"}}
+			default:
+				linhas = []map[string]any{}
+			}
+		case "pedido_itens":
+			linhas = []map[string]any{}
+			for _, id := range r.URL.Query()["pedido_id_bling[]"] {
+				for range map[string]int{"1": 1, "2": 2, "3": 3}[id] { // o pedido N tem N linhas
+					linhas = append(linhas, map[string]any{"pedido_id_bling": id, "codigo": "X", "quantidade": 1, "valor": 1})
+				}
+			}
+		}
+		if contagem {
+			json.NewEncoder(w).Encode(map[string]any{"linhas": len(linhas)})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": linhas, "proximo_cursor": nil})
+	}))
+	t.Cleanup(srv.Close)
+	cli := core.Novo(srv.URL, "tok")
+	cli.Dormir = func(context.Context, time.Duration) error { return nil }
+	return cli, &n
+}
+
+// Com `push=espelho` o push dispara SEM o Bling (que aqui devolveria 500 em tudo), com a quantidade de itens do espelho.
+func TestPushVendasNoEspelhoNaoChamaOBling(t *testing.T) {
+	pv, f, pf, p := ambientePush(t, func(core.PedidoBling, int) (int, string, map[string]string) { return 500, `{}`, nil })
+	pv.Fonte = "push=espelho"
+	pv.Core, _ = espelhoDoPush(t, nil)
+	inscrever(t, p, "quer", "cccccccc-0000-0000-0000-000000000001")
+	if err := pv.Rodar(context.Background(), "hoje"); err != nil {
+		t.Fatal(err)
+	}
+	if f.n() != 0 {
+		t.Fatalf("chamou o Bling %d vez(es)", f.n())
+	}
+	if len(pf.recebidos) != 1 {
+		t.Fatalf("push não saiu: %v", pf.recebidos)
+	}
+}
+
+// Espelho fora: a tarefa falha com `espelho_indisponivel` e NÃO envia nada (exatidão primeiro, como com o Bling).
+func TestPushVendasEspelhoForaNaoEnvia(t *testing.T) {
+	pv, _, pf, p := ambientePush(t, pedidosPorDia)
+	pv.Fonte = "espelho"
+	var fora atomic.Bool
+	fora.Store(true)
+	pv.Core, _ = espelhoDoPush(t, &fora)
+	inscrever(t, p, "quer", "cccccccc-0000-0000-0000-000000000001")
+	err := pv.Rodar(context.Background(), "hoje")
+	if err == nil || !strings.Contains(err.Error(), "espelho_indisponivel") || len(pf.recebidos) != 0 {
+		t.Fatalf("err=%v enviados=%v", err, pf.recebidos)
 	}
 }
