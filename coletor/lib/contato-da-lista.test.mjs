@@ -43,6 +43,12 @@ test('cria quando não existe; repetir a mesma linha reusa a chave e não duplic
   assert.equal(core.criados.size, 1);
 });
 
+test('503 (disjuntor do Core) para o lote sem gastar tentativa', async () => {
+  for (const k of ['POST /contatos', 'GET /contatos']) {
+    assert.deepEqual(await contatoDaLinha(coreFalso({ falhas: { [k]: resp(503) } }), linha), { pausa: 'bling_instavel' });
+  }
+});
+
 test('429 e reautorização param o lote sem marcar a linha', async () => {
   assert.deepEqual(await contatoDaLinha(coreFalso({ falhas: { 'POST /contatos': resp(429) } }), linha), { pausa: '429' });
   assert.deepEqual(await contatoDaLinha(coreFalso({ falhas: { 'POST /contatos': resp(409, {}, { reautorizar: true }) } }), linha), { pausa: 'reautorizar' });
