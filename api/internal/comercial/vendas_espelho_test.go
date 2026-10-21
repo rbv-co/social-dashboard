@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,7 +66,7 @@ func (f *coreEspelho) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ids := r.URL.Query()["pedido_id_bling[]"]; len(ids) > 0 { // como o core: filtra pelos ids pedidos
-		var so []map[string]any
+		so := []map[string]any{}
 		for _, l := range linhas {
 			for _, id := range ids {
 				if l["pedido_id_bling"] == id {
@@ -244,7 +246,7 @@ func TestVendasEspelhoPortaoEValidacao(t *testing.T) {
 	}
 }
 
-func TestVendasEspelhoCoreForaEErroClaroSemCache(t *testing.T) {
+func TestVendasEspelhoCoreForaEErroClaroEVolta(t *testing.T) {
 	v := novoVendas(t, "espelho", nil)
 	v.core.status = 500
 	st, c := v.get(t, "de=2026-10-01&ate=2026-10-21", nil)
@@ -252,6 +254,7 @@ func TestVendasEspelhoCoreForaEErroClaroSemCache(t *testing.T) {
 		t.Fatalf("st=%d corpo=%v", st, c)
 	}
 	v.core.status = 0
+	v.agora = v.agora.Add(6 * time.Second) // a falha fica 5 s em cache (ver o teste próprio)
 	if st, c = v.get(t, "de=2026-10-01&ate=2026-10-21", nil); st != 200 || len(c["data"].([]any)) != 3 {
 		t.Fatalf("a falha não pode ficar em cache: st=%d %v", st, c)
 	}
@@ -269,5 +272,77 @@ func TestVendasEspelhoCacheDe60s(t *testing.T) {
 	v.get(t, "de=2026-10-01&ate=2026-10-21", nil)
 	if v.core.chamadas.Load() == n {
 		t.Fatalf("depois de 60 s tem de ler de novo")
+	}
+}
+
+func TestVendasEspelhoConcorrenteLeUmaVezSoEPassaNoRace(t *testing.T) {
+	v := novoVendas(t, "espelho", nil)
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			if st, c := v.get(t, "de=2026-10-01&ate=2026-10-21", nil); st != 200 || len(c["data"].([]any)) != 3 {
+				t.Errorf("st=%d", st)
+			}
+		})
+	}
+	wg.Wait()
+	if n := v.core.chamadas.Load(); n != 4 { // contagem + página de pedidos e de itens: uma carga só
+		t.Fatalf("20 pedidos simultâneos fizeram %d chamadas ao core, quer 4", n)
+	}
+}
+
+func TestVendasEspelhoFalhaDoCoreFicaPoucoEmCacheEVolta(t *testing.T) {
+	v := novoVendas(t, "espelho", nil)
+	v.core.status = 500
+	v.get(t, "de=2026-10-01&ate=2026-10-21", nil)
+	n := v.core.chamadas.Load()
+	v.core.status = 0
+	if st, _ := v.get(t, "de=2026-10-01&ate=2026-10-21", nil); st != 503 || v.core.chamadas.Load() != n {
+		t.Fatalf("dentro dos 5 s repete a falha sem refazer a carga: st=%d chamadas %d→%d", st, n, v.core.chamadas.Load())
+	}
+	v.agora = v.agora.Add(6 * time.Second)
+	if st, _ := v.get(t, "de=2026-10-01&ate=2026-10-21", nil); st != 200 {
+		t.Fatalf("passados os 5 s volta a ler: %d", st)
+	}
+}
+
+func TestVendasEspelhoTetoDeCargasPorMinuto(t *testing.T) {
+	v := novoVendas(t, "espelho", nil)
+	for i := range vendasCargasPorMin {
+		if st, _ := v.get(t, "ids="+strconv.Itoa(1001+i*1000), nil); st != 200 {
+			t.Fatalf("carga %d: %d", i, st)
+		}
+	}
+	antes := v.core.chamadas.Load()
+	st, c := v.get(t, "ids=99999", nil)
+	if st != 429 || c["error"] != "muitas_leituras" || v.core.chamadas.Load() != antes {
+		t.Fatalf("passou do teto: st=%d %v", st, c)
+	}
+	// o que já está em cache continua servindo, e a janela de 1 min libera
+	if st, _ := v.get(t, "ids=1001", nil); st != 200 {
+		t.Fatalf("cache dentro do teto: %d", st)
+	}
+	v.agora = v.agora.Add(61 * time.Second)
+	if st, _ := v.get(t, "ids=99999", nil); st != 200 {
+		t.Fatalf("depois de 1 min libera: %d", st)
+	}
+}
+
+func TestVendasEspelhoDizQuantosVieramSemVendedor(t *testing.T) {
+	v := novoVendas(t, "espelho", nil)
+	_, c := v.get(t, "de=2026-10-01&ate=2026-10-21", nil)
+	if i := c["incompletos"].(map[string]any); i["sem_vendedor"] != float64(1) || i["sem_itens"] != float64(0) {
+		t.Fatalf("incompletos: %v", i)
+	}
+}
+
+func TestPiorSincronia(t *testing.T) {
+	novo, velho := time.Date(2026, 10, 21, 20, 0, 0, 0, time.UTC), time.Date(2026, 10, 21, 19, 0, 0, 0, time.UTC)
+	got := piorSincronia(&core.Sincronia{UltimoOK: &novo}, &core.Sincronia{UltimoOK: &velho, Atrasado: true})
+	if !got.UltimoOK.Equal(velho) || !got.Atrasado {
+		t.Fatalf("%+v", got)
+	}
+	if piorSincronia(nil, &core.Sincronia{UltimoOK: &novo}).UltimoOK == nil || piorSincronia(nil, nil) != nil {
+		t.Fatal("sem bloco numa das leituras vale a outra")
 	}
 }

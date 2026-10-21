@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,12 +33,16 @@ import (
 // fora é erro claro (503), nunca lista parcial nem Bling por baixo.
 
 const (
-	vendasTTL        = 60 * time.Second // o limite do token no core é 120 leituras/min, dividido com Meta e Bling
-	vendasMaxDias    = 93               // 1 mês + folga; a leitura gasta ~2 GETs por 100 pedidos
-	vendasMaxIDs     = 100
-	vendasLoteItens  = 100 // mesmo lote da leitura dupla (cabe na URL)
-	vendasIdadeAviso = 30 * time.Minute
-	situacaoAtendido = "9"
+	vendasTTL      = 60 * time.Second // o limite do token no core é 120 leituras/min, dividido com Meta e Bling
+	vendasMaxDias  = 93               // 1 mês + folga; a leitura gasta ~2 GETs por 100 pedidos
+	vendasTTLFalha = 5 * time.Second
+	vendasMaxIDs   = 100
+	// vendasCargasPorMin: teto de cargas novas ao core por minuto (uma carga custa ~2 + 2×⌈N/100⌉ leituras do
+	// balde de 120/min, que é dividido com Meta, Bling e a leitura dupla). Cache cobre o uso normal (3 a 6 períodos).
+	vendasCargasPorMin = 15
+	vendasLoteItens    = 100 // mesmo lote da leitura dupla (cabe na URL)
+	vendasIdadeAviso   = 30 * time.Minute
+	situacaoAtendido   = "9"
 )
 
 var (
@@ -79,17 +84,23 @@ type VendasEspelho struct {
 	Canais func(ctx context.Context, a *auth.Ator) ([]int64, error)
 	Agora  func() time.Time
 
-	mu    sync.Mutex
-	cache map[string]*leituraVendas
+	mu     sync.Mutex
+	cache  map[string]*entradaVendas
+	cargas []time.Time // instantes das cargas ao core no último minuto (teto: vendasCargasPorMin)
 }
 
-// leituraVendas é uma leitura do período inteiro (sem recorte de canal: o recorte é por pessoa, na saída).
-type leituraVendas struct {
-	mu      sync.Mutex // quem chega durante a carga espera a mesma carga (um GET só ao core por período)
-	ate     time.Time
+// entradaVendas é o cache de um período (sem recorte de canal: o recorte é por pessoa, na saída). A foto é
+// imutável e trocada inteira (atomic): quem já pegou uma lê sem trava enquanto outra é carregada.
+type entradaVendas struct {
+	sem  chan struct{} // um carregador por vez; quem chega espera a carga dele (ou desiste com o contexto)
+	foto atomic.Pointer[fotoVendas]
+}
+
+type fotoVendas struct {
 	pedidos []pedidoEspelho
 	sinc    *core.Sincronia
-	feita   bool
+	err     error // falha do core guardada por vendasTTLFalha: 20 pessoas esperando não refazem 20 cargas
+	ate     time.Time
 }
 
 type refEspelho struct {
@@ -121,8 +132,7 @@ type pedidoEspelho struct {
 }
 
 type refSituacao struct {
-	ID    int    `json:"id"`
-	Valor string `json:"valor,omitempty"`
+	ID int `json:"id"`
 }
 
 type sincroniaVendas struct {
@@ -187,6 +197,7 @@ func (v *VendasEspelho) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		permitidas[strconv.FormatInt(c, 10)] = true
 	}
 	saida := make([]pedidoEspelho, 0, len(l.pedidos))
+	var semItens, semVendedor int
 	for _, p := range l.pedidos {
 		lojaID, vendID := "", ""
 		if p.Loja != nil {
@@ -199,6 +210,12 @@ func (v *VendasEspelho) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		saida = append(saida, p)
+		if len(p.Itens) == 0 {
+			semItens++
+		}
+		if p.Vendedor == nil {
+			semVendedor++
+		}
 	}
 	s := sincroniaVendas{}
 	if l.sinc != nil {
@@ -206,7 +223,10 @@ func (v *VendasEspelho) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		lei := core.Leitura{Sincronia: l.sinc}
 		s.Defasado = lei.Defasado(v.agora(), vendasIdadeAviso)
 	}
-	responder(w, http.StatusOK, map[string]any{"fonte": "espelho", "data": saida, "sincronia": s})
+	// `incompletos`: o espelho só guarda o vendedor (e os itens) quando o detalhe do pedido chega; a tela diz quantos
+	// pedidos vieram sem, em vez de mostrar um ranking menor sem explicação.
+	responder(w, http.StatusOK, map[string]any{"fonte": "espelho", "data": saida, "sincronia": s,
+		"incompletos": map[string]int{"sem_itens": semItens, "sem_vendedor": semVendedor}})
 }
 
 func (v *VendasEspelho) canaisDe(ctx context.Context, a *auth.Ator) ([]int64, error) {
@@ -220,6 +240,10 @@ func (v *VendasEspelho) falhou(w http.ResponseWriter, r *http.Request, err error
 	switch {
 	case r.Context().Err() != nil: // quem pediu desistiu
 		erro(w, http.StatusBadGateway, "falha ao falar com o core")
+	case errors.Is(err, errMuitasCargas):
+		w.Header().Set("Retry-After", "15")
+		responder(w, http.StatusTooManyRequests, map[string]string{"error": "muitas_leituras",
+			"mensagem": "Muitas leituras do espelho neste minuto. Tente de novo em instantes."})
 	case errors.Is(err, core.ErrSemToken):
 		erro(w, http.StatusServiceUnavailable, "core nao configurado")
 	case errors.Is(err, core.ErrIndisponivel):
@@ -259,36 +283,86 @@ func periodoOuIDs(q url.Values) (de, ate string, ids []string, err error) {
 	return de, ate, nil, nil
 }
 
-// ler devolve a leitura do período (ou dos ids) com cache de 60 s. Falha não fica em cache.
-func (v *VendasEspelho) ler(ctx context.Context, de, ate string, ids []string) (*leituraVendas, error) {
+// ler devolve a foto do período (ou dos ids) com cache de 60 s. Falha do core fica 5 s em cache (nunca a de
+// quem desistiu); erro de contrato e prazo de quem pediu não.
+func (v *VendasEspelho) ler(ctx context.Context, de, ate string, ids []string) (*fotoVendas, error) {
 	chave := de + "|" + ate + "|" + strings.Join(ids, ",")
+	agora := v.agora()
 	v.mu.Lock()
 	if v.cache == nil {
-		v.cache = map[string]*leituraVendas{}
+		v.cache = map[string]*entradaVendas{}
 	}
-	for k, e := range v.cache { // poda o vencido (poucas chaves: um período por tela)
-		if e.feita && v.agora().After(e.ate) {
+	for k, e := range v.cache { // poda o vencido
+		if f := e.foto.Load(); f != nil && agora.After(f.ate) {
 			delete(v.cache, k)
 		}
 	}
 	e := v.cache[chave]
 	if e == nil {
-		e = &leituraVendas{}
+		e = &entradaVendas{sem: make(chan struct{}, 1)}
 		v.cache[chave] = e
 	}
 	v.mu.Unlock()
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.feita && v.agora().Before(e.ate) {
-		return e, nil
+	valida := func() *fotoVendas {
+		if f := e.foto.Load(); f != nil && v.agora().Before(f.ate) {
+			return f
+		}
+		return nil
+	}
+	devolve := func(f *fotoVendas) (*fotoVendas, error) {
+		if f.err != nil {
+			return nil, f.err
+		}
+		return f, nil
+	}
+	if f := valida(); f != nil {
+		return devolve(f)
+	}
+	select {
+	case e.sem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-e.sem }()
+	if f := valida(); f != nil { // quem carregou antes de mim já deixou a foto
+		return devolve(f)
+	}
+	if !v.reservarCarga() {
+		return nil, errMuitasCargas
 	}
 	pedidos, sinc, err := v.lerDoCore(ctx, de, ate, ids)
 	if err != nil {
+		if ctx.Err() == nil && (errors.Is(err, core.ErrIndisponivel) || errors.Is(err, core.ErrSemToken)) {
+			e.foto.Store(&fotoVendas{err: err, ate: v.agora().Add(vendasTTLFalha)})
+		} else {
+			v.mu.Lock() // erro que não vira cache: a entrada sai do mapa (ids arbitrários não acumulam)
+			if v.cache[chave] == e {
+				delete(v.cache, chave)
+			}
+			v.mu.Unlock()
+		}
 		return nil, err
 	}
-	e.pedidos, e.sinc, e.feita, e.ate = pedidos, sinc, true, v.agora().Add(vendasTTL)
-	return e, nil
+	f := &fotoVendas{pedidos: pedidos, sinc: sinc, ate: v.agora().Add(vendasTTL)}
+	e.foto.Store(f)
+	return f, nil
+}
+
+var errMuitasCargas = errors.New("vendas: leituras demais ao core neste minuto")
+
+// reservarCarga conta uma carga nova ao core na janela de 1 minuto; false = teto estourado.
+func (v *VendasEspelho) reservarCarga() bool {
+	agora := v.agora()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	corte := agora.Add(-time.Minute)
+	v.cargas = slices.DeleteFunc(v.cargas, func(t time.Time) bool { return t.Before(corte) })
+	if len(v.cargas) >= vendasCargasPorMin {
+		return false
+	}
+	v.cargas = append(v.cargas, agora)
+	return true
 }
 
 func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []string) ([]pedidoEspelho, *core.Sincronia, error) {
@@ -300,8 +374,8 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 		q.Set("data_ate", ate)
 		q.Set("status_id_bling", situacaoAtendido)
 	}
-	q.Set("campos", "pedido_id_bling,numero,numero_loja,data,total,total_produtos,status_id_bling,descricao,loja_id_bling,loja_descricao,vendedor_id_bling")
-	lp, err := v.Core.EspelhoTodas(ctx, "pedidos", q)
+	q.Set("campos", "pedido_id_bling,numero,numero_loja,data,total,total_produtos,status_id_bling,loja_id_bling,loja_descricao,vendedor_id_bling")
+	lp, err := v.espelhoTodas(ctx, "pedidos", q)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -318,7 +392,7 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 			p.Numero = json.Number(n)
 		}
 		sit, _ := strconv.Atoi(textoOuVazio(x["status_id_bling"]))
-		p.Situacao = refSituacao{ID: sit, Valor: textoOuVazio(x["descricao"])}
+		p.Situacao = refSituacao{ID: sit}
 		if l := textoOuVazio(x["loja_id_bling"]); reNumero.MatchString(l) {
 			p.Loja = &refEspelho{ID: json.Number(l), Nome: textoOuVazio(x["loja_descricao"])}
 		}
@@ -338,7 +412,7 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 		qi := url.Values{}
 		qi["pedido_id_bling[]"] = todos[i:min(i+vendasLoteItens, len(todos))]
 		qi.Set("campos", "pedido_id_bling,codigo,descricao,unidade,quantidade,valor,desconto,produto_id")
-		li, err := v.Core.EspelhoTodas(ctx, "pedido_itens", qi)
+		li, err := v.espelhoTodas(ctx, "pedido_itens", qi)
 		if err != nil {
 			return nil, nil, err // um lote que falha derruba a leitura: nunca pedido com item faltando
 		}
@@ -354,9 +428,7 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 			}
 			pedidos[i].Itens = append(pedidos[i].Itens, it)
 		}
-		if li.Sincronia != nil && sinc != nil && li.Sincronia.UltimoOK != nil && (sinc.UltimoOK == nil || li.Sincronia.UltimoOK.Before(*sinc.UltimoOK)) {
-			sinc = li.Sincronia // vale a leitura mais antiga: a tela mostra o pior caso
-		}
+		sinc = piorSincronia(sinc, li.Sincronia)
 	}
 	slices.SortFunc(pedidos, func(a, b pedidoEspelho) int {
 		if c := strings.Compare(a.Data, b.Data); c != 0 {
@@ -365,6 +437,36 @@ func (v *VendasEspelho) lerDoCore(ctx context.Context, de, ate string, ids []str
 		return strings.Compare(a.ID.String(), b.ID.String())
 	})
 	return pedidos, sinc, nil
+}
+
+// espelhoTodas é EspelhoTodas com UMA nova tentativa quando a conferência pela contagem falha ("leitura
+// incompleta"): pedido que entra entre a contagem e a página não pode virar 503 em horário de movimento.
+func (v *VendasEspelho) espelhoTodas(ctx context.Context, tabela string, q url.Values) (*core.Leitura, error) {
+	l, err := v.Core.EspelhoTodas(ctx, tabela, q)
+	if err != nil && errors.Is(err, core.ErrIndisponivel) && strings.Contains(err.Error(), "leitura incompleta") {
+		l, err = v.Core.EspelhoTodas(ctx, tabela, q)
+	}
+	return l, err
+}
+
+// piorSincronia junta a sincronia de duas leituras: a mais antiga e atrasada se qualquer uma estiver (a tela mostra
+// o pior caso). Sem bloco numa das duas, vale a outra.
+func piorSincronia(a, b *core.Sincronia) *core.Sincronia {
+	if a == nil || b == nil {
+		if a != nil {
+			return a
+		}
+		return b
+	}
+	out := *a
+	if b.UltimoOK != nil && (a.UltimoOK == nil || b.UltimoOK.Before(*a.UltimoOK)) {
+		out.UltimoOK = b.UltimoOK
+	}
+	out.Atrasado = a.Atrasado || b.Atrasado
+	if b.TempoReal != nil && !*b.TempoReal {
+		out.TempoReal = b.TempoReal
+	}
+	return &out
 }
 
 // textoOuVazio é texto() sem o "null" do JS: nulo vira "".

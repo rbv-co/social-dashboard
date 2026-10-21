@@ -64,6 +64,7 @@ export function textoDoAviso(causa, { ehAdmin = false, horaDoDado = null, tecnic
     if (!horaDoDado) return { titulo: 'Não foi possível buscar as vendas agora.', detalhe: '' }
     const fim = causa === 'sem-resposta' ? 'sem conexão'
       : causa === 'erro-na-tela' ? 'a Central falhou ao montar'
+      : causa === 'espelho-fora' ? 'aguardando atualização'
       : 'aguardando o Bling'
     return { titulo: `Números de ${horaDoDado} — ${fim}.`, detalhe: '' }
   }
@@ -76,6 +77,13 @@ export function textoDoAviso(causa, { ehAdmin = false, horaDoDado = null, tecnic
   }
   if (causa === 'sem-resposta') {
     return { titulo: 'Sem resposta.', detalhe: `Pode ser a internet ou o Supabase.${HORA(horaDoDado)}` }
+  }
+  if (causa === 'espelho-fora') {
+    // As vendas vêm do espelho do Core, não do Bling: dizer "o Bling não respondeu" mandaria olhar o lugar errado.
+    return {
+      titulo: 'O espelho de vendas não respondeu.',
+      detalhe: `Os pedidos vêm da cópia do Core, não do Bling. Nenhum número foi trocado.${HORA(horaDoDado)}${curto ? ' · ' + curto : ''}`,
+    }
   }
   if (causa === 'erro-na-tela') {
     // Defeito NOSSO, não do fornecedor. Dizer "o Bling não respondeu" aqui
@@ -111,7 +119,9 @@ export function avisoDoErro(erro, opcoes = {}) {
 // ── A chamada ─────────────────────────────────────────────────────────────
 // A diferença que importa em relação ao código antigo é UMA linha: conferir
 // `r.ok` antes de interpretar o corpo. O resto é o mesmo.
-export async function chamarBling(sbClient, endpoint, params) {
+export async function chamarBling(sbClient, endpoint, params, api) {
+  const idDoPedido = /^pedidos\/vendas\/(\d+)$/.exec(endpoint)?.[1]
+  if (idDoPedido && espelho.ativo) return { data: await detalheDoEspelho(idDoPedido, api) }
   const naApi = areaNaApi('edges-core')
   const { data: { session } } = naApi ? { data: { session: null } } : await sbClient.auth.getSession()
   if (!naApi && !session) throw new ErroDoBling('sem-acesso-a-vendas', 'sem sessão no navegador')
@@ -143,6 +153,97 @@ export async function chamarBling(sbClient, endpoint, params) {
   return corpo ?? {}
 }
 
+// ── Vendas pelo espelho do Core (plano 03, BLING-FORA-ESPELHO) ─────────────
+// `GET /vendas/pedidos` devolve os pedidos Atendido do espelho no formato da lista do Bling, já com `itens` e
+// `vendedor`. Esses objetos viram o "detalhe do pedido": `chamarBling('pedidos/vendas/ID')` responde deles, sem
+// uma chamada por pedido (eram ~200 por carga). Com o flag em `bling` o servidor responde `{fonte:'bling'}` e
+// tudo segue o caminho antigo. Não há reserva silenciosa: espelho fora é erro dito como espelho, nunca Bling por baixo.
+const espelho = { ativo: false, tela: '', sincronia: null, semVendedor: 0, detalhes: new Map() }
+
+/**
+ * A sincronia da última leitura do espelho (`{ultimo_ok, atrasado, defasado, sem_vendedor}`), ou null se a fonte
+ * é o Bling. `sem_vendedor` = pedidos que o espelho ainda não sabe de quem são (o Core só guarda o vendedor quando
+ * o detalhe do pedido chega): a tela diz quantos, para o ranking menor não parecer erro.
+ */
+export function sincroniaDasVendas() {
+  return espelho.ativo && espelho.sincronia ? { ...espelho.sincronia, sem_vendedor: espelho.semVendedor } : null
+}
+
+/**
+ * O que a tela escreve sobre a idade do espelho: `{hora, defasado, titulo, detalhe}`; null sem sincronia.
+ * Defasado = o servidor disse `atrasado`/`defasado` OU a última sincronização boa passou de `limiteMin` (30).
+ */
+export function avisoDaSincronia(sinc, { agora = Date.now(), limiteMin = 30 } = {}) {
+  if (!sinc || !sinc.ultimo_ok) return null
+  const t = new Date(sinc.ultimo_ok)
+  if (Number.isNaN(t.getTime())) return null
+  const hora = t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+  const defasado = !!(sinc.atrasado || sinc.defasado) || agora - t.getTime() > limiteMin * 60000
+  const semVendedor = Number(sinc.sem_vendedor) || 0
+  return {
+    hora,
+    defasado,
+    linha: `Vendas atualizadas às ${hora}` + (semVendedor ? ` · ${semVendedor} ${semVendedor === 1 ? 'pedido' : 'pedidos'} sem vendedor informado` : ''),
+    titulo: defasado ? `Números de ${hora} — o espelho de vendas está atrasado.` : `Atualizado às ${hora}`,
+    detalhe: defasado ? 'Os pedidos vêm da cópia do Core; novos pedidos podem demorar a aparecer.' : '',
+  }
+}
+
+async function lerDoEspelho(query, api) {
+  const naApi = api?.naApi ?? areaNaApi('edges-core')
+  if (!naApi) return null // sem a API em Go (ambiente antigo): só existe o caminho do Bling
+  const buscar = api?.fetcher ?? fetchDaApi
+  let r
+  try {
+    r = await buscar('/vendas/pedidos?' + new URLSearchParams(query).toString())
+  } catch (e) {
+    throw new ErroDoBling('sem-resposta', e?.message || 'fetch falhou')
+  }
+  let corpo = null
+  try { corpo = await r.json() } catch { corpo = null }
+  if (!r.ok) {
+    const tecnica = typeof corpo?.error === 'string' ? corpo.error : JSON.stringify(corpo?.error ?? corpo ?? '')
+    const causa = r.status === 503 || r.status === 429 ? 'espelho-fora' : classificarFalhaDoBling(r.status, corpo)
+    throw new ErroDoBling(causa, `${r.status} ${tecnica}`)
+  }
+  if (corpo?.fonte !== 'espelho' || !Array.isArray(corpo.data)) {
+    if (corpo?.fonte !== 'bling') throw new ErroDoBling('espelho-fora', 'resposta inesperada da rota de vendas')
+    espelho.ativo = false
+    espelho.sincronia = null
+    espelho.semVendedor = 0
+    return null
+  }
+  return corpo
+}
+
+async function pedidosDoEspelho(de, ate, tela, api) {
+  const corpo = await lerDoEspelho({ de, ate, tela }, api)
+  if (!corpo) return null
+  espelho.ativo = true
+  espelho.tela = tela
+  espelho.sincronia = corpo.sincronia ?? null
+  espelho.semVendedor = Number(corpo.incompletos?.sem_vendedor) || 0
+  if (espelho.detalhes.size > 20000) espelho.detalhes.clear()
+  for (const p of corpo.data) espelho.detalhes.set(String(p.id), p)
+  return corpo.data
+}
+
+async function detalheDoEspelho(id, api) {
+  const guardado = espelho.detalhes.get(id)
+  if (guardado) return guardado
+  // Pedido fora da janela (a venda que a regra do dia da nota traz de outro dia): busca por id, ainda no espelho.
+  const corpo = await lerDoEspelho({ ids: id, tela: espelho.tela }, api)
+  const p = corpo?.data?.[0]
+  if (!p) throw new ErroDoBling('espelho-fora', `pedido ${id} não está no espelho`)
+  espelho.detalhes.set(id, p)
+  return p
+}
+
+/** Só para teste: volta ao estado de fábrica. */
+export function _zerarEspelho() {
+  espelho.ativo = false; espelho.tela = ''; espelho.sincronia = null; espelho.semVendedor = 0; espelho.detalhes.clear()
+}
+
 // ── A paginação ───────────────────────────────────────────────────────────
 // Página vazia continua sendo "fim da lista" — isso é legítimo e é o caso do
 // dia sem venda. O que mudou: a FALHA não passa mais por vazio, ela sobe.
@@ -164,7 +265,13 @@ export async function chamarBling(sbClient, endpoint, params) {
 // laço; pelo teto, o laço termina e `aoTruncar` é chamado. Quem chama decide o
 // que fazer com isso — mas não dá mais para não saber.
 export async function paginasDoBling(sbClient, endpoint, params, opcoes = {}) {
-  const { maxPaginas = 10, aoTruncar = null, aoProgredir = null } = opcoes || {}
+  const { maxPaginas = 10, aoTruncar = null, aoProgredir = null, tela = '' } = opcoes || {}
+  // Vendas atendidas de um período, de uma tela que pede o espelho: com o flag VENDAS_FONTE=espelho o servidor
+  // devolve os pedidos (com itens e vendedor) e a lista do Bling nem é chamada.
+  if (tela && endpoint === 'pedidos/vendas' && params?.dataInicial && params?.dataFinal && String(params['idsSituacoes[]']) === '9') {
+    const doEspelho = await pedidosDoEspelho(params.dataInicial, params.dataFinal, tela, opcoes?.api)
+    if (doEspelho) return doEspelho
+  }
   const todos = []
   for (let pagina = 1; pagina <= maxPaginas; pagina++) {
     const resp = await chamarBling(sbClient, endpoint, { ...params, pagina, limite: 100 })

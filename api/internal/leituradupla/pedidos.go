@@ -115,7 +115,7 @@ func CompararPedidos(central []PedidoCentral, doCore map[string]PedidoCore, defa
 		if c.Contato != "" && k.Contato != "" && c.Contato != k.Contato {
 			dif("contato", "(id)", "(id)") // id de contato é dado pessoal indireto: só o fato de divergir
 		}
-		if c.Loja != "" && k.Loja != "" && c.Loja != k.Loja {
+		if c.Loja != "" && c.Loja != k.Loja { // espelho sem loja também conta: o pedido some para quem é limitado a canal
 			dif("loja", c.Loja, k.Loja)
 		}
 		if c.Vendedor != "" && k.Vendedor != "" && c.Vendedor != k.Vendedor {

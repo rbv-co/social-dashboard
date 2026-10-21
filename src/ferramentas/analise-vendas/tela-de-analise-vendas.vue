@@ -68,6 +68,8 @@
       </svg>
       <div><strong id="sa-aviso-titulo"></strong><span id="sa-aviso-detalhe"></span></div>
     </div>
+    <!-- A IDADE DO ESPELHO: ver a mesma faixa na Gestão à Vista. -->
+    <div id="sa-sinc" class="sa-sinc" hidden></div>
     <div id="sa-body"></div>
   </div>
 </template>
@@ -100,7 +102,7 @@ import { buscarDevolucoes, aplicarValorLiquidoDeTroca } from '../../compartilhad
 import { buscarPedidosShopifyDoPeriodo, mesclarPedidosShopify } from '../../compartilhado/pedidos-shopify.js'
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE — mesmo módulo da
 // Gestão à Vista, para as duas telas de venda nunca discordarem sobre isso.
-import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../compartilhado/chamada-do-bling.js'
+import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso, sincroniaDasVendas, avisoDaSincronia } from '../../compartilhado/chamada-do-bling.js'
 // Quando mostrar "Carregando" e quando escrever o recado de erro. Mora fora da
 // tela para poder ser provado sem navegador — ver o comentario do arquivo.
 import { corpoEstaVazio, deveMostrarCarregando, deveEscreverRecado } from './carregamento-da-tela.js'
@@ -179,7 +181,7 @@ function fmtR0(v){return 'R$ '+Math.round(Number(v)).toLocaleString('pt-BR');}
 // Mesma porta da Gestão à Vista: src/compartilhado/chamada-do-bling.js. Aqui só
 // atalhos com o sbClient já preso.
 const blingCall=(endpoint,params)=>chamarBling(sbClient,endpoint,params);
-const blingPages=(endpoint,params)=>paginasDoBling(sbClient,endpoint,params);
+const blingPages=(endpoint,params)=>paginasDoBling(sbClient,endpoint,params,{tela:'analise'});
 
 /* ── Relógio (legacy L5768-5779, verbatim) ── */
 function startSAClock(){
@@ -326,6 +328,19 @@ function esconderAvisoSa(){
   const el=document.getElementById('sa-aviso');
   if(el)el.hidden=true;
 }
+// A hora do espelho: sempre escrita; amarela (a faixa de aviso) só quando passa de 30 min.
+function aplicarSincroniaSa(){
+  const linha=document.getElementById('sa-sinc');
+  const a=avisoDaSincronia(sincroniaDasVendas());
+  if(linha){linha.hidden=!a;linha.textContent=a?a.linha:'';}
+  if(a?.defasado){
+    const el=document.getElementById('sa-aviso');
+    if(!el)return;
+    document.getElementById('sa-aviso-titulo').textContent=a.titulo;
+    document.getElementById('sa-aviso-detalhe').textContent=a.detalhe?' '+a.detalhe:'';
+    el.hidden=false;
+  }
+}
 
 async function loadSalesAnalysisData(period,opcoes){
   // `automatica` = veio do relógio de 5 minutos, não de um clique. Só a recarga
@@ -415,6 +430,7 @@ async function loadSalesAnalysisData(period,opcoes){
         .catch(()=>({times:[],membros:[],membrosDeGrupo:[]}))
     ]);
 
+    aplicarSincroniaSa();
     // O RECORTE POR TIME. `null` = vê tudo, e é o caminho de 15 dos 17 perfis
     // de hoje: nada muda para eles, que foi exatamente o pedido do dono.
     const meusCanais=areaNaApi('comercial')
@@ -1524,6 +1540,8 @@ onUnmounted(() => {
    abaixo do mínimo de 4,5. A cor é o sinal; o texto é para ler. */
 .tela-analise-vendas :deep(.sa-aviso){display:flex;align-items:center;gap:var(--sp-2);margin:0 0 10px;padding:9px 12px;border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface));border-left:3px solid var(--orange);border-radius:var(--radius-md);background:color-mix(in srgb, var(--orange) 10%, var(--surface));color:var(--text);font-family:var(--fonte-principal);font-size:max(11px, calc(12px * var(--escala-texto, 1)));line-height:1.45;overflow-wrap:anywhere;}
 .tela-analise-vendas :deep(.sa-aviso[hidden]){display:none;}
+.tela-analise-vendas :deep(.sa-sinc){margin:0 0 var(--sp-2);color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);}
+.tela-analise-vendas :deep(.sa-sinc[hidden]){display:none;}
 .tela-analise-vendas :deep(.sa-aviso svg){flex:0 0 auto;color:var(--orange);}
 .tela-analise-vendas :deep(.sa-aviso span){color:var(--muted);}
 .tela-analise-vendas :deep(.sa-loading-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
