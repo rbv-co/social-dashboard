@@ -55,12 +55,14 @@ async function acharPorEmail(proxy, email) {
   const busca = await bling(proxy, 'GET', '/contatos', { query: { pesquisa: email }, prioridade: 'sync' });
   if (busca.reautorizar) return { pausa: 'reautorizar' };
   if (busca.status === 429) return { pausa: '429' };
+  if (busca.status === 503) return { pausa: 'bling_instavel' };
   if (!busca.ok) return { erro: `busca no Bling falhou (${busca.status || 'sem resposta'})`, tipo: 'tenta' };
   const candidatos = ((await json(busca))?.data ?? []).slice(0, 5);
   for (const c of candidatos) {
     const det = await bling(proxy, 'GET', `/contatos/${c.id}`, { prioridade: 'sync' });
     if (det.reautorizar) return { pausa: 'reautorizar' };
     if (det.status === 429) return { pausa: '429' };
+    if (det.status === 503) return { pausa: 'bling_instavel' };
     if (!det.ok) return { erro: `detalhe do contato no Bling falhou (${det.status || 'sem resposta'})`, tipo: 'tenta' };
     if (minusculo((await json(det))?.data?.email) === minusculo(email)) return { id: String(c.id) };
   }
@@ -70,7 +72,7 @@ async function acharPorEmail(proxy, email) {
 /**
  * Leva UMA linha da lista ao Bling. Devolve:
  *   { id, reaproveitado }                 deu certo (grave `bling_id`/`bling_em`)
- *   { pausa: '429' | 'reautorizar' }      pare o lote, sem gravar nada na linha (o Bling pede calma / nova autorização)
+ *   { pausa: '429' | 'bling_instavel' | 'reautorizar' }      pare o lote, sem gravar nada na linha (o Bling pede calma / nova autorização)
  *   { erro, tipo: 'tenta' }               falha temporária: tenta de novo na próxima rodada (conta tentativa)
  *   { erro, tipo: 'incerto' }             a chamada pode ter chegado: NÃO reenvia (conferir no Bling)
  *   { erro, tipo: 'definitivo' }          o Bling recusou o corpo: repetir não adianta
@@ -87,6 +89,7 @@ export async function contatoDaLinha(proxy, linha) {
   if (r.reautorizar) return { pausa: 'reautorizar' };
   if (r.incerto) return { erro: `incerto: não deu para saber se o Bling gravou (chave ${chave}); conferir o contato no Bling`, tipo: 'incerto' };
   if (r.status === 429) return { pausa: '429' };
+  if (r.status === 503) return { pausa: 'bling_instavel' }; // disjuntor do Core aberto (X-Core-Origem: proxy): sem martelar, sem gastar tentativa
   if (r.status === 409) return { erro: 'outra chamada com a mesma chave está em andamento', tipo: 'tenta' };
   if (r.status === 0 || r.status >= 500) return { erro: `Bling indisponível (${r.status || 'sem resposta'})`, tipo: 'tenta' };
   if (!r.ok) return { erro: `o Bling recusou o cadastro (${r.status}): ${semDadoPessoal(await r.text().catch(() => ''))}`, tipo: 'definitivo' };
