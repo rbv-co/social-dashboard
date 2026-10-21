@@ -266,6 +266,7 @@ var matriz = map[string]linha{
 	"POST /avisar-decisao-de-reserva":                                {gModulo, rwE},
 	"POST /avisos/preferencias":                                      {gSessao, rwE},
 	"POST /bling-proxy":                                              {gModulo, rwL},
+	"GET /vendas/pedidos":                                            {gModulo, rwL},
 	"POST /buscar-lugar":                                             {gModulo, rwL},
 	"POST /comercial/metas/salvar":                                   {gDominio, rwE},
 	"POST /comercial/pedidos-vendedor/gravar":                        {gDominio, rwE},

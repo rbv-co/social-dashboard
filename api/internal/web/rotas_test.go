@@ -563,7 +563,7 @@ func TestRedesPelaMontagemReal(t *testing.T) {
 func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	p := testebanco.Novo(t)
 	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
-	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second,
+	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "GET /vendas/pedidos": PrazoVendasEspelho, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second,
 		// Plano 5.0: o grupo de domínio inteiro (e o /rpc) tem prazo; rota de domínio nova herda
 		"POST /rpc/{nome}": PrazoDominio,
 		// Plano 5.12: leituras do grupo de domínio

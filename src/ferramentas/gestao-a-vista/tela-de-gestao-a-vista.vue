@@ -72,6 +72,9 @@
       </svg>
       <div><strong id="gv-aviso-titulo"></strong><span id="gv-aviso-detalhe"></span></div>
     </div>
+    <!-- A IDADE DO ESPELHO. Quando as vendas vêm da cópia do Core, a hora da última sincronização fica escrita aqui;
+         passou de 30 min, a faixa acima avisa. Com a fonte no Bling, não aparece. -->
+    <div id="gv-sinc" class="gv-sinc" hidden></div>
     <div class="gv-board" id="gv-board">
       <div class="gv-loading-screen">
         <div class="gv-spinner"></div>
@@ -148,7 +151,7 @@ import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-aut
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE. Mesmo módulo da
 // Análise de Vendas: em 12/08/2026 a chamada devolvia o corpo sem olhar o status
 // HTTP, e a tela mostrou R$ 0,00 por 17 horas como se não tivesse havido venda.
-import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../compartilhado/chamada-do-bling.js'
+import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso, sincroniaDasVendas, avisoDaSincronia } from '../../compartilhado/chamada-do-bling.js'
 
 const router = useRouter()
 
@@ -216,7 +219,7 @@ function _fadeSwap(el,swapFn){
 // mesmo módulo que a Análise de Vendas usa. Aqui ficam só atalhos com o
 // sbClient já preso, para as chamadas desta tela não repetirem o argumento.
 const blingCall=(endpoint,params)=>chamarBling(sbClient,endpoint,params);
-const blingPages=(endpoint,params)=>paginasDoBling(sbClient,endpoint,params);
+const blingPages=(endpoint,params)=>paginasDoBling(sbClient,endpoint,params,{tela:'gestao'});
 
 /* ── Estado do módulo (legacy/index.html, verbatim) ── */
 let _gvSkuVersion=0;
@@ -596,6 +599,19 @@ function esconderAvisoGv(){
   const el=document.getElementById('gv-aviso');
   if(el)el.hidden=true;
 }
+// A hora do espelho: sempre escrita; amarela (a faixa de aviso) só quando passa de 30 min.
+function aplicarSincroniaGv(){
+  const linha=document.getElementById('gv-sinc');
+  const a=avisoDaSincronia(sincroniaDasVendas());
+  if(linha){linha.hidden=!a;linha.textContent=a?a.linha:'';}
+  if(a?.defasado){
+    const el=document.getElementById('gv-aviso');
+    if(!el)return;
+    document.getElementById('gv-aviso-titulo').textContent=a.titulo;
+    document.getElementById('gv-aviso-detalhe').textContent=a.detalhe?' '+a.detalhe:'';
+    el.hidden=false;
+  }
+}
 
 let _gvCurrentPeriod='today';
 let _gvLoadId=0; // cancela fetches anteriores imediatamente ao trocar período
@@ -634,6 +650,7 @@ async function loadGestaoVistaData(period){
     // Bling: chamadas SEQUENCIAIS para evitar rate limit (3 simultâneas causavam paginação incompleta)
     const pedidosBrutos=await blingPages('pedidos/vendas',{dataInicial:di,dataFinal:df,'idsSituacoes[]':9});
     if(myLoad!==_gvLoadId)return;
+    aplicarSincroniaGv();
     const pedidosPrevBrutos=await blingPages('pedidos/vendas',{dataInicial:diPrev,dataFinal:dfPrev,'idsSituacoes[]':9}).catch(()=>[]);
     if(myLoad!==_gvLoadId)return;
 
@@ -1734,6 +1751,8 @@ onUnmounted(() => {
    4,14 de contraste, abaixo do mínimo. A cor é o sinal; o texto é para ler. */
 .tela-gestao-a-vista :deep(.gv-aviso){display:flex;align-items:center;gap:var(--sp-2);margin:0 0 10px;padding:9px 12px;border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface));border-left:3px solid var(--orange);border-radius:var(--radius-md);background:color-mix(in srgb, var(--orange) 10%, var(--surface));color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));line-height:1.45;overflow-wrap:anywhere;}
 .tela-gestao-a-vista :deep(.gv-aviso[hidden]){display:none;}
+.tela-gestao-a-vista :deep(.gv-sinc){margin:0 0 var(--sp-2);padding-inline:var(--sp-3);color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);}
+.tela-gestao-a-vista :deep(.gv-sinc[hidden]){display:none;}
 .tela-gestao-a-vista :deep(.gv-aviso svg){flex:0 0 auto;color:var(--orange);}
 .tela-gestao-a-vista :deep(.gv-aviso span){color:var(--muted);}
 .tela-gestao-a-vista :deep(.gv-board){flex:1;display:grid;grid-template-columns:480px 1fr;gap:1px;background:var(--border);overflow:hidden;min-height:0;position:relative;z-index:2;backdrop-filter:none;}

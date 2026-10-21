@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 // conectar-no-banco-de-dados.js chama window.supabase.createClient() ao carregar
 // (no navegador existe, aqui não). Mesmo truque de notificacoes-push.test.mjs.
 globalThis.window = { supabase: { createClient: () => ({}) } }
-const { classificarFalhaDoBling, textoDoAviso, avisoDoErro, ErroDoBling, chamarBling, paginasDoBling } = await import('./chamada-do-bling.js')
+const { classificarFalhaDoBling, textoDoAviso, avisoDoErro, ErroDoBling, chamarBling, paginasDoBling, sincroniaDasVendas, avisoDaSincronia, _zerarEspelho } = await import('./chamada-do-bling.js')
 
 test('500 com "Token refresh failed" é o Bling recusando o iamundi', () => {
   const corpo = { error: 'Error: Token refresh failed: {"error":{"type":"FORBIDDEN","message":"Usuário não autorizado"}}' }
@@ -222,4 +222,111 @@ test('⚠️ sair pelo TETO AVISA, com quantos leu', async () => {
 test('o teto e configuravel, e o padrao continua 10 paginas', async () => {
   const todos = await comFetch([CHEIA], () => paginasDoBling(sbFalso, 'produtos', {}))
   assert.equal(todos.length, 1000, 'quem nao pede teto novo continua com o de antes')
+})
+
+// ── vendas pelo espelho do Core (plano 03) ────────────────────────────────
+const PEDIDOS = [
+  { id: 1001, numero: 2707, data: '2026-10-01', total: 1472.5, loja: { id: 205657609 }, vendedor: { id: 15 }, itens: [{ codigo: 'A', quantidade: 1, valor: 1550, desconto: 5 }] },
+  { id: 1002, numero: 2708, data: '2026-10-02', total: 100, loja: { id: 205657609 }, itens: [] },
+]
+const SINC = { ultimo_ok: '2026-10-21T19:55:00Z', atrasado: false, defasado: false }
+// fetcher de mentira: guarda as URLs e responde com o corpo dado (status 200 por padrão)
+function espelhoFalso(corpo, status = 200) {
+  const urls = []
+  const fetcher = async (u) => { urls.push(u); return { ok: status < 400, status, json: async () => (typeof corpo === 'function' ? corpo(u) : corpo) } }
+  return { urls, api: { naApi: true, fetcher } }
+}
+const PARAMS = { dataInicial: '2026-10-01', dataFinal: '2026-10-21', 'idsSituacoes[]': 9 }
+
+test('espelho: a lista vem da rota nova, sem tocar no Bling, e o detalhe sai do mesmo objeto', async () => {
+  _zerarEspelho()
+  const f = espelhoFalso({ fonte: 'espelho', data: PEDIDOS, sincronia: SINC, incompletos: { sem_vendedor: 1 } })
+  const lista = await comFetch([], () => paginasDoBling(sbFalso, 'pedidos/vendas', PARAMS, { tela: 'gestao', api: f.api }))
+  assert.equal(lista.length, 2)
+  assert.match(f.urls[0], /^\/vendas\/pedidos\?de=2026-10-01&ate=2026-10-21&tela=gestao$/)
+  // o detalhe não faz nenhuma chamada (nem fetch do Bling, nem outra ao espelho)
+  const det = await comFetch([], () => chamarBling(sbFalso, 'pedidos/vendas/1001', {}, f.api))
+  assert.equal(det.data.vendedor.id, 15)
+  assert.equal(det.data.itens[0].desconto, 5)
+  assert.equal(f.urls.length, 1)
+  assert.equal(sincroniaDasVendas().ultimo_ok, SINC.ultimo_ok)
+  assert.equal(sincroniaDasVendas().sem_vendedor, 1)
+})
+
+test('espelho: pedido fora da janela é buscado por id, ainda no espelho', async () => {
+  _zerarEspelho()
+  const f = espelhoFalso((u) => u.includes('ids=') ? { fonte: 'espelho', data: [PEDIDOS[1]], sincronia: SINC } : { fonte: 'espelho', data: [PEDIDOS[0]], sincronia: SINC })
+  await paginasDoBling(sbFalso, 'pedidos/vendas', PARAMS, { tela: 'analise', api: f.api })
+  const det = await chamarBling(sbFalso, 'pedidos/vendas/1002', {}, f.api)
+  assert.equal(det.data.numero, 2708)
+  assert.match(f.urls[1], /ids=1002&tela=analise/)
+})
+
+test('espelho: com a flag em bling (fonte:bling) cai no caminho antigo e esquece o espelho', async () => {
+  _zerarEspelho()
+  const f = espelhoFalso({ fonte: 'bling' })
+  const todos = await comFetch([{ status: 200, corpo: { data: [{ id: 7 }] } }], () => paginasDoBling(sbFalso, 'pedidos/vendas', PARAMS, { tela: 'gestao', api: f.api }))
+  assert.deepEqual(todos, [{ id: 7 }])
+  assert.equal(sincroniaDasVendas(), null)
+})
+
+test('espelho: Core fora é "espelho-fora" (503), nunca lista vazia nem Bling por baixo', async () => {
+  _zerarEspelho()
+  const f = espelhoFalso({ error: 'core_indisponivel' }, 503)
+  await assert.rejects(
+    () => comFetch([], () => paginasDoBling(sbFalso, 'pedidos/vendas', PARAMS, { tela: 'gestao', api: f.api })),
+    (e) => e instanceof ErroDoBling && e.causa === 'espelho-fora')
+})
+
+test('espelho: sem permissão (403) continua sendo "sem-acesso-a-vendas"', async () => {
+  _zerarEspelho()
+  const f = espelhoFalso({ error: 'sem permissao' }, 403)
+  await assert.rejects(
+    () => comFetch([], () => paginasDoBling(sbFalso, 'pedidos/vendas', PARAMS, { tela: 'gestao', api: f.api })),
+    (e) => e.causa === 'sem-acesso-a-vendas')
+})
+
+test('espelho: resposta sem a forma esperada é erro, não lista vazia', async () => {
+  _zerarEspelho()
+  const f = espelhoFalso({ qualquer: 'coisa' })
+  await assert.rejects(
+    () => comFetch([], () => paginasDoBling(sbFalso, 'pedidos/vendas', PARAMS, { tela: 'gestao', api: f.api })),
+    (e) => e.causa === 'espelho-fora')
+})
+
+test('espelho: sem `tela`, ou com outro endpoint, ou outra situação, nada muda (vai ao Bling)', async () => {
+  _zerarEspelho()
+  const f = espelhoFalso({ fonte: 'espelho', data: PEDIDOS, sincronia: SINC })
+  for (const [ep, pr, op] of [
+    ['pedidos/vendas', PARAMS, {}],
+    ['produtos', PARAMS, { tela: 'gestao', api: f.api }],
+    ['pedidos/vendas', { ...PARAMS, 'idsSituacoes[]': 12 }, { tela: 'gestao', api: f.api }],
+  ]) {
+    const todos = await comFetch([{ status: 200, corpo: { data: [{ id: 1 }] } }], () => paginasDoBling(sbFalso, ep, pr, op))
+    assert.deepEqual(todos, [{ id: 1 }])
+  }
+  assert.equal(f.urls.length, 0)
+})
+
+test('aviso da sincronia: hora de Brasília, amarelo acima de 30 min ou quando o servidor diz atrasado', () => {
+  const agora = Date.parse('2026-10-21T20:00:00Z')
+  const ok = avisoDaSincronia(SINC, { agora })
+  assert.equal(ok.hora, '16:55') // 19:55Z = 16:55 em Brasília
+  assert.equal(ok.defasado, false)
+  assert.equal(ok.titulo, 'Atualizado às 16:55')
+  assert.equal(ok.linha, 'Vendas atualizadas às 16:55')
+  assert.equal(avisoDaSincronia({ ...SINC, sem_vendedor: 1 }, { agora }).linha, 'Vendas atualizadas às 16:55 · 1 pedido sem vendedor informado')
+  assert.match(avisoDaSincronia({ ...SINC, sem_vendedor: 25 }, { agora }).linha, /· 25 pedidos sem vendedor informado$/)
+  assert.equal(avisoDaSincronia(SINC, { agora: agora + 26 * 60000 }).defasado, true)
+  assert.equal(avisoDaSincronia({ ...SINC, atrasado: true }, { agora }).defasado, true)
+  assert.match(avisoDaSincronia({ ...SINC, defasado: true }, { agora }).titulo, /atrasado/)
+  assert.equal(avisoDaSincronia(null), null)
+  assert.equal(avisoDaSincronia({ ultimo_ok: null }), null)
+})
+
+test('textoDoAviso: espelho fora não culpa o Bling', () => {
+  const adm = textoDoAviso('espelho-fora', { ehAdmin: true, horaDoDado: '14:30' })
+  assert.match(adm.titulo, /espelho/)
+  assert.doesNotMatch(adm.titulo + adm.detalhe, /O Bling não respondeu/)
+  assert.match(textoDoAviso('espelho-fora', { horaDoDado: '14:30' }).titulo, /aguardando atualização/)
 })

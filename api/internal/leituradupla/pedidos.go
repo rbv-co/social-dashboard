@@ -42,6 +42,8 @@ type PedidoCentral struct {
 	Total     string // total_do_bling
 	Situacao  string // situacao_id ("" = nulo)
 	Contato   string // bling_contato_id ("" = nulo)
+	Loja      string // loja_id ("" = nulo)
+	Vendedor  string // vendedor_id ("" = nulo)
 	Itens     int
 	SomaItens string // soma de quantidade × valor_unitario
 }
@@ -49,6 +51,7 @@ type PedidoCentral struct {
 // PedidoCore é a linha de `pedidos` do espelho já reduzida, com os itens agregados.
 type PedidoCore struct {
 	ID, Numero, Data, Total, Situacao, Contato string
+	Loja, Vendedor                             string
 	AtualizadoEm                               string
 	Itens                                      int
 	SomaItens                                  float64 // soma de quantidade × valor, sem arredondar
@@ -62,11 +65,18 @@ type RelatorioPedidos struct {
 	SoCoreNaoVenda                    int // só no core e não Atendido: a Central não guarda, esperado
 	Recentes                          int
 	Diferencas                        []Diferenca
-	Defasado                          bool
+	// TotaisLoja e TotaisVendedor: soma de total (centavos) por loja e por vendedor dos pedidos Atendido casados nos
+	// dois lados (plano 03-B: é o que Gestão à Vista e Análise de Vendas mostram). Só entra pedido com a loja (ou o
+	// vendedor) conhecida dos dois lados; SemVendedorNoCore conta os que a Central sabe de quem é e o espelho não
+	// (o Core guarda o vendedor só quando o detalhe do pedido chega): informativo, a tela cai no cache local.
+	TotaisLoja, TotaisVendedor []Diferenca
+	SemVendedorNoCore          int
+	Defasado                   bool
 }
 
 func (r RelatorioPedidos) Limpo() bool {
-	return r.Defasado || (len(r.SoCentral) == 0 && len(r.SoCore) == 0 && len(r.Diferencas) == 0)
+	return r.Defasado || (len(r.SoCentral) == 0 && len(r.SoCore) == 0 && len(r.Diferencas) == 0 &&
+		len(r.TotaisLoja) == 0 && len(r.TotaisVendedor) == 0)
 }
 
 // CompararPedidos casa por id do Bling (texto). Compara número, total e soma dos itens (centavos),
@@ -76,6 +86,7 @@ func CompararPedidos(central []PedidoCentral, doCore map[string]PedidoCore, defa
 	r := RelatorioPedidos{Central: len(central), Core: len(doCore), Defasado: defasado}
 	var primeiro string
 	vistas := make(map[string]bool, len(central))
+	lojaC, lojaK, vendC, vendK := map[string]int64{}, map[string]int64{}, map[string]int64{}, map[string]int64{}
 	for _, c := range central {
 		vistas[c.ID] = true
 		if primeiro == "" || c.Data < primeiro {
@@ -104,6 +115,27 @@ func CompararPedidos(central []PedidoCentral, doCore map[string]PedidoCore, defa
 		if c.Contato != "" && k.Contato != "" && c.Contato != k.Contato {
 			dif("contato", "(id)", "(id)") // id de contato é dado pessoal indireto: só o fato de divergir
 		}
+		if c.Loja != "" && c.Loja != k.Loja { // espelho sem loja também conta: o pedido some para quem é limitado a canal
+			dif("loja", c.Loja, k.Loja)
+		}
+		if c.Vendedor != "" && k.Vendedor != "" && c.Vendedor != k.Vendedor {
+			dif("vendedor", c.Vendedor, k.Vendedor)
+		}
+		if c.Situacao == situacaoVenda && k.Situacao == situacaoVenda {
+			a, okA := cents(c.Total)
+			b, okB := cents(k.Total)
+			if okA && okB && c.Loja != "" && k.Loja != "" {
+				lojaC[c.Loja] += a
+				lojaK[k.Loja] += b
+			}
+			if okA && okB && c.Vendedor != "" && k.Vendedor != "" {
+				vendC[c.Vendedor] += a
+				vendK[k.Vendedor] += b
+			}
+			if c.Vendedor != "" && k.Vendedor == "" {
+				r.SemVendedorNoCore++
+			}
+		}
 		if c.Itens != k.Itens {
 			dif("itens", strconv.Itoa(c.Itens), strconv.Itoa(k.Itens))
 		} else if a, okA := cents(c.SomaItens); !okA || absInt(a-int64(math.Round(k.SomaItens*100))) > int64(c.Itens) {
@@ -116,6 +148,8 @@ func CompararPedidos(central []PedidoCentral, doCore map[string]PedidoCore, defa
 			r.Iguais++
 		}
 	}
+	r.TotaisLoja = totaisDiferentes("total_loja", lojaC, lojaK)
+	r.TotaisVendedor = totaisDiferentes("total_vendedor", vendC, vendK)
 	for id, k := range doCore {
 		if vistas[id] {
 			continue
@@ -136,6 +170,27 @@ func CompararPedidos(central []PedidoCentral, doCore map[string]PedidoCore, defa
 	}
 	return r
 }
+
+// totaisDiferentes compara as somas por chave (centavos) e devolve as chaves que não batem, em ordem.
+func totaisDiferentes(campo string, central, doCore map[string]int64) []Diferenca {
+	var out []Diferenca
+	chaves := map[string]bool{}
+	for k := range central {
+		chaves[k] = true
+	}
+	for k := range doCore {
+		chaves[k] = true
+	}
+	for k := range chaves {
+		if a, b := central[k], doCore[k]; a != b {
+			out = append(out, Diferenca{k, campo, centavos(a), centavos(b)})
+		}
+	}
+	slices.SortFunc(out, func(x, y Diferenca) int { return strings.Compare(x.ID, y.ID) })
+	return out
+}
+
+func centavos(n int64) string { return strconv.FormatFloat(float64(n)/100, 'f', 2, 64) }
 
 func absInt(n int64) int64 {
 	if n < 0 {
@@ -165,7 +220,7 @@ func (c PedidosPG) Pedidos(ctx context.Context, desde time.Time) ([]PedidoCentra
 	defer tx.Rollback(ctx) //nolint:errcheck
 	rows, err := tx.Query(ctx, `select p.bling_pedido_id::text, coalesce(p.numero,''), p.data_do_pedido::text,
 	  coalesce(p.total_do_bling::text,''), coalesce(p.situacao_id::text,''), coalesce(p.bling_contato_id::text,''),
-	  coalesce(i.n,0), coalesce(i.soma,0)::text
+	  coalesce(p.loja_id::text,''), coalesce(p.vendedor_id::text,''), coalesce(i.n,0), coalesce(i.soma,0)::text
 	from vessel_pedidos p
 	left join lateral (select count(*) n, sum(coalesce(quantidade,0) * coalesce(valor_unitario,0)) soma
 	  from vessel_pedido_itens where pedido_id = p.id) i on true
@@ -177,7 +232,7 @@ func (c PedidosPG) Pedidos(ctx context.Context, desde time.Time) ([]PedidoCentra
 	var out []PedidoCentral
 	for rows.Next() {
 		var l PedidoCentral
-		if err := rows.Scan(&l.ID, &l.Numero, &l.Data, &l.Total, &l.Situacao, &l.Contato, &l.Itens, &l.SomaItens); err != nil {
+		if err := rows.Scan(&l.ID, &l.Numero, &l.Data, &l.Total, &l.Situacao, &l.Contato, &l.Loja, &l.Vendedor, &l.Itens, &l.SomaItens); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -202,7 +257,7 @@ func (s *Pedidos) Tarefa() worker.Tarefa {
 func (s *Pedidos) lerCore(ctx context.Context, desde time.Time, local []PedidoCentral) (map[string]PedidoCore, []*core.Leitura, error) {
 	q := url.Values{}
 	q.Set("data_de", desde.Format("2006-01-02"))
-	q.Set("campos", "pedido_id_bling,numero,data,total,status_id_bling,contato_id,updated_at")
+	q.Set("campos", "pedido_id_bling,numero,data,total,status_id_bling,contato_id,loja_id_bling,vendedor_id_bling,updated_at")
 	l, err := s.Core.EspelhoTodas(ctx, "pedidos", q)
 	if err != nil {
 		return nil, nil, err
@@ -215,7 +270,8 @@ func (s *Pedidos) lerCore(ctx context.Context, desde time.Time, local []PedidoCe
 			return nil, nil, fmt.Errorf("%w: pedido sem id", core.ErrIndisponivel)
 		}
 		out[id] = PedidoCore{ID: id, Numero: texto(x["numero"]), Data: dia(texto(x["data"])), Total: texto(x["total"]),
-			Situacao: texto(x["status_id_bling"]), Contato: texto(x["contato_id"]), AtualizadoEm: texto(x["updated_at"])}
+			Situacao: texto(x["status_id_bling"]), Contato: texto(x["contato_id"]),
+			Loja: texto(x["loja_id_bling"]), Vendedor: texto(x["vendedor_id_bling"]), AtualizadoEm: texto(x["updated_at"])}
 	}
 	// itens só do que vai ser comparado: o que a Central tem e as vendas do core
 	quer := make(map[string]bool, len(local))
@@ -294,7 +350,8 @@ func (s *Pedidos) Rodar(ctx context.Context) error {
 	r := CompararPedidos(local, doCore, defasado, corte)
 	atributos := []any{"tabela", "pedidos", "dias", dias, "central", r.Central, "core", r.Core, "iguais", r.Iguais,
 		"so_central", len(r.SoCentral), "so_core", len(r.SoCore), "so_core_anterior", len(r.SoCoreAnterior), "so_core_nao_venda", r.SoCoreNaoVenda,
-		"diferencas", len(r.Diferencas), "recentes_ignorados", r.Recentes, "defasado", r.Defasado, "sincronia_informada", informada}
+		"diferencas", len(r.Diferencas), "totais_loja_dif", len(r.TotaisLoja), "totais_vendedor_dif", len(r.TotaisVendedor),
+		"sem_vendedor_no_core", r.SemVendedorNoCore, "recentes_ignorados", r.Recentes, "defasado", r.Defasado, "sincronia_informada", informada}
 	if r.Limpo() && !r.Defasado && r.Iguais == 0 && r.Central > 0 {
 		// nada foi comparado (tudo "recente" no core, por exemplo): não dá para dizer que está limpo
 		slog.Warn("leitura dupla", append(atributos, "resultado", "inconclusiva")...)
@@ -306,6 +363,7 @@ func (s *Pedidos) Rodar(ctx context.Context) error {
 	}
 	slog.Warn("leitura dupla", append(atributos, "resultado", "divergente",
 		"amostra_so_central", amostra(r.SoCentral), "amostra_so_core", amostra(r.SoCore),
-		"amostra_diferencas", amostraDif(r.Diferencas))...)
+		"amostra_diferencas", amostraDif(r.Diferencas), "amostra_totais_loja", amostraDif(r.TotaisLoja),
+		"amostra_totais_vendedor", amostraDif(r.TotaisVendedor))...)
 	return nil
 }
