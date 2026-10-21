@@ -1540,7 +1540,7 @@ onUnmounted(() => {
    abaixo do mínimo de 4,5. A cor é o sinal; o texto é para ler. */
 .tela-analise-vendas :deep(.sa-aviso){display:flex;align-items:center;gap:var(--sp-2);margin:0 0 10px;padding:9px 12px;border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface));border-left:3px solid var(--orange);border-radius:var(--radius-md);background:color-mix(in srgb, var(--orange) 10%, var(--surface));color:var(--text);font-family:var(--fonte-principal);font-size:max(11px, calc(12px * var(--escala-texto, 1)));line-height:1.45;overflow-wrap:anywhere;}
 .tela-analise-vendas :deep(.sa-aviso[hidden]){display:none;}
-.tela-analise-vendas :deep(.sa-sinc){margin:0 0 var(--sp-2);color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);}
+.tela-analise-vendas :deep(.sa-sinc){margin:0 0 var(--sp-2);padding-inline:var(--sp-3);color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);}
 .tela-analise-vendas :deep(.sa-sinc[hidden]){display:none;}
 .tela-analise-vendas :deep(.sa-aviso svg){flex:0 0 auto;color:var(--orange);}
 .tela-analise-vendas :deep(.sa-aviso span){color:var(--muted);}

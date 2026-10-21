@@ -1751,7 +1751,7 @@ onUnmounted(() => {
    4,14 de contraste, abaixo do mínimo. A cor é o sinal; o texto é para ler. */
 .tela-gestao-a-vista :deep(.gv-aviso){display:flex;align-items:center;gap:var(--sp-2);margin:0 0 10px;padding:9px 12px;border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface));border-left:3px solid var(--orange);border-radius:var(--radius-md);background:color-mix(in srgb, var(--orange) 10%, var(--surface));color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));line-height:1.45;overflow-wrap:anywhere;}
 .tela-gestao-a-vista :deep(.gv-aviso[hidden]){display:none;}
-.tela-gestao-a-vista :deep(.gv-sinc){margin:0 0 var(--sp-2);color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);}
+.tela-gestao-a-vista :deep(.gv-sinc){margin:0 0 var(--sp-2);padding-inline:var(--sp-3);color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);}
 .tela-gestao-a-vista :deep(.gv-sinc[hidden]){display:none;}
 .tela-gestao-a-vista :deep(.gv-aviso svg){flex:0 0 auto;color:var(--orange);}
 .tela-gestao-a-vista :deep(.gv-aviso span){color:var(--muted);}
