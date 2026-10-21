@@ -2418,7 +2418,7 @@ import PainelDeBusca from './painel-de-busca.vue'
 import {
   produtosParaEscolher, procurarProduto, fatiarProdutos, numerosDePagina,
 } from './produtos-do-bling.js'
-import { paginasDoBling, chamarBling, avisoDoErro } from '../../compartilhado/chamada-do-bling.js'
+import { paginasDoBling, chamarBling, avisoDoErro, avisoDaSincronia } from '../../compartilhado/chamada-do-bling.js'
 import { temSuporte, traduzirFalha, criarGravador } from './gravador-nfc.js'
 import {
   classificarLeitura, acoesDaLeitura, precisaConfirmarGarantia, resetar, regravar,
@@ -3654,14 +3654,23 @@ async function carregarProdutos() {
     // pedaço, porque `SS` vem depois de `LV` em ordem alfabética e os SKU novos
     // moram no fim da lista.
     let truncou = 0
+    let doEspelho = null
     const itens = await paginasDoBling(sbClient, 'produtos', { criterio: 2 }, {
       maxPaginas: 60,
       aoTruncar: (quantos) => { truncou = quantos },
+      aoEspelho: (sinc) => { doEspelho = sinc || {} },
       aoProgredir: (quantos) => { produtosLidos.value = quantos },
     })
     produtos.value = produtosParaEscolher(itens)
     if (!produtos.value.length) {
       erroProdutos.value = { titulo: 'Não encontrei nenhum produto da linha nova no Bling.', detalhe: '' }
+    } else if (doEspelho) {
+      // O Bling não respondeu e a lista veio da cópia do Core (1×/dia): SKU cadastrado depois não está nela.
+      const hora = avisoDaSincronia(doEspelho)?.hora
+      erroProdutos.value = {
+        titulo: `O Bling não respondeu: esta lista vem da cópia do Core${hora ? ` de ${hora}` : ''}.`,
+        detalhe: 'Produto cadastrado depois disso pode não aparecer, e as miniaturas ficam de fora.',
+      }
     } else if (truncou) {
       // NÃO É ERRO, É AVISO: a lista veio, só não veio inteira. Quem está
       // criando um lote precisa saber que o produto pode existir e não estar

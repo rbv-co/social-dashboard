@@ -139,6 +139,18 @@ test('paginasDoBling junta as páginas e para na página curta', async () => {
   assert.equal(todos.length, 101)
 })
 
+test('paginasDoBling avisa quando o servidor respondeu da cópia do Core (reserva dos produtos)', async () => {
+  const sinc = { ultimo_ok: '2026-10-21T04:41:03Z', atrasado: false }
+  let visto = 'nunca'
+  const todos = await comFetch([{ status: 200, corpo: { fonte: 'espelho', sincronia: sinc, data: [{ id: 1 }] } }],
+    () => paginasDoBling(sbFalso, 'produtos', { criterio: 2 }, { aoEspelho: (s) => { visto = s } }))
+  assert.equal(todos.length, 1)
+  assert.deepEqual(visto, sinc)
+  visto = 'nunca'
+  await comFetch([{ status: 200, corpo: { data: [{ id: 1 }] } }], () => paginasDoBling(sbFalso, 'produtos', {}, { aoEspelho: (s) => { visto = s } }))
+  assert.equal(visto, 'nunca', 'Bling vivo não dispara o aviso')
+})
+
 test('lista vazia NÃO é falha — é fim de lista', async () => {
   const todos = await comFetch([{ status: 200, corpo: { data: [] } }],
     () => paginasDoBling(sbFalso, 'pedidos/vendas', {}))

@@ -54,6 +54,8 @@ func permitido(endpoint string) bool {
 type Bling struct {
 	Pool *pgxpool.Pool
 	Core *core.Cliente
+
+	produtos produtosCache // reserva dos produtos (produtos_espelho.go)
 }
 
 func responder(w http.ResponseWriter, status int, corpo any) {
@@ -285,6 +287,14 @@ func (b *Bling) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := b.chamar(r, in.Endpoint, query(in.Params))
+	// Produto com o Bling fora: a cópia do Core responde, marcada `fonte:"espelho"`. Sem cópia, o erro do Bling segue como veio.
+	if res.blingFalhou() && caminhoDeProduto.MatchString(in.Endpoint) {
+		if doEspelho, ok := b.produtosDoEspelho(r.Context(), in.Endpoint, in.Params); ok {
+			slog.Warn("bling-proxy: produto respondido pelo espelho", "endpoint", in.Endpoint, "status", res.status)
+			responder(w, http.StatusOK, doEspelho)
+			return
+		}
+	}
 	if !res.propria { // erro desta API (core fora, sem token) não é corpo do Bling: não se recorta
 		corpo, negado := canais.Recortar(in.Endpoint, res.corpo, lista)
 		if negado {
