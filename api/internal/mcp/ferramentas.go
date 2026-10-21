@@ -319,15 +319,23 @@ func decidirRequisicao(c chamada, args json.RawMessage) (string, bool) {
 
 // ---- manutenção ----
 
+// saltoAbsurdoKm: o mesmo de lancamento-de-manutencao.js (SALTO_ABSURDO_KM): nenhum carro da frota anda isso entre
+// dois registros; é dígito a mais.
+const saltoAbsurdoKm = 200000
+
+// lancarManutencao grava o serviço e as trocas (cada uma vira revisão feita) com as travas da tela
+// (problemasDoLancamento e diferencaDeValores em lancamento-de-manutencao.js). A mais: o nome do item é casado com o
+// plano, porque o alerta de revisão (revisoes.js, ultimaRevisao) compara o nome exato e "troca de oleo" sumiria dele.
 func lancarManutencao(c chamada, args json.RawMessage) (string, bool) {
 	var in struct {
-		VeiculoID  string   `json:"veiculo_id"`
-		Km         int64    `json:"km"`
-		FeitaEm    *string  `json:"feita_em,omitempty"`
-		Oficina    *string  `json:"oficina,omitempty"`
-		TotalReais *float64 `json:"total_reais,omitempty"`
-		Observacao *string  `json:"observacao,omitempty"`
-		Trocas     []struct {
+		VeiculoID    string   `json:"veiculo_id"`
+		Km           int64    `json:"km"`
+		KmConfirmado bool     `json:"km_confirmado"`
+		FeitaEm      *string  `json:"feita_em,omitempty"`
+		Oficina      *string  `json:"oficina,omitempty"`
+		TotalReais   *float64 `json:"total_reais,omitempty"`
+		Observacao   *string  `json:"observacao,omitempty"`
+		Trocas       []struct {
 			Item       string   `json:"item"`
 			CustoReais *float64 `json:"custo_reais,omitempty"`
 		} `json:"trocas"`
@@ -337,6 +345,54 @@ func lancarManutencao(c chamada, args json.RawMessage) (string, bool) {
 	}
 	if !reUUID.MatchString(in.VeiculoID) {
 		return recusa("veiculo_id deve ser o uuid do carro (use listar_veiculos)")
+	}
+	if in.Km <= 0 {
+		return recusa("Informe o KM do painel: sem ele a troca não entra no alerta de revisão.")
+	}
+	st, corpo := c.pedir(http.MethodGet, "/frota/plano-revisao", nil, nil)
+	if st != http.StatusOK {
+		return recusa(fmt.Sprintf("Não gravei: não consegui ler o plano de revisão (HTTP %d).", st))
+	}
+	var plano []struct {
+		Item string `json:"item"`
+	}
+	if err := json.Unmarshal(corpo, &plano); err != nil {
+		return recusa("Não gravei: plano de revisão ilegível.")
+	}
+	doPlano := map[string]string{}
+	for _, p := range plano {
+		doPlano[normalizar(p.Item)] = p.Item
+	}
+	vistos := map[string]bool{}
+	var fora []string
+	for i, t := range in.Trocas {
+		n := normalizar(t.Item)
+		switch {
+		case n == "":
+			return recusa("Toda troca precisa do nome do item.")
+		case vistos[n]:
+			return recusa(fmt.Sprintf("%q aparece duas vezes: junte numa linha só (seriam dois alertas para a mesma troca).", t.Item))
+		}
+		vistos[n] = true
+		if nome, ok := doPlano[n]; ok {
+			in.Trocas[i].Item = nome
+		} else {
+			fora = append(fora, strings.TrimSpace(t.Item))
+		}
+	}
+	km, err := kmConhecido(c, in.VeiculoID)
+	if err != nil {
+		return recusa("Não gravei: " + err.Error())
+	}
+	if km != nil && !in.KmConfirmado {
+		if in.Km < *km {
+			return recusa(fmt.Sprintf("O KM informado (%d) é menor que o maior já conhecido deste carro (%d). Isso é normal "+
+				"quando o painel foi trocado na oficina: confirme com a pessoa e repita com km_confirmado=true.", in.Km, *km))
+		}
+		if in.Km-*km > saltoAbsurdoKm {
+			return recusa(fmt.Sprintf("São %d km de salto desde o último KM conhecido (%d). Confirme o número com a pessoa "+
+				"e repita com km_confirmado=true.", in.Km-*km, *km))
+		}
 	}
 	cab := map[string]any{"veiculo_id": in.VeiculoID, "km": in.Km}
 	for k, v := range map[string]*string{"feita_em": in.FeitaEm, "oficina": in.Oficina, "observacao": in.Observacao} {
@@ -348,13 +404,30 @@ func lancarManutencao(c chamada, args json.RawMessage) (string, bool) {
 		cab["total_centavos"] = centavos(*in.TotalReais)
 	}
 	trocas := make([]map[string]any, len(in.Trocas))
+	var soma int64
+	comValor := false
 	for i, t := range in.Trocas {
 		trocas[i] = map[string]any{"item": t.Item}
 		if t.CustoReais != nil {
 			trocas[i]["custo_centavos"] = centavos(*t.CustoReais)
+			soma += centavos(*t.CustoReais)
+			comValor = true
 		}
 	}
-	return resultado(c.pedir(http.MethodPost, "/frota/manutencoes", nil, map[string]any{"manutencao": cab, "trocas": trocas}))
+	texto, falhou := resultado(c.pedir(http.MethodPost, "/frota/manutencoes", nil, map[string]any{"manutencao": cab, "trocas": trocas}))
+	if falhou {
+		return texto, falhou
+	}
+	if len(fora) > 0 {
+		texto += "\n\nAviso: fora do plano de revisão, não entram no alerta de troca: " + strings.Join(fora, ", ") +
+			". Se era item do plano, o nome certo está em ver_plano_de_revisao."
+	}
+	// a tela só diz a diferença (mão de obra, peça fora da lista) e grava assim mesmo
+	if in.TotalReais != nil && comValor && centavos(*in.TotalReais) != soma {
+		texto += fmt.Sprintf("\n\nAviso: os itens somam R$ %.2f e o total informado é R$ %.2f. Confira os valores com a pessoa.",
+			float64(soma)/100, *in.TotalReais)
+	}
+	return texto, false
 }
 
 // ---- o catálogo ----
@@ -402,9 +475,10 @@ var ferramentasDaFrota = []ferramenta{
 		esquema:   `{"type":"object","properties":{` + pVeiculo + `,` + pLimite + `},"additionalProperties":false}`,
 		rodar:     listar("/frota/abastecimentos", "", "veiculo_id")},
 	{nome: "listar_revisoes", titulo: "Listar revisões feitas", leitura: true,
-		descricao: "Itens trocados nas manutenções (revisões feitas), do mais recente ao mais antigo. Custo em centavos.",
-		esquema:   `{"type":"object","properties":{` + pVeiculo + `,` + pLimite + `},"additionalProperties":false}`,
-		rodar:     listar("/frota/revisoes", "criada_em.desc", "veiculo_id")},
+		descricao: "Itens trocados nas manutenções (revisões feitas), do mais recente ao mais antigo. Custo em centavos. " +
+			"Para cadastrar uma revisão, use lancar_manutencao.",
+		esquema: `{"type":"object","properties":{` + pVeiculo + `,` + pLimite + `},"additionalProperties":false}`,
+		rodar:   listar("/frota/revisoes", "criada_em.desc", "veiculo_id")},
 	{nome: "ver_plano_de_revisao", titulo: "Ver plano de revisão", leitura: true,
 		descricao: "O plano de revisão da frota: cada item e de quantos em quantos km ele se troca.",
 		esquema:   `{"type":"object","properties":{` + pLimite + `},"additionalProperties":false}`,
@@ -453,10 +527,15 @@ var ferramentasDaFrota = []ferramenta{
 			`"decisao":{"type":"string","enum":["aprovada","recusada","cancelada","revogada"]},"motivo":{"type":"string"}},` +
 			`"additionalProperties":false}`,
 		rodar: decidirRequisicao},
-	{nome: "lancar_manutencao", titulo: "Lançar manutenção",
-		descricao: "Lança um serviço de manutenção e os itens trocados nele (de 1 a 30). Cada troca entra nas revisões feitas.",
+	{nome: "lancar_manutencao", titulo: "Registrar revisão ou manutenção",
+		descricao: "Cadastra revisão, manutenção ou serviço de oficina de um carro (troca de óleo, filtros, pneus, " +
+			"alinhamento...): uma visita à oficina com os itens trocados nela (de 1 a 30). Cada item vira uma revisão " +
+			"feita e zera o alerta de troca dele. É o único jeito de cadastrar revisão, igual à tela. Use o nome do item " +
+			"como está em ver_plano_de_revisao (o nome é casado com o plano; item fora do plano grava, mas sem alerta). " +
+			"KM menor que o último conhecido ou salto absurdo é recusado: confirme com a pessoa e repita com km_confirmado=true.",
 		esquema: `{"type":"object","required":["veiculo_id","km","trocas"],"properties":{` + pVeiculo + `,` +
-			`"km":{"type":"integer","minimum":1},"feita_em":{"type":"string","format":"date"},"oficina":{"type":"string"},` +
+			`"km":{"type":"integer","minimum":1,"description":"KM do painel no dia do serviço."},` +
+			`"km_confirmado":{"type":"boolean","description":"true só depois que a pessoa confirmou um KM recusado (painel trocado, por exemplo)."},"feita_em":{"type":"string","format":"date"},"oficina":{"type":"string"},` +
 			`"total_reais":{"type":"number","minimum":0},"observacao":{"type":"string"},` +
 			`"trocas":{"type":"array","minItems":1,"maxItems":30,"items":{"type":"object","required":["item"],"properties":{` +
 			`"item":{"type":"string","description":"Use o nome do item do plano de revisão quando houver."},` +
