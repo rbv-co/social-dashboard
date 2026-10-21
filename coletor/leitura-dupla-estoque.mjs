@@ -19,8 +19,8 @@ if (!ligada('ESTOQUE_DEPOSITOS', process.env)) {
   process.exit(0);
 }
 
-// Depósitos que o Core TEM de espelhar (item B do plano 04); outros ids em CORE_ESTOQUE_DEPOSITOS (separados por vírgula).
-const DEPOSITOS_DO_CORE = (process.env.CORE_ESTOQUE_DEPOSITOS || '14888726315,14888617206,14888726277,14888830073').split(',').map((d) => d.trim()).filter(Boolean);
+// Depósitos que o Core TEM de espelhar (os 7: 4 do início + 3 de BLING_DEPOSITOS_EXTRAS, ligado em 21/10); outros ids em CORE_ESTOQUE_DEPOSITOS (separados por vírgula).
+const DEPOSITOS_DO_CORE = (process.env.CORE_ESTOQUE_DEPOSITOS || '14888726315,14888617206,14888726277,14888830073,14888248253,14889124779,14888898221').split(',').map((d) => d.trim()).filter(Boolean);
 
 const core = clienteDoAmbiente(process.env);
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });

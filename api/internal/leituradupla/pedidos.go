@@ -106,7 +106,9 @@ func CompararPedidos(central []PedidoCentral, doCore map[string]PedidoCore, defa
 		}
 		if c.Itens != k.Itens {
 			dif("itens", strconv.Itoa(c.Itens), strconv.Itoa(k.Itens))
-		} else if a, okA := cents(c.SomaItens); !okA || a != int64(math.Round(k.SomaItens*100)) {
+		} else if a, okA := cents(c.SomaItens); !okA || absInt(a-int64(math.Round(k.SomaItens*100))) > int64(c.Itens) {
+			// tolerância de 1 centavo por item: a Central soma quantidade × valor em numeric, o core arredonda por linha
+			// (medido em 21/10: 4 de 521 pedidos, todos com 1 centavo)
 			dif("soma_itens", c.SomaItens, strconv.FormatFloat(k.SomaItens, 'f', 2, 64))
 		}
 		if len(r.Diferencas) == n {
@@ -132,6 +134,13 @@ func CompararPedidos(central []PedidoCentral, doCore map[string]PedidoCore, defa
 		r.SoCore = append(r.SoCore, id)
 	}
 	return r
+}
+
+func absInt(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 func centsIgual(a int64, b string) bool {
