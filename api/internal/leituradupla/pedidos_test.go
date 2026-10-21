@@ -37,6 +37,23 @@ func TestCompararPedidosIguaisEDiferencas(t *testing.T) {
 	}
 }
 
+func TestSomaDeItensToleraUmCentavoPorItem(t *testing.T) {
+	c := []PedidoCentral{pedC("1", "10.00", 2, "2086.07000")}
+	if r := CompararPedidos(c, map[string]PedidoCore{"1": pedK("1", "10.00", 2, 2086.08)}, false, time.Time{}); r.Iguais != 1 {
+		t.Fatalf("1 centavo de arredondamento não é divergência: %+v", r)
+	}
+	if r := CompararPedidos(c, map[string]PedidoCore{"1": pedK("1", "10.00", 2, 2086.09)}, false, time.Time{}); r.Iguais != 1 {
+		t.Fatalf("2 centavos em 2 itens é o limite e passa: %+v", r)
+	}
+	sem := []PedidoCentral{pedC("1", "10.00", 0, "0")}
+	if r := CompararPedidos(sem, map[string]PedidoCore{"1": pedK("1", "10.00", 0, 0.01)}, false, time.Time{}); len(r.Diferencas) != 1 {
+		t.Fatalf("sem itens a tolerância é zero: %+v", r)
+	}
+	if r := CompararPedidos(c, map[string]PedidoCore{"1": pedK("1", "10.00", 2, 2086.10)}, false, time.Time{}); len(r.Diferencas) != 1 {
+		t.Fatalf("3 centavos em 2 itens é divergência: %+v", r)
+	}
+}
+
 func TestCompararPedidosDefasadoERecenteNaoAcusam(t *testing.T) {
 	c := []PedidoCentral{pedC("1", "1.00", 0, "0")}
 	if r := CompararPedidos(c, nil, true, time.Time{}); !r.Limpo() {
