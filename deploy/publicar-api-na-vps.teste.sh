@@ -25,7 +25,7 @@ rodar() { # $1 nome, $2 código esperado de saída, $3 http da saúde, $4 linha 
   echo "API_VERSAO=antiga" > "$T/raiz/.env"; : > "$T/log"; : > "$ESTADO/chamadas"
   echo '1.1.1.1 - - [21/Oct/2026:13:13:50 +0000] "GET /api/x HTTP/2.0" 200 5 "-" "-"' >> "$T/log"
   PATH="$T/bin:$PATH" CODIGO_SAUDE=$saude LINHA5XX=$linha5xx RAIZ=$T/raiz LOG_NGINX=$T/log BACKUPS=$T/bk \
-    bash "$AQUI/publicar-api-na-vps.sh" nova "$*" 0 1 >"$T/saida" 2>&1
+    bash "$AQUI/publicar-api-na-vps.sh" nova "$*" "${MIGRAR:-0}" 1 >"$T/saida" 2>&1
   local rc=$?
   local env; env=$(cat "$T/raiz/.env"); local api; api=$(cat "$ESTADO/api"); local wk; wk=$(cat "$ESTADO/worker")
   echo "$nome: rc=$rc .env=$env api=$api worker=$wk"
@@ -38,6 +38,8 @@ rodar "feliz (api)" 0 200 "" api
 [ "$RES_ENV" = "API_VERSAO=nova" ] && [ "$RES_API" = nova ] && [ "$RES_WK" = antiga ] || { echo "  FALHOU: só a api troca"; FALHAS=$((FALHAS+1)); }
 rodar "feliz (api+worker)" 0 200 "" api worker
 [ "$RES_WK" = nova ] || { echo "  FALHOU: worker não trocou"; FALHAS=$((FALHAS+1)); }
+MIGRAR=1 rodar "feliz com migrar" 0 200 "" api
+grep -q "^migrar nova" "$ESTADO/chamadas" && grep -q "^up api nova" "$ESTADO/chamadas" || { echo "  FALHOU: migrar não rodou ou o deploy não seguiu depois dele"; FALHAS=$((FALHAS+1)); }
 rodar "saude 503" 1 503 "" api worker
 [ "$RES_ENV" = "API_VERSAO=antiga" ] && [ "$RES_API" = antiga ] && [ "$RES_WK" = antiga ] || { echo "  FALHOU: não reverteu"; FALHAS=$((FALHAS+1)); }
 rodar "5xx depois do deploy" 1 200 "$ruim" api

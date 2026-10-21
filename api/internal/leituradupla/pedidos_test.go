@@ -128,3 +128,43 @@ func TestPedidosCoreDegradadoNaoRegistraDivergencia(t *testing.T) {
 		}
 	}
 }
+
+// Itens com a sincronia atrasada também tornam a rodada defasada (não só os pedidos): sem acusar divergência.
+func TestPedidosItensDefasadosNaoAcusam(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		itens := strings.Contains(r.URL.Path, "/pedido_itens")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/contagem"):
+			w.Write([]byte(`{"linhas":1}`))
+		case itens:
+			w.Write([]byte(`{"data":[{"pedido_id_bling":26851358889,"quantidade":"2.000","valor":"50.00"}],"proximo_cursor":null,"sincronia":{"atrasado":true}}`))
+		default:
+			w.Write([]byte(`{"data":[{"pedido_id_bling":26851358889,"numero":"10","data":"2026-10-10","total":"100.00","status_id_bling":9,"contato_id":1,"updated_at":"2026-10-10 10:00:00"}],"proximo_cursor":null}`))
+		}
+	}))
+	defer srv.Close()
+	saida := logDaRodada(t, func() {
+		if err := (&Pedidos{Fonte: pedidosFixos{pedidoLocal("90.00")}, Core: cliente(srv)}).Rodar(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(saida, "defasado=true") || strings.Contains(saida, "divergente") {
+		t.Fatalf("itens atrasados não podem acusar divergência:\n%s", saida)
+	}
+}
+
+// Tudo "mexido agora" no core: nada foi comparado, então não se diz "limpa".
+func TestPedidosRodadaSemNadaComparadoEhInconclusiva(t *testing.T) {
+	srv := coreDePedidos(0)
+	defer srv.Close()
+	saida := logDaRodada(t, func() {
+		s := &Pedidos{Fonte: pedidosFixos{pedidoLocal("100.00")}, Core: cliente(srv),
+			Agora: func() time.Time { return time.Date(2026, 10, 10, 10, 2, 0, 0, time.UTC) }} // 2 min depois do updated_at do core
+		if err := s.Rodar(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(saida, "resultado=inconclusiva") {
+		t.Fatalf("esperava inconclusiva:\n%s", saida)
+	}
+}

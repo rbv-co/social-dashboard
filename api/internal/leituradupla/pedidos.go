@@ -28,7 +28,7 @@ import (
 
 const (
 	DiasPadrao  = 60
-	loteDeItens = 50
+	loteDeItens = 100 // 2 GETs por lote (contagem + página): ~3.000 pedidos = ~60 GETs, abaixo do balde de 120/min
 	// situacaoVenda: a Central só guarda como venda o pedido "Atendido" (9) do Bling (e os que deixaram de ser: ela os
 	// mantém com a situação nova). Pedido do core em outra situação e ausente na Central não é divergência.
 	situacaoVenda = "9"
@@ -189,7 +189,7 @@ func (s *Pedidos) Tarefa() worker.Tarefa {
 }
 
 // lerCore devolve os pedidos da janela com os itens agregados. Qualquer falha = erro (nunca lista parcial).
-func (s *Pedidos) lerCore(ctx context.Context, desde time.Time, local []PedidoCentral) (map[string]PedidoCore, *core.Leitura, error) {
+func (s *Pedidos) lerCore(ctx context.Context, desde time.Time, local []PedidoCentral) (map[string]PedidoCore, []*core.Leitura, error) {
 	q := url.Values{}
 	q.Set("data_de", desde.Format("2006-01-02"))
 	q.Set("campos", "pedido_id_bling,numero,data,total,status_id_bling,contato_id,updated_at")
@@ -198,6 +198,7 @@ func (s *Pedidos) lerCore(ctx context.Context, desde time.Time, local []PedidoCe
 		return nil, nil, err
 	}
 	out := make(map[string]PedidoCore, len(l.Linhas))
+	leituras := []*core.Leitura{l}
 	for _, x := range l.Linhas {
 		id := texto(x["pedido_id_bling"])
 		if id == "" {
@@ -227,6 +228,7 @@ func (s *Pedidos) lerCore(ctx context.Context, desde time.Time, local []PedidoCe
 		if err != nil {
 			return nil, nil, err
 		}
+		leituras = append(leituras, it)
 		for _, x := range it.Linhas {
 			k, ok := out[texto(x["pedido_id_bling"])]
 			v, okV := produto(texto(x["quantidade"]), texto(x["valor"]))
@@ -238,7 +240,7 @@ func (s *Pedidos) lerCore(ctx context.Context, desde time.Time, local []PedidoCe
 			out[k.ID] = k
 		}
 	}
-	return out, l, nil
+	return out, leituras, nil
 }
 
 // dia fica com YYYY-MM-DD (o espelho pode devolver a hora junto).
@@ -267,17 +269,27 @@ func (s *Pedidos) Rodar(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("leitura dupla pedidos: lado local: %w", err)
 	}
-	doCore, l, err := s.lerCore(ctx, desde, local)
+	doCore, leituras, err := s.lerCore(ctx, desde, local)
 	if err != nil {
 		if errors.Is(err, core.ErrIndisponivel) {
 			slog.Warn("leitura dupla", "tabela", "pedidos", "resultado", "core_indisponivel")
 		}
 		return fmt.Errorf("leitura dupla pedidos: core: %w", err)
 	}
-	r := CompararPedidos(local, doCore, l.Defasado(agora(), s.MaxIdade), corte)
+	defasado, informada := false, true // defasada qualquer uma das leituras (pedidos ou itens) = a rodada não vale como divergência
+	for _, l := range leituras {
+		defasado = defasado || l.Defasado(agora(), s.MaxIdade)
+		informada = informada && l.Sincronia != nil
+	}
+	r := CompararPedidos(local, doCore, defasado, corte)
 	atributos := []any{"tabela", "pedidos", "dias", dias, "central", r.Central, "core", r.Core, "iguais", r.Iguais,
 		"so_central", len(r.SoCentral), "so_core", len(r.SoCore), "so_core_anterior", len(r.SoCoreAnterior), "so_core_nao_venda", r.SoCoreNaoVenda,
-		"diferencas", len(r.Diferencas), "recentes_ignorados", r.Recentes, "defasado", r.Defasado, "sincronia_informada", l.Sincronia != nil}
+		"diferencas", len(r.Diferencas), "recentes_ignorados", r.Recentes, "defasado", r.Defasado, "sincronia_informada", informada}
+	if r.Limpo() && !r.Defasado && r.Iguais == 0 && r.Central > 0 {
+		// nada foi comparado (tudo "recente" no core, por exemplo): não dá para dizer que está limpo
+		slog.Warn("leitura dupla", append(atributos, "resultado", "inconclusiva")...)
+		return nil
+	}
 	if r.Limpo() {
 		slog.Info("leitura dupla", append(atributos, "resultado", "limpa")...)
 		return nil

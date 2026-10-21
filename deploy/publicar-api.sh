@@ -27,7 +27,7 @@ OBSERVAR_S=${OBSERVAR_S:-120}
 cd "$(git rev-parse --show-toplevel)"
 git fetch -q origin
 git merge-base --is-ancestor HEAD origin/main || { echo "HEAD não está na origin/main: publicar só o que já está no GitHub"; exit 1; }
-git diff --quiet HEAD -- api || { echo "api/ tem alteração não commitada"; exit 1; }
+[ -z "$(git status --porcelain -- api)" ] || { echo "api/ tem alteração não commitada ou arquivo novo solto"; exit 1; }
 VER=$(git rev-parse --short=8 HEAD)
 SERVICOS=api; [ "$WORKER" = 1 ] && SERVICOS="api worker"
 
@@ -37,4 +37,7 @@ echo ">> enviando a imagem para $HOST"
 docker save "central-api:$VER" | gzip -1 | ssh "$HOST" 'gunzip | docker load' >/dev/null
 
 echo ">> publicando na VPS (serviços: $SERVICOS)"
-ssh "$HOST" "flock -n /var/lock/deploy-api.lock bash -s -- '$VER' '$SERVICOS' '$MIGRAR' '$OBSERVAR_S'" < "$(dirname "$0")/publicar-api-na-vps.sh" || { echo "DEPLOY NÃO CONCLUÍDO (ver acima)"; exit 1; }
+# o script vai para um ARQUIVO na VPS e roda de lá: pela entrada padrão, o `docker compose run` engoliria o resto dele
+# e a queda do ssh o mataria no meio da observação
+scp -q "$(dirname "$0")/publicar-api-na-vps.sh" "$HOST:/root/.publicar-api-na-vps.sh"
+ssh "$HOST" "flock -n /var/lock/deploy-api.lock bash /root/.publicar-api-na-vps.sh '$VER' '$SERVICOS' '$MIGRAR' '$OBSERVAR_S' </dev/null 2>&1 | tee -a /root/backups-api/deploy-$VER.log; exit \${PIPESTATUS[0]}" || { echo "DEPLOY NÃO CONCLUÍDO (ver acima)"; exit 1; }
