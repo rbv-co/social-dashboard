@@ -53,6 +53,8 @@ const (
 	PrazoCollabs    = 120 * time.Second
 	// bling-proxy: usuário limitado a lojas faz UMA chamada ao core por loja (até 25 s cada).
 	PrazoBling = 90 * time.Second
+	// Plano 03-A (BLING-FORA-ESPELHO): /vendas/pedidos lê o espelho do core (≈2 GETs por 100 pedidos, 15 s no teto cada).
+	PrazoVendasEspelho = 45 * time.Second
 	// Plano 5.12: custo-*: a Anthropic chegou a 18 s (cache-de-custo.js:13-15); 90 dias = 3 páginas em série.
 	PrazoCusto = 90 * time.Second
 	// Plano 5: o grupo de DOMÍNIO inteiro (leituras, escritas e POST /rpc/{nome}), do carregamento do
@@ -228,6 +230,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Get("/auth/eu", h.Eu)
 		r.Get("/eu/canais", canais.Handler(p))
 		r.With(comPrazo(PrazoBling)).Post("/bling-proxy", (&comercial.Bling{Pool: p, Core: cli}).ServeHTTP)                                                   // portão por caminho, lá dentro
+		r.With(comPrazo(PrazoVendasEspelho)).Get("/vendas/pedidos", (&comercial.VendasEspelho{Pool: p, Core: cli, Fonte: cfg.VendasFonte}).ServeHTTP)         // portão (sales|gestor) dentro
 		r.With(auth.ExigirModulo("meta"), autz.ComEscopo(p)).Post("/meta-proxy", (&meta.Proxy{Pool: p, Core: cli, HostsDeMidia: cfg.HostsDeMidia}).ServeHTTP) // prazo próprio (25/45/75 s)
 		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoMetaAoVivo)).Post("/insights-ao-vivo", av.Insights)
 		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)
