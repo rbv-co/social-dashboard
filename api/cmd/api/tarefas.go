@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,6 +47,12 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	if cfg.CoreLeituraShopifyPedidos {
 		ts = append(ts, (&leituradupla.ShopifyPedidos{Fonte: leituradupla.CentralPG{Pool: p}, Core: cli,
 			MaxIdade: core.LimiteDeIdade(os.Getenv("CORE_ESPELHO_MAX_IDADE_MIN"), "shopify_pedidos")}).Tarefa())
+	}
+	// Leitura dupla de pedidos (plano 08-A): idem, só com CORE_LEITURA_PEDIDOS; janela em CORE_LEITURA_PEDIDOS_DIAS.
+	if cfg.CoreLeituraPedidos {
+		dias, _ := strconv.Atoi(os.Getenv("CORE_LEITURA_PEDIDOS_DIAS"))
+		ts = append(ts, (&leituradupla.Pedidos{Fonte: leituradupla.PedidosPG{Pool: p}, Core: cli, Dias: dias,
+			MaxIdade: core.LimiteDeIdade(os.Getenv("CORE_ESPELHO_MAX_IDADE_MIN"), "pedidos")}).Tarefa())
 	}
 	return ts
 }
