@@ -409,6 +409,35 @@ func TestFerramentas(t *testing.T) {
 		t.Fatalf("revisão: %s", v)
 	}
 
+	// revisão: nome casado com o plano (o alerta compara o nome exato), repetido e KM para trás barram, avisos da tela
+	m.q(t, `with x as (insert into frota_plano_revisao (item, a_cada_km) values ('Filtro de ar', 10000) returning 1) select 'ok'`)
+	revisao := func(km, extra, trocas string) (string, bool) {
+		return m.ferramenta(t, acesso, "lancar_manutencao", `{"veiculo_id":"`+veiculoV1+`","km":`+km+extra+`,"trocas":`+trocas+`}`)
+	}
+	antes := m.q(t, `select count(*)::text from frota_revisoes`)
+	for _, c := range []struct{ km, extra, trocas, contem string }{
+		{"1900", ``, `[{"item":"filtro de ar"},{"item":"FILTRO  DE AR"}]`, "duas vezes"},
+		{"1700", ``, `[{"item":"filtro de ar"}]`, "km_confirmado=true"},
+		{"900000", ``, `[{"item":"filtro de ar"}]`, "salto"},
+		{"0", ``, `[{"item":"filtro de ar"}]`, "Informe o KM"},
+		{"1900", ``, `[{"item":" "}]`, "nome do item"},
+	} {
+		if txt, erro := revisao(c.km, c.extra, c.trocas); !erro || !strings.Contains(txt, c.contem) {
+			t.Fatalf("km %s %s: erro=%v %s", c.km, c.trocas, erro, txt)
+		}
+	}
+	if n := m.q(t, `select count(*)::text from frota_revisoes`); n != antes {
+		t.Fatalf("recusa gravou revisão: %s → %s", antes, n)
+	}
+	txt, erro := revisao("1700", `,"km_confirmado":true,"total_reais":150`, `[{"item":"filtro de ar","custo_reais":80},{"item":"Palheta"}]`)
+	if erro || !strings.Contains(txt, "fora do plano de revisão, não entram no alerta de troca: Palheta") ||
+		!strings.Contains(txt, "somam R$ 80.00 e o total informado é R$ 150.00") {
+		t.Fatalf("revisão confirmada: erro=%v %s", erro, txt)
+	}
+	if v := m.q(t, `select string_agg(item || '/' || km, ',' order by item) from frota_revisoes where km = 1700`); v != "Filtro de ar/1700,Palheta/1700" {
+		t.Fatalf("revisões gravadas: %s", v)
+	}
+
 	// argumento desconhecido e ferramenta desconhecida
 	if _, erro := m.ferramenta(t, acesso, "listar_usos", `{"sql":"drop"}`); !erro {
 		t.Fatal("argumento desconhecido deveria ser erro")
