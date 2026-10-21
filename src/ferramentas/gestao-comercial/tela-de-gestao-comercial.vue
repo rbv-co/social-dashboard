@@ -230,6 +230,8 @@ function _gcItemRender(ov,sku,p){
   else{const img=_gcItemImg(p);const nome=p.nome||sku;const preco=(p.preco!=null&&p.preco!=='')?_gcFmtR(p.preco):'';
     inner='<div class="gc-im-img">'+(img?'<img src="'+_npEsc(img)+'" alt="" onerror="this.parentNode.innerHTML=&#39;<span>sem imagem</span>&#39;">':'<span>sem imagem</span>')+'</div>'
       +'<div class="gc-im-info"><div class="gc-im-sku">SKU '+_npEsc(p.codigo||sku)+'</div><div class="gc-im-nome">'+_npEsc(nome)+'</div>'+(preco?'<div class="gc-im-preco">'+preco+'</div>':'')+'</div>';}
+  if(p&&p._espelho_em){const h=new Date(p._espelho_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});
+    inner+='<div class="gc-im-aviso">O Bling não respondeu: dados da cópia do Core de '+h+'.</div>';}
   const body=ov.querySelector('.gc-im-body');if(body)body.innerHTML=inner;
 }
 // Registro das tabelas (planilhas) do briefing renderizado, pra exportar em XLS.
@@ -502,6 +504,7 @@ onMounted(() => {
 .tela-gestao-comercial :deep(.gc-im-info){padding:18px 22px 24px;}
 .tela-gestao-comercial :deep(.gc-im-sku){font-family:var(--fonte-principal);font-size:calc(10px*var(--gc-fs,1));letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);font-weight:700;}
 .tela-gestao-comercial :deep(.gc-im-nome){font-family:var(--fonte-principal);font-size:calc(21px*var(--gc-fs,1));font-weight:700;color:var(--text);margin:6px 0;line-height:1.2;}
+.tela-gestao-comercial :deep(.gc-im-aviso){padding:0 22px 20px;font-size:var(--texto-etiqueta);color:var(--muted);overflow-wrap:anywhere;}
 .tela-gestao-comercial :deep(.gc-im-preco){font-family:var(--fonte-dados);font-size:calc(23px*var(--gc-fs,1));font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;}
 .tela-gestao-comercial :deep(.gc-im-ph){padding:54px 24px;text-align:center;color:var(--muted);font-size:calc(14px*var(--gc-fs,1));line-height:1.5;}
 .tela-gestao-comercial :deep(.gc-mix){background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin:4px 0 18px;box-shadow:var(--shadow-sm);}

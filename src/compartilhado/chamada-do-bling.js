@@ -265,7 +265,7 @@ export function _zerarEspelho() {
 // laço; pelo teto, o laço termina e `aoTruncar` é chamado. Quem chama decide o
 // que fazer com isso — mas não dá mais para não saber.
 export async function paginasDoBling(sbClient, endpoint, params, opcoes = {}) {
-  const { maxPaginas = 10, aoTruncar = null, aoProgredir = null, tela = '' } = opcoes || {}
+  const { maxPaginas = 10, aoTruncar = null, aoProgredir = null, aoEspelho = null, tela = '' } = opcoes || {}
   // Vendas atendidas de um período, de uma tela que pede o espelho: com o flag VENDAS_FONTE=espelho o servidor
   // devolve os pedidos (com itens e vendedor) e a lista do Bling nem é chamada.
   if (tela && endpoint === 'pedidos/vendas' && params?.dataInicial && params?.dataFinal && String(params['idsSituacoes[]']) === '9') {
@@ -276,6 +276,8 @@ export async function paginasDoBling(sbClient, endpoint, params, opcoes = {}) {
   for (let pagina = 1; pagina <= maxPaginas; pagina++) {
     const resp = await chamarBling(sbClient, endpoint, { ...params, pagina, limite: 100 })
     const itens = Array.isArray(resp?.data) ? resp.data : []
+    // RESERVA: com o Bling fora, o servidor responde produtos da cópia do Core (`fonte:'espelho'`); a tela diz de que hora.
+    if (resp?.fonte === 'espelho' && typeof aoEspelho === 'function') aoEspelho(resp.sincronia ?? null)
     // FIM DA LISTA: sai por aqui, e ninguém é avisado de nada — está completo.
     if (!itens.length) return todos
     todos.push(...itens)

@@ -25,11 +25,16 @@ type coreFalso struct {
 	mu      sync.Mutex
 	pedidos []core.PedidoBling
 	resp    func(p core.PedidoBling, n int) (status int, corpo string, cab map[string]string)
+	espelho http.Handler // quando não nil, atende /api/interno/espelho/* (reserva dos produtos)
 }
 
 func (f *coreFalso) n() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.pedidos) }
 
 func (f *coreFalso) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if f.espelho != nil && strings.HasPrefix(r.URL.Path, "/api/interno/espelho/") {
+		f.espelho.ServeHTTP(w, r)
+		return
+	}
 	var p core.PedidoBling
 	json.NewDecoder(r.Body).Decode(&p)
 	f.mu.Lock()
