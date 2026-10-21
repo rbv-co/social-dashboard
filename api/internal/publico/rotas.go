@@ -54,6 +54,9 @@ type Servico struct {
 	Segredo string   // VESSEL_INTERNO_SEGREDO
 	SoCore  bool     // VESSEL_SO_CORE: as 14 de escrita só com a chave do Core
 	Origens []string // CORS (ORIGENS_PERMITIDAS)
+	// Espelho: quando não nil, a garantia acha a compra no ESPELHO do Core (pedidos pelo CPF), sem chamar o Bling (plano 03-E,
+	// VENDAS_FONTE `garantia=espelho`). nil = o caminho do Bling.
+	Espelho LeitorDoEspelho
 
 	// Tetos por minuto (0 = o padrão): por IP e global do anônimo, e o disjuntor do Core.
 	PorIP, Global, DoCore int

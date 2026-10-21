@@ -26,7 +26,7 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	cli := clienteDoCore(cfg)
 	var ts []worker.Tarefa
 	// HTTP nil: o push herda o cliente seguro (Dialer.Control recusa faixas proibidas).
-	pv := &comercial.PushVendas{Pool: p, Core: cli, VAPID: vapid(cfg)}
+	pv := &comercial.PushVendas{Pool: p, Core: cli, VAPID: vapid(cfg), Fonte: cfg.VendasFonte}
 	ts = append(ts, pv.Tarefas()...)
 	ts = append(ts, worker.ConferirRobos(p), worker.FaxinaDaAPI(p), mensagens.MoverAbandonados(p),
 		(&fabrica.Purga{Pool: p, Dir: cfg.ArquivosDir}).Tarefa())
