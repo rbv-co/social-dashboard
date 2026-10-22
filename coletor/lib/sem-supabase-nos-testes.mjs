@@ -11,6 +11,7 @@ import dns from 'node:dns';
 for (const k of Object.keys(process.env)) {
   if (/^(SUPABASE_|GESTOR_USER_)/.test(k)) delete process.env[k];
 }
+delete process.env.GITHUB_RUN_ID;   // no CI ele entra no corpo que o robô da Fábrica manda e quebra o teste de contrato
 process.env.COLETOR_ENV = '/nao-existe/coletor.env';   // carregar-env não acha o arquivo: teste é hermético
 
 const PROIBIDO = /(^|\.)supabase\.(co|com)$|(^|\.)supabase-desligado\.invalid$/i;
