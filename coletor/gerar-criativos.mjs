@@ -41,6 +41,8 @@ export function objetivoPermitePromo(objetivo) {
 }
 
 const sbGet = (p) => lerFabrica(p);
+// O 3º argumento (`Prefer`) era do PostgREST; a rota do robô não precisa dele.
+const sbPost = (p, body) => escreverFabrica('POST', p, body);
 // `materialMaisRecenteDoSku` lê `/vessel_lotes?sku=eq.X…`; pela API isso é `GET /fabrica/robo/material-do-sku?sku=`
 // (uma coluna, sem dar ao robô o módulo autenticidade). Devolve no formato que ele espera.
 async function sbGetGarantia(p) {
@@ -330,11 +332,12 @@ export async function run({
       v.dados.copyEfeito = copyInfo.copy;
       v.dados.nome = copyInfo.nome;
       if (v.template === 'produto-modelo') { v.dados.modeloFotoUrl = modeloUrl; v.dados.varianteCor = v.dados.varianteCor || 'sage'; }
+      const path = `${campanhaId}/produto/${sane(cand.sku)}-${sane(v.variante)}-${v.formato}.png`;
+      if (existentesIA.has(path)) continue;   // job repetido: este criativo já está gravado (sem linha duplicada)
       const html = TEMPLATES[v.template].render(v.dados, v.formato);
       const buf = await renderPNG(html, DIM[v.formato]);
       gerados++;
       if (DRY) { console.log('  [dry] produto', cand.sku, v.variante, v.formato, buf.length, 'bytes'); continue; }
-      const path = `${campanhaId}/produto/${sane(cand.sku)}-${sane(v.variante)}-${v.formato}.png`;
       const url = await subir(path, buf);
       // candidato_id foi removido de fabrica_criativos na migration 019 (F1 aposentada — cand.id
       // já vinha sempre null no modo lista/estrela, que são os únicos caminhos vivos). Mandar essa
@@ -381,11 +384,12 @@ export async function run({
   if (primeiraFoto && objetivoPermitePromo(objetivo) && promoAtivo) {
     for (const v of variacoesPromo(campanha, primeiraFoto, 'Coleção')) {
       v.dados.copyEfeito = copyPromo;
+      const path = `${campanhaId}/promo/${sane(v.variante)}-${v.formato}.png`;
+      if (existentesIA.has(path)) continue;   // job repetido: já gravado
       const html = TEMPLATES[v.template].render(v.dados, v.formato);
       const buf = await renderPNG(html, DIM[v.formato]);
       gerados++;
       if (DRY) { console.log('  [dry] promo', v.variante, v.formato, buf.length, 'bytes'); continue; }
-      const path = `${campanhaId}/promo/${sane(v.variante)}-${v.formato}.png`;
       const url = await subir(path, buf);
       // promo: copyPromo é a linha CURTA da arte (~40 chars), não um texto de anúncio persuasivo —
       // deixa legenda null pra o subir cair na legenda de marca (fallback) nesse criativo.
