@@ -84,7 +84,8 @@ test('⚠️ `--sku=` mexe em UMA bolsa so', () => {
   assert.match(ROBO, /const REBAIXAR = REFAZER \|\| Boolean\(SO_ESTE_SKU\)/,
     'sem isto, a bolsa com foto errada e ignorada por "ja ter foto"');
   const usos = ROBO.match(/REBAIXAR/g) || [];
-  assert.equal(usos.length, 3,
-    'sao DOIS filtros: escolher o lote e baixar a foto. Um so deixa o robo mudo');
+  // definicao + TRES filtros: escolher o lote, baixar a foto e (#456, 22/10) pular a espera de 6 h dos lotes sem saida
+  assert.equal(usos.length, 4,
+    'sao TRES filtros: escolher o lote, baixar a foto e pular a espera. Um so deixa o robo mudo');
   assert.match(ROBO, /alvos\.filter\(\(l\) => achatar\(l\.sku\) === achatar\(SO_ESTE_SKU\)\)/);
 })
