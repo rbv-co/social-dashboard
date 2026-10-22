@@ -46,6 +46,7 @@ import { reduzir } from './lib/reduzir-imagem.mjs'
 import { leituraDoCoreLigada, clienteDoEspelho, produtosDoCorePorSku, doMapa } from './lib/produto-do-core.mjs'
 import { pastaDoSku, fotosDaPasta } from './lib/fotos-do-zoho.mjs'
 import { fotosDoZohoParaSku } from './lib/buscar-no-zoho.mjs'
+import { lerEspera, gravarEspera, emEspera, anotar, limpar } from './lib/espera-dos-lotes.mjs'
 import {
   lotesParaOlhar, pastaDoLote, enderecoDaFoto, imagensGrandesDoProduto,
   corDoProduto, produtoQueBate, loteEstaFaltando, pastasDisputadas, achatar,
@@ -196,8 +197,13 @@ async function main() {
     // ⚠️ "Em duvida, sem foto" — regra do dono. Pasta reivindicada por dois SKUs
     // e foto errada garantida para um dos dois, e em silencio.
     const disputadas = pastasDisputadas(lotes)
-    console.log(`${lotes.length} lotes no total · ${alvos.length} com SKU e faltando foto ou cor\n`)
-    if (!alvos.length) return
+    // ⚠️ LOTE SEM SAIDA ESPERA 6 H (ver lib/espera-dos-lotes.mjs). `--refazer` e `--sku` sao pedido de gente: olham sempre.
+    const espera = limpar(lerEspera(), lotes)
+    const esperando = REBAIXAR ? [] : alvos.filter((l) => emEspera(espera, l))
+    if (esperando.length) alvos = alvos.filter((l) => !esperando.includes(l))
+    console.log(`${lotes.length} lotes no total · ${alvos.length + esperando.length} com SKU e faltando foto ou cor`
+      + (esperando.length ? ` (${esperando.length} sem saída na última tentativa: espero 6 h ou o lote mudar)` : '') + '\n')
+    if (!alvos.length) { if (!DRY) gravarEspera(espera); return }
 
     // CORE_LEITURA_PRODUTO_DETALHE=true: o produto vem do espelho do Core (uma leitura por lista de SKUs,
     // sem gastar a cota do Bling). Falha do Core derruba a rodada: não vira "não achei".
@@ -210,6 +216,8 @@ async function main() {
       // vem DEPOIS deste laco: qualquer excecao aqui deixava dezenas de lotes
       // com o endereco da foto gravado no banco e a foto fora do ar. Errar num
       // lote tem de custar aquele lote, e nao os outros 103.
+      let passageiro = false   // falha que a próxima rodada pode resolver sozinha: não entra na espera
+      const mudou = {}
       try {
         const falta = loteEstaFaltando(lote)
         const oQueFalta = [falta.faltaFoto && 'foto', falta.faltaCor && 'cor'].filter(Boolean).join(' e ')
@@ -229,10 +237,9 @@ async function main() {
 
           const detalhe = await pedirAoBling(`produtos/${achado.id}`, token)
           produto = detalhe?.data
-          if (!produto) { console.log('   o Bling não devolveu o detalhe. Tento na próxima rodada.'); continue }
+          if (!produto) { passageiro = true; console.log('   o Bling não devolveu o detalhe. Tento na próxima rodada.'); continue }
         }
 
-        const mudou = {}
 
         // ── A COR ──
         if (falta.faltaCor) {
@@ -282,12 +289,14 @@ async function main() {
             } catch (e) {
               // Falha do Zoho NAO derruba a rodada: cai no Bling, que e o caminho
               // de sempre.
+              passageiro = true
               console.log(`   o Zoho falhou (${e.message}); tentando o Bling`)
             }
           }
 
           if (!urls.length && imagemVencida) {
             // Só o fallback do Bling depende do link do detalhe; a cor e as fotos do Zoho seguem valendo.
+            passageiro = true
             console.log('   a imagem do detalhe no Core está vencida. Tento na próxima rodada.')
           } else if (!urls.length) {
             urls = imagensGrandesDoProduto(produto).slice(0, MAXIMO_DE_FOTOS)
@@ -370,9 +379,13 @@ async function main() {
         publicou = publicou || Boolean(mudou.fotos)
         console.log('   gravado no lote.')
       } catch (e) {
+        passageiro = true
         console.log(`   deu erro neste lote (${e.message}); sigo para o próximo.`)
+      } finally {
+        anotar(espera, lote, { mudou: Object.keys(mudou).length > 0, passageiro })
       }
     }
+    if (!DRY) gravarEspera(espera)
 
     // ── PUBLICAR O SITE ──
     if (publicou && !DRY && !SEM_PUSH) {
