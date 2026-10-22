@@ -19,11 +19,11 @@ on:
   workflow_dispatch:
     inputs:
       modo:
-        description: 'seco = roda tudo e não grava (a IA custa igual) · sonda = só pergunta à Meta o que existe, sem IA, R$ 0'
+        description: 'seco = roda tudo e não grava (a IA custa igual)'
         required: false
         default: 'normal'
         type: choice
-        options: ['normal', 'seco', 'sonda', 'sonda-posicionamentos']
+        options: ['normal', 'seco']
 
 concurrency:
   group: sugerir-interesses
@@ -83,29 +83,3 @@ jobs:
           GESTOR_USER_EMAIL: ${{ secrets.GESTOR_USER_EMAIL }}
           GESTOR_USER_PASSWORD: ${{ secrets.GESTOR_USER_PASSWORD }}
         run: node coletor/sugerir-interesses.mjs --dry
-
-      # SONDA: pergunta à Meta o que EXISTE no catálogo, sem passar por IA.
-      # Diagnóstico puro — não grava nada e não decide nada.
-      #
-      # REPARE NA FALTA DA ANTHROPIC_API_KEY: não é esquecimento. A sonda não
-      # chama modelo nenhum, então a chave não é entregue a este passo. Se um dia
-      # alguém precisar dela aqui, é sinal de que a sonda deixou de ser sonda.
-      - name: Sondar o catálogo da Meta (sem IA, R$ 0)
-        if: ${{ inputs.modo == 'sonda' }}
-        env:
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GESTOR_USER_EMAIL: ${{ secrets.GESTOR_USER_EMAIL }}
-          GESTOR_USER_PASSWORD: ${{ secrets.GESTOR_USER_PASSWORD }}
-        run: node coletor/sondar-interesses.mjs
-
-      # Segunda sonda, mesma natureza: pergunta ao Graph o que os conjuntos REAIS
-      # têm de posicionamento hoje, antes de escrever tela pra editar isso.
-      # Também sem IA, também sem a chave da Anthropic.
-      - name: Sondar posicionamentos dos conjuntos (sem IA, R$ 0)
-        if: ${{ inputs.modo == 'sonda-posicionamentos' }}
-        env:
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GESTOR_USER_EMAIL: ${{ secrets.GESTOR_USER_EMAIL }}
-          GESTOR_USER_PASSWORD: ${{ secrets.GESTOR_USER_PASSWORD }}
-        run: node coletor/sondar-posicionamentos.mjs
-

@@ -2009,7 +2009,6 @@
    },
    "fabrica_criativos": {
     "arquivos": [
-     "coletor/spike-meta.mjs",
      "src/ferramentas/meta-ads/painel-curar.vue",
      "src/ferramentas/meta-ads/tela-de-fabrica-home.vue"
     ],
@@ -2452,6 +2451,11 @@
     "arquivos": [
      "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
     ]
+   },
+   "x": {
+    "arquivos": [
+     "src/compartilhado/cliente-desligado.js"
+    ]
    }
   },
   "rpcs": {
@@ -2579,11 +2583,6 @@
    "vessel_chave_da_convidada": {
     "arquivos": [
      "src/ferramentas/comercial-vessel/cartao-da-convidada.vue"
-    ]
-   },
-   "vessel_conta_da_sessao": {
-    "arquivos": [
-     "coletor/provar-transferencia-de-propriedade.mjs"
     ]
    },
    "vessel_conta_das_beauty_sessions": {
@@ -2720,11 +2719,6 @@
    "vessel_marcar_gravada": {
     "arquivos": [
      "src/ferramentas/autenticidade/tela-de-autenticidade.vue"
-    ]
-   },
-   "vessel_pedido_marcado_presente": {
-    "arquivos": [
-     "coletor/provar-transferencia-de-propriedade.mjs"
     ]
    },
    "vessel_pedir_cartoes": {
@@ -3079,21 +3073,6 @@
     "arquivos": [
      "coletor/adicionar-looks-favoritos.mjs",
      "coletor/reparar-looks-quebrados.mjs",
-     "coletor/sondar-app-review.mjs",
-     "coletor/sondar-criativo-do-anuncio.mjs",
-     "coletor/sondar-interesses.mjs",
-     "coletor/sondar-permissoes-meta.mjs",
-     "coletor/sondar-posicionamentos.mjs",
-     "coletor/spike-meta.mjs",
-     "coletor/subir-campanha-genspark.mjs",
-     "coletor/subir-campanha-meta.mjs",
-     "coletor/validar-criar-no-gestor.mjs",
-     "coletor/validar-duplicar.mjs",
-     "coletor/validar-editor-do-gestor.mjs",
-     "coletor/validar-envio-de-imagem.mjs",
-     "coletor/validar-objetivos-combos.mjs",
-     "coletor/validar-orcamento-combos.mjs",
-     "coletor/validar-publico-targeting.mjs",
      "src/ferramentas/analise-campanhas/tela-de-analise-campanhas.vue",
      "src/ferramentas/gestao-trafego/tela-de-gestao-trafego.vue",
      "src/ferramentas/meta-ads/painel-subir.vue",

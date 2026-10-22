@@ -68,15 +68,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve as resolvePath } from 'node:path';
 import './lib/carregar-env.mjs';
-import tls from 'node:tls';
-import { loginServico } from './lib/bling-comercial.mjs';
-
-// Fix de ambiente (achado em rodada anterior): o handshake TLS1.3 default do `fetch`/`https`
-// do Node é resetado (ECONNRESET, 100% determinístico) por trás do Cloudflare que serve
-// *.supabase.co, nesta máquina — forçar TLS1.2 programaticamente resolve. Precisa rodar ANTES
-// de qualquer fetch/https (inclusive dentro de loginServico()), por isso fica logo depois dos
-// imports.
-tls.DEFAULT_MAX_VERSION = 'TLSv1.2';
+import { loginServico, urlDaEdge, cabecalhosDaEdge } from './lib/bling-comercial.mjs';
+// Tudo pela API (o Supabase foi desligado em 22/10/2026, plano 01-C): `fabrica_*`, nomes de
+// produto, e o `meta-proxy` com o token srv_ do robo-fabrica (módulo `meta`).
+import { exigirApi, lerFabrica, escreverFabrica, lerNomesPorSku } from './lib/fabrica-banco.mjs';
 
 const DRY = process.argv.includes('--dry');
 
@@ -90,15 +85,6 @@ const CLI_MODELO_CAMPANHA = argVal('--modelo-campanha');
 const CLI_MODELO_MAP = argVal('--modelo-map');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-// Fallback = anon key pública do projeto (mesmo default hardcoded em lib/bling-comercial.mjs).
-// SUPABASE_ANON_KEY não está no .env local — sem este fallback, `apikey` ia undefined e toda
-// chamada real ao meta-proxy (e a qualquer function) falhava com 401 "no apikey".
-const ANON = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM';
-const SK = process.env.SUPABASE_SERVICE_KEY;
-const REST = URL + '/rest/v1';
-const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
 
 // --- CFG: valores REAIS (conta Vessel, app Live) ------------------------------------------
 const CFG = {
@@ -182,9 +168,9 @@ async function chamarProxy(body) {
   let ultimoErro;
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
     try {
-      const r = await fetch(URL + '/functions/v1/meta-proxy', {
+      const r = await fetch(urlDaEdge('meta-proxy', TOKEN), {
         method: 'POST',
-        headers: { Authorization: 'Bearer ' + TOKEN, apikey: ANON, 'Content-Type': 'application/json' },
+        headers: cabecalhosDaEdge(TOKEN),
         body: JSON.stringify(body),
       });
       const d = await r.json();
@@ -225,16 +211,8 @@ async function uploadImagemBytes(url, field) {
   return hash;
 }
 
-async function sbGet(p) {
-  const r = await fetch(REST + p, { headers: H });
-  if (!r.ok) throw new Error('GET ' + p + ' ' + r.status);
-  return r.json();
-}
-async function sbPost(p, body, prefer) {
-  const r = await fetch(REST + p, { method: 'POST', headers: prefer ? { ...H, Prefer: prefer } : H, body: JSON.stringify(body) });
-  if (!r.ok && ![200, 201, 204].includes(r.status)) throw new Error('POST ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
-  return r;
-}
+const sbGet = (p) => lerFabrica(p);
+const sbPost = (p, body) => escreverFabrica('POST', p, body);
 
 // storage_path: <campanha>/produto/<sku-saneado>-<variante>-<formato>.png (variante já inclui
 // o look, ex.: produto-heroi-avista, produto-sage-circulo-avista). Extrai o sku saneado
@@ -248,17 +226,11 @@ function skuDe(storagePath, variante, formato) {
 // Nome real do produto via gc_vendas_item (o sku no storage é saneado — espaços viram "_" —
 // então tenta exato, depois com "_"→" "; se não achar nada, cai num rótulo legível a partir
 // do próprio sku saneado). Usado só pro NOME do ad (`<sku> · <nome>`), nunca na caption.
-const nomeCache = new Map();
+let nomesPorSku;
 async function nomeProduto(skuSane) {
-  if (nomeCache.has(skuSane)) return nomeCache.get(skuSane);
-  let rows = await sbGet(`/gc_vendas_item?select=produto&sku=eq.${encodeURIComponent(skuSane)}&limit=1`);
-  if (!rows.length) {
-    const comEspacos = skuSane.replace(/_/g, ' ');
-    if (comEspacos !== skuSane) rows = await sbGet(`/gc_vendas_item?select=produto&sku=eq.${encodeURIComponent(comEspacos)}&limit=1`);
-  }
-  const nome = rows[0]?.produto || null;
-  nomeCache.set(skuSane, nome);
-  return nome;
+  nomesPorSku ??= lerNomesPorSku();
+  const nomes = await nomesPorSku;
+  return nomes.get(skuSane) || nomes.get(skuSane.replace(/_/g, ' ')) || null;
 }
 
 // --- LOOKS: ordem de rotação (índice de rotação, só entre produtos SEM foto de modelo, % 6) -
@@ -523,9 +495,10 @@ async function rodarDry() {
 }
 
 async function main() {
+  exigirApi();
   if (DRY) return rodarDry();
 
-  TOKEN = await loginServico();
+  TOKEN = await loginServico({ naApi: true });
 
   // Subida REAL completa (2 lojas, ~20 ads/loja).
   const resumo = [];

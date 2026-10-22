@@ -5,8 +5,8 @@
 // Comportamento IDÊNTICO: retry 429/5xx, throttle ~380ms (via _lastBling),
 // idsSituacoes[]=9. Sem deps externas — fetch nativo (Node 18+).
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
+const ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 

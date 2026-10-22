@@ -11,9 +11,9 @@
 //        --estrela 205834140 --deposito 14888726315 [--limite 20] [--dry]
 import './lib/carregar-env.mjs';
 import { loginServico, blingProdutos } from './lib/bling-comercial.mjs';
-// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
-// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
-import { vaiParaApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
+// Tudo pela API (lib/fabrica-banco.mjs): tabelas `fabrica_*`, vendas/estoque por SKU e o
+// upload dos criativos. O Supabase foi desligado em 22/10/2026 (plano 01-C).
+import { exigirApi, lerFabrica, escreverFabrica, subirCriativo, lerVendasPorSku, lerEstoquePorSku } from './lib/fabrica-banco.mjs';
 import { fotoDataUrl, fotoEhStudio } from './lib/foto-produto.mjs';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { TEMPLATES, DIM } from './templates-criativos/templates.mjs';
@@ -25,17 +25,11 @@ import { carregarMarcasELojas } from './lib/config-lojas.mjs';
 import { carregarObjetivos, mapaObjetivo, looksDoObjetivo } from './lib/objetivos.mjs';
 import { objetivosDoTemplate } from './templates-criativos/templates.mjs';
 import { looksAtivosOrdenados } from './lib/looks.mjs';
-import { subirStorageResiliente } from './lib/storage-upload.mjs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SK = process.env.SUPABASE_SERVICE_KEY;
-const REST = URL + '/rest/v1';
-const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
-const BUCKET = 'fabrica-criativos';
 const sane = (s) => String(s).replace(/[^a-zA-Z0-9._-]+/g, '_');
 
 // SP-3: o loop de promo usa 'promo-number-hero' (hardcoded em variacoesPromo). Só gera promo
@@ -46,27 +40,32 @@ export function objetivoPermitePromo(objetivo) {
   return objs.length === 0 || objs.includes(objetivo);
 }
 
-async function sbGet(p) { if (vaiParaApi(p)) return lerFabrica(p); const r = await fetch(REST + p, { headers: H }); if (!r.ok) throw new Error('GET ' + p + ' ' + r.status); return r.json(); }
-async function sbPost(p, body, prefer) { if (vaiParaApi(p)) return escreverFabrica('POST', p, body); const r = await fetch(REST + p, { method: 'POST', headers: prefer ? { ...H, Prefer: prefer } : H, body: JSON.stringify(body) }); if (!r.ok && ![200,201,204].includes(r.status)) throw new Error('POST ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0,200)); return r; }
-
-async function garantirBucket() {
-  await fetch(URL + '/storage/v1/bucket', { method: 'POST', headers: { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true }) }).catch(() => {});
+const sbGet = (p) => lerFabrica(p);
+// `vessel_lotes`: a rota da API não filtra por SKU. Lê os lotes uma vez e responde no formato do
+// `materialMaisRecenteDoSku` (o lote mais recente com material do SKU; a rota já vem do mais novo).
+let lotesDaGarantia;
+async function sbGetGarantia(p) {
+  const sku = decodeURIComponent(/[?&]sku=eq\.([^&]+)/.exec(p)[1]);
+  lotesDaGarantia ??= lerFabrica('/vessel_lotes?select=sku,material,criado_em');
+  return (await lotesDaGarantia).filter((l) => l.sku === sku && l.material != null).slice(0, 1);
 }
+// O 3º argumento (`Prefer`) era do PostgREST; a rota do robô não precisa dele.
+const sbPost = (p, body) => escreverFabrica('POST', p, body);
+
 async function subir(path, buf) {
-  // Retry com backoff: o proxy do Storage devolve nginx 400/5xx transitório no
-  // meio de lotes grandes; sem retry, 1 blip matava o job inteiro (perdendo até
-  // os criativos já subidos). Ver lib/storage-upload.mjs.
-  return subirStorageResiliente({
-    url: URL, sk: SK, bucket: BUCKET, path, buf,
-    contentType: path.endsWith('.mp4') ? 'video/mp4' : 'image/png',   // mp4 (motion) sobe com o tipo certo
-    onRetry: (t, e) => console.warn(`  [storage retry ${t}/9] ${path.split('/').pop()}: ${e.message.slice(0, 60)}`),
-  });
+  // Retry com backoff: o proxy na frente do storage devolve 400/5xx transitório no meio de lotes
+  // grandes; sem retry, 1 blip matava o job inteiro. Ver lib/storage-upload.mjs.
+  return subirCriativo(
+    path, buf,
+    path.endsWith('.mp4') ? 'video/mp4' : 'image/png',   // mp4 (motion) sobe com o tipo certo
+    (t, e) => console.warn(`  [storage retry ${t}/9] ${path.split('/').pop()}: ${e.message.slice(0, 60)}`),
+  );
 }
 
 // Modo estrela: top faturamento (gc_vendas_item) do canal, cruzado com
 // estoque>0 (gc_estoque_item) do depósito, com preço resolvido no Bling.
 async function candidatosEstrela(token, canalLojaId, depositoId, limite) {
-  const vendas = await sbGet(`/gc_vendas_item?select=sku,produto,faturamento&canal_loja_id=eq.${canalLojaId}`);
+  const vendas = await lerVendasPorSku(canalLojaId);
   const fatPorSku = new Map();
   const nomePorSku = new Map();
   for (const v of vendas) {
@@ -76,7 +75,7 @@ async function candidatosEstrela(token, canalLojaId, depositoId, limite) {
     if (!nomePorSku.has(v.sku)) nomePorSku.set(v.sku, v.produto);
   }
 
-  const estoque = await sbGet(`/gc_estoque_item?select=sku,saldo&deposito_id=eq.${depositoId}`);
+  const estoque = await lerEstoquePorSku(depositoId);
   const saldoPorSku = new Map();
   for (const e of estoque) {
     if (!e.sku) continue;
@@ -154,6 +153,7 @@ export async function run({
   heroIa = false, heroIaMax = null,
   objetivo = null,
 } = {}) {
+  exigirApi();   // sem CENTRAL_API_* falha aqui: não há mais Supabase para cair
   const PCT = Number(pct);
   const NOME = nome || (PCT + '% OFF');
   const PARCELAS = Number(parcelas);
@@ -279,7 +279,6 @@ export async function run({
       const c = await sbPost('/fabrica_campanhas', [{ nome: NOME, desconto_tipo: 'fixo', desconto_pct: PCT, parcelas: PARCELAS }], 'return=representation');
       campanhaId = (await c.json())[0].id;
     }
-    await garantirBucket();
   }
 
   // produtos únicos por sku (arte é por produto, não por loja), limitados por --limite
@@ -359,7 +358,7 @@ export async function run({
       // recente do SKU (canvas 2 anos, couro 6 meses). Sem material, ou se a busca
       // falhar (rede/banco), sai `null` e a arte é gerada SEM pílula — nunca chuta
       // "2 anos". Ver coletor/hero-ia/texto-da-garantia.mjs.
-      const garantiaTexto = await pilulaDeGarantiaDoSku(cand.sku, sbGet);
+      const garantiaTexto = await pilulaDeGarantiaDoSku(cand.sku, sbGetGarantia);
       const dados = {
         name: String(copyInfo.nome || cand.nome || cand.sku).toUpperCase(),
         camp: 'NOVA COLEÇÃO', tagline: 'ELEGÂNCIA ATEMPORAL',

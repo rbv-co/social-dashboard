@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 
 process.env.CENTRAL_API_URL = 'http://api:8080'
 process.env.CENTRAL_API_TOKEN = 'srv_robo'
@@ -17,9 +18,45 @@ function api(rotas) {
   return pedidos
 }
 
-test('só as tabelas fabrica_* vão para a API; gc_* e o resto seguem no Supabase', () => {
+test('fabrica_* e gc_* vão para a API; o resto não é da Fábrica', () => {
   assert.equal(fb.vaiParaApi('/fabrica_jobs?id=eq.1'), true)
-  assert.equal(fb.vaiParaApi('/gc_vendas_item?select=sku'), false)
+  assert.equal(fb.vaiParaApi('/gc_vendas_item?select=sku'), true)
+  assert.equal(fb.vaiParaApi('/bling_pedidos?select=id'), false)
+})
+
+test('exigirApi: sem CENTRAL_API_* a Fábrica falha alto (não há Supabase para cair)', () => {
+  // processo novo: bling-comercial.mjs lê CENTRAL_API_* uma vez, no import
+  const roda = (env) => spawnSync(process.execPath, ['--input-type=module', '-e',
+    "const fb = await import(process.argv[1]); try { fb.exigirApi(); console.log('ok') } catch (e) { console.log(e.message) }",
+    new URL('./fabrica-banco.mjs', import.meta.url).href], { env: { PATH: process.env.PATH, COLETOR_ENV: '/nao-existe', ...env }, encoding: 'utf8' }).stdout
+  assert.match(roda({}), /CENTRAL_API_URL \+ CENTRAL_API_TOKEN.*Supabase foi desligado/)
+  assert.match(roda({ CENTRAL_API_URL: 'http://api:8080' }), /Supabase foi desligado/)
+  assert.equal(roda({ CENTRAL_API_URL: 'http://api:8080', CENTRAL_API_TOKEN: 'srv_x' }).trim(), 'ok')
+  fb.exigirApi()
+})
+
+test('vendas por SKU: a rota só filtra por mês, o canal é filtrado aqui; estoque filtra o depósito na rota', async () => {
+  const pedidos = api({
+    'GET /comercial/vendas-por-item': [200, [
+      { canal_loja_id: 7, sku: 'A', produto: 'Bolsa A', faturamento: 10 },
+      { canal_loja_id: 8, sku: 'B', produto: 'Bolsa B', faturamento: 20 },
+    ], { 'X-Total-Count': '2' }],
+    'GET /comercial/estoque': [200, [{ sku: 'A', saldo: 3 }], { 'X-Total-Count': '1' }],
+  })
+  assert.deepEqual(await fb.lerVendasPorSku('7'), [{ canal_loja_id: 7, sku: 'A', produto: 'Bolsa A', faturamento: 10 }])
+  assert.deepEqual([...(await fb.lerNomesPorSku()).entries()], [['A', 'Bolsa A'], ['B', 'Bolsa B']])
+  assert.deepEqual(await fb.lerEstoquePorSku(99), [{ sku: 'A', saldo: 3 }])
+  assert.equal(new URLSearchParams(pedidos.at(-1).busca).get('deposito_id'), '99')
+  for (const p of pedidos) assert.equal(p.auth, 'Bearer srv_robo')
+})
+
+test('subirCriativo: PUT na API com o token do robô, devolve a URL pública', async () => {
+  const pedidos = []
+  globalThis.fetch = async (url, init) => { pedidos.push({ url, init }); return { ok: true, status: 200 } }
+  const u = await fb.subirCriativo('camp/a.png', Buffer.from('x'))
+  assert.equal(pedidos[0].url, 'http://api:8080/arquivos/fabrica-criativos/camp/a.png')
+  assert.equal(pedidos[0].init.headers.Authorization, 'Bearer srv_robo')
+  assert.match(u, /\/storage\/v1\/object\/public\/fabrica-criativos\/camp\/a\.png$/)
 })
 
 test('leitura: o caminho PostgREST do robô vira a rota da Fábrica, com o token do robô', async () => {

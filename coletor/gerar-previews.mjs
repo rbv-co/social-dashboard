@@ -8,16 +8,9 @@ import './lib/carregar-env.mjs';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { TEMPLATES, DIM } from './templates-criativos/templates.mjs';
 import { variacoesProduto, variacoesPromo } from './lib/criativo-modelo.mjs';
-import { subirStorageResiliente } from './lib/storage-upload.mjs';
-// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
-// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
-import { vaiParaApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
+// Tudo pela API (lib/fabrica-banco.mjs); o Supabase foi desligado em 22/10/2026 (plano 01-C).
+import { exigirApi, escreverFabrica, subirCriativo } from './lib/fabrica-banco.mjs';
 
-const URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SK = process.env.SUPABASE_SERVICE_KEY;
-const REST = URL + '/rest/v1';
-const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
-const BUCKET = 'fabrica-criativos';
 
 // foto de amostra neutra (data URL PNG cinza 1x1) — o preview é ilustrativo,
 // não depende de nenhuma foto real de produto.
@@ -31,19 +24,12 @@ export function dadosAmostra() {
   return { cand, campanha, fotoDataUrl: FOTO_AMOSTRA };
 }
 
-async function sbPatch(p, body) {
-  if (vaiParaApi(p)) return escreverFabrica('PATCH', p, body);
-  const r = await fetch(REST + p, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
-  if (!r.ok && ![200, 204].includes(r.status)) throw new Error('PATCH ' + p + ' ' + r.status);
-}
+const sbPatch = (p, body) => escreverFabrica('PATCH', p, body);
 
 async function subir(path, buf) {
-  // Retry com backoff — mesmo motivo de gerar-criativos (proxy do Storage
-  // devolve 400/5xx transitório em lote). Ver lib/storage-upload.mjs.
-  return subirStorageResiliente({
-    url: URL, sk: SK, bucket: BUCKET, path, buf,
-    onRetry: (t, e) => console.warn(`  [storage retry ${t}/9] ${path.split('/').pop()}: ${e.message.slice(0, 60)}`),
-  });
+  // Retry com backoff — mesmo motivo de gerar-criativos. Ver lib/storage-upload.mjs.
+  return subirCriativo(path, buf, 'image/png',
+    (t, e) => console.warn(`  [storage retry ${t}/9] ${path.split('/').pop()}: ${e.message.slice(0, 60)}`));
 }
 
 // run(): pra cada code-look do registry TEMPLATES, gera a variante certa (produto via
@@ -51,6 +37,7 @@ async function subir(path, buf) {
 // amostra, renderiza nos 2 formatos, sobe pro Storage e grava preview_url (do formato
 // feed 1080x1350) em fabrica_looks. Não toca campanha/objetivo — é só ilustrativo.
 export async function run() {
+  exigirApi();
   const { cand, campanha, fotoDataUrl } = dadosAmostra();
   let n = 0;
   try {

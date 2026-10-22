@@ -8,16 +8,24 @@
 //     traduzido pela ponte do front (`src/compartilhado/banco-pela-api.js`) para
 //     `GET /fabrica/<recurso>` — uma tradução só, testada nos dois lados;
 //   - ESCRITAS: as rotas do robô (`/fabrica/robo/*`), uma por operação.
-// O que NÃO é `fabrica_*` (o Storage dos criativos, Plano 6; `gc_*`, 5.5) segue na
-// REST do Supabase: quem decide é o caminho, não o robô inteiro.
+// Desde 22/10/2026 (plano 01-C) NÃO HÁ MAIS caminho pelo Supabase: sem as duas
+// variáveis a Fábrica falha alto (`exigirApi`). Upload dos criativos: `subirCriativo`;
+// leitura de vendas/estoque por SKU: `lerVendasPorSku`/`lerEstoquePorSku` (o plano 04
+// troca a fonte aqui, num lugar só).
 
 import { robosNaApi, loginServico } from './bling-comercial.mjs';
+import { subirStorageResiliente } from './storage-upload.mjs';
 import { configurarApi, pedir } from '../../src/compartilhado/api.js';
 import { lerCaminhoPostgrest, lerPelaApi } from '../../src/compartilhado/banco-pela-api.js';
 
 export const fabricaNaApi = () => robosNaApi();
-/** O caminho REST é de uma tabela da Fábrica (e vai para a API, com a chave ligada)? */
-export const vaiParaApi = (caminho) => fabricaNaApi() && /^\/?fabrica_/.test(String(caminho));
+/** O caminho REST é de uma tabela da Fábrica (ou `gc_*`, só leitura) e vai para a API? */
+export const vaiParaApi = (caminho) => fabricaNaApi() && /^\/?(fabrica_|gc_)/.test(String(caminho));
+
+/** A Fábrica só fala com a API: sem `CENTRAL_API_URL` + `CENTRAL_API_TOKEN` (token `srv_` do `robo-fabrica`) falha em vez de cair no Supabase desligado. */
+export function exigirApi() {
+  if (!fabricaNaApi()) throw new Error('a Fábrica exige CENTRAL_API_URL + CENTRAL_API_TOKEN (token srv_ do robo-fabrica): o Supabase foi desligado');
+}
 
 let _pronta = false;
 async function api() {
@@ -126,4 +134,31 @@ export const ROBOS_DA_FABRICA = ['fabrica', 'fabrica-gerar', 'fabrica-subir', 'f
 /** `POST /fabrica/robo/execucoes` com o corpo que `registrarExecucao` monta. */
 export async function registrarExecucaoNaApi(corpo) {
   return chamar('POST', '/fabrica/robo/execucoes', { ...corpo, detalhe: cortar(corpo.detalhe, 500) });
+}
+
+/** Sobe um criativo ao bucket `fabrica-criativos` da API; devolve a URL pública (`/storage/v1/object/public/...`). */
+export async function subirCriativo(path, buf, contentType = 'image/png', onRetry) {
+  exigirApi();
+  return subirStorageResiliente({
+    url: process.env.CENTRAL_API_URL.trim().replace(/\/+$/, ''), token: await loginServico({ naApi: true }),
+    bucket: 'fabrica-criativos', path, buf, contentType, onRetry,
+  });
+}
+
+/** Faturamento por SKU de um canal: `[{ sku, produto, faturamento }]` (`gc_vendas_item` pela API; o filtro de canal é aqui, a rota só filtra por mês). */
+export async function lerVendasPorSku(canalLojaId) {
+  const linhas = await lerFabrica('/gc_vendas_item?select=canal_loja_id,sku,produto,faturamento');
+  return linhas.filter((l) => String(l.canal_loja_id) === String(canalLojaId));
+}
+
+/** Saldo por SKU de um depósito: `[{ sku, saldo }]` (`gc_estoque_item` pela API). */
+export async function lerEstoquePorSku(depositoId) {
+  return lerFabrica(`/gc_estoque_item?select=sku,saldo&deposito_id=eq.${depositoId}`);
+}
+
+/** Nome do produto por SKU (`Map`), de qualquer canal; o 1º nome visto vale. */
+export async function lerNomesPorSku() {
+  const nomes = new Map();
+  for (const l of await lerFabrica('/gc_vendas_item?select=sku,produto')) if (l.sku && !nomes.has(l.sku)) nomes.set(l.sku, l.produto);
+  return nomes;
 }

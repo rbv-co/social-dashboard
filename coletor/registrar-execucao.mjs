@@ -24,7 +24,7 @@ export async function registrarExecucao({
 }) {
   try {
     // Lê o env na hora da chamada (scripts como panorama populam o .env em runtime).
-    const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+    const SUPABASE_URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
     const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
     // Plano 7 (5.8): os robôs da Fábrica gravam pela rota do robô quando a API está ligada.
     const pelaApi = !db && fabricaNaApi() && ROBOS_DA_FABRICA.includes(robo);

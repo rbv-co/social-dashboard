@@ -13,7 +13,7 @@ import { metaDoColetor } from './lib/core-meta.mjs';
 // CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token.
 const META = metaDoColetor();
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
 const SK = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
