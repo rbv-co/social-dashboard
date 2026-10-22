@@ -17,7 +17,8 @@ import { fileURLToPath } from 'node:url';
  *   'pg-por-flag' (plano 03) fala com o banco por `lib/rest-pg.mjs`: REST_VIA_PG=1 (que o rodar-robo.sh exporta com
  *                 SAIU_DO_SUPABASE) manda tudo ao api-db com o papel do robô; sem a flag é o REST antigo (rollback).
  *                 `fase2` lista arquivos do mesmo robô que seguem em REST/Storage e são PULADOS em pg;
- *   'rest'        só REST: SEM DESTINO até o achado 06-1 ser decidido.
+ *   'rest'        só REST: SEM DESTINO até o achado 06-1 ser decidido;
+ *   'api'         só a API da Central (lib/fabrica-banco.mjs): nenhum REST do Supabase.
  * Robô novo na agenda da VPS sem linha aqui reprova; robô migrado de 'rest' para 'pg' reprova até a linha mudar (e o achado
  * fechar). Não prova que o robô FUNCIONA no banco novo: prova que a classificação do inventário é a do código. */
 
@@ -57,7 +58,7 @@ const FORA_DA_AGENDA = {
   'lembretes da Vessel (Plano 6)': { arquivos: ['lembretes-da-vessel-na-vps.mjs'], acesso: 'pg' },
   'log de caroços (Plano 6)': { arquivos: ['log-de-carocos.mjs'], acesso: 'pg' },
   'conteúdo (serviço)': { arquivos: ['conteudo-ideias.mjs', 'conteudo-semana.mjs', 'conteudo-fila.mjs'], acesso: 'pg' },
-  'fábrica (Actions)': { arquivos: ['fabrica-job-runner.mjs'], acesso: 'rest' },  // fabrica_* pela API; gc_*, vessel_lotes e Storage por REST
+  'fábrica (VPS, sob demanda)': { arquivos: ['fabrica-job-runner.mjs'], acesso: 'api' },  // plano 01-C: tudo pela API (fabrica-banco.mjs); sem REST do Supabase
 };
 
 const todos = { ...AGENDADOS, ...FORA_DA_AGENDA };
@@ -89,6 +90,9 @@ for (const [nome, r] of Object.entries(todos)) {
       } else if (r.acesso === 'pg-ou-rest') {
         assert.ok(t.includes(r.variavel), `${arquivo} perdeu o caminho pg por ${r.variavel}`);
         assert.equal(rest, true, `${arquivo} não tem mais o fallback REST: vire 'pg'`);
+      } else if (r.acesso === 'api') {
+        assert.equal(rest, false, `${arquivo} voltou a falar REST do Supabase`);
+        assert.ok(/fabrica-banco/.test(t), `${arquivo} não fala pela API (lib/fabrica-banco.mjs)`);
       } else {
         assert.equal(rest, true, `${arquivo} não usa mais REST: vire 'pg' e feche o achado 06-1`);
       }
@@ -99,7 +103,7 @@ for (const [nome, r] of Object.entries(todos)) {
 test('robô só-REST é a lacuna 06-1: o conjunto é o do inventário (muda de propósito, nunca por acidente)', () => {
   const soRest = Object.entries(todos).filter(([, r]) => r.acesso === 'rest').map(([n]) => n).sort();
   assert.deepEqual(soRest, [
-    'cartoes-ean (serviço)', 'faxina-storage', 'fábrica (Actions)',
+    'cartoes-ean (serviço)', 'faxina-storage',
   ]);
 });
 

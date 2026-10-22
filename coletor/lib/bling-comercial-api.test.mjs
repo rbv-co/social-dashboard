@@ -21,7 +21,7 @@ test('QUEM ESCOLHE O CAMINHO É O TOKEN: srv_ → API sem apikey; JWT → edge d
   assert.equal(m.urlDaEdge('meta-proxy', 'srv_abc'), 'http://api:8080/meta-proxy')
   assert.deepEqual(m.cabecalhosDaEdge('srv_abc'), { Authorization: 'Bearer srv_abc', 'Content-Type': 'application/json' })
   assert.match(m.urlDaEdge('meta-proxy', 'eyJ.jwt'), /\/functions\/v1\/meta-proxy$/)
-  assert.ok(m.cabecalhosDaEdge('eyJ.jwt').apikey)
+  assert.ok(!/^eyJ/.test(m.cabecalhosDaEdge('eyJ.jwt').apikey || ''), 'sem anon key embutida no código')
 })
 
 test('o srv_ só sai para quem PEDE: robô não migrado faz o login de sempre, mesmo com a variável global', async () => {

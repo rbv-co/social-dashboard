@@ -12,27 +12,13 @@
 //   node --import ./lib/curl-fetch.mjs excluir-estudio.mjs --ads a1,a2
 //   (--dry só valida o guard: não toca no Graph)
 import './lib/carregar-env.mjs';
-import tls from 'node:tls';
 import { loginServico, urlDaEdge, cabecalhosDaEdge } from './lib/bling-comercial.mjs';
-// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
-// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
-import { vaiParaApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
+// Tudo pela API (lib/fabrica-banco.mjs); o Supabase foi desligado em 22/10/2026 (plano 01-C).
+import { exigirApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
 import { carregarMarcasELojas } from './lib/config-lojas.mjs';
 
-tls.DEFAULT_MAX_VERSION = 'TLSv1.2';
 
-const URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const ANON = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM';
-const SK = process.env.SUPABASE_SERVICE_KEY;
-const REST = URL + '/rest/v1';
-const H = { apikey: SK, Authorization: 'Bearer ' + SK };
-
-async function sbGet(p) {
-  if (vaiParaApi(p)) return lerFabrica(p);
-  const r = await fetch(REST + p, { headers: H });
-  if (!r.ok) throw new Error('GET ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
-  return r.json();
-}
+const sbGet = (p) => lerFabrica(p);
 
 let TOKEN;
 let ACCOUNT_ID;
@@ -48,7 +34,7 @@ async function chamarProxy(body) {
   let ultimoErro;
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
     try {
-      // o token escolhe o caminho: srv_ (robo-fabrica) → API; JWT → edge do Supabase
+      // srv_ (robo-fabrica) → API (urlDaEdge)
       const r = await fetch(urlDaEdge('meta-proxy', TOKEN), {
         method: 'POST',
         headers: cabecalhosDaEdge(TOKEN),
@@ -98,6 +84,7 @@ export async function run({ adIds, adsetIds, metaCampaignId, metaCampaignIds, cr
 
   const chamarMeta = metaInjetado || meta;
   if (!metaInjetado) {
+    exigirApi();
     TOKEN = await loginServico({ naApi: true });
     const { marcaAtiva } = await carregarMarcasELojas(sbGet);
     if (!marcaAtiva) throw new Error('nenhuma marca ativa configurada (fabrica_marcas.ativo)');

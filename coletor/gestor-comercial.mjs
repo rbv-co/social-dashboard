@@ -23,9 +23,12 @@ const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 const MODEL = process.env.GESTOR_MODEL || 'claude-opus-4-8';
 
-if (!ANTHROPIC_API_KEY || (!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
-  console.error('✗ Faltam segredos: ANTHROPIC_API_KEY_GESTOR, GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
-  process.exit(1);
+// Checada em main(), não no import: testar uma função pura deste arquivo não pode exigir segredo.
+function exigirSegredos() {
+  if (!ANTHROPIC_API_KEY || (!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
+    console.error('✗ Faltam segredos: ANTHROPIC_API_KEY_GESTOR, GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
+    process.exit(1);
+  }
 }
 
 // CANAIS foco vive em ./lib/comercial-canais.mjs (fonte única, reusada pelo
@@ -376,6 +379,7 @@ function proximasDatasComerciais(hoje, dias = 80) {
 }
 
 async function main() {
+  exigirSegredos();
   rest = await abrirRest();   // banco fora: falha aqui, antes de qualquer escrita
   ({ REST, sb } = rest);
   const hoje = hojeBR();

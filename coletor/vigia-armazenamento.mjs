@@ -11,7 +11,7 @@ import fs from 'fs';
 
 const env = {};
 try { for (const l of fs.readFileSync(new URL('./.env', import.meta.url), 'utf8').split('\n')) { const m = l.match(/^([A-Z_]+)=(.*)$/); if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, ''); } } catch (e) {}
-const URL_SB = process.env.SUPABASE_URL || env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+const URL_SB = process.env.SUPABASE_URL || env.SUPABASE_URL || 'https://supabase-desligado.invalid';
 const KEY = process.env.SUPABASE_SERVICE_KEY || env.SUPABASE_SERVICE_KEY;
 const WEBHOOK = process.env.ALERT_WEBHOOK_URL || env.ALERT_WEBHOOK_URL || '';
 const TETO_GB = Number(process.env.TETO_GB || 1);        // plano grátis = 1 GB de arquivos

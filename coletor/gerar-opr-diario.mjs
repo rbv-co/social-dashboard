@@ -32,7 +32,7 @@ const META = metaDoColetor();
 // Nome sem ser "URL" — o global `URL` (usado abaixo pra montar o caminho do
 // PNG em --dry) fica sombreado por um `const URL` no escopo do módulo.
 // Só o upload do PNG (Storage, fase 2 da virada) ainda usa o Supabase; em pg (REST_VIA_PG=1) a imagem é omitida.
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
 const SK = process.env.SUPABASE_SERVICE_KEY;
 let rest, REST;
 const CONTA_VESSEL = 'b6883e82-07cb-4f21-9fd7-ea7626786174';
@@ -225,7 +225,7 @@ async function main() {
     // comentário de mandarImagemWhatsapp. Path com o dia: cada rodada
     // sobrescreve a de ontem (x-upsert), não acumula lixo no bucket.
     const imagemUrl = await subirStorageResiliente({
-      url: SUPABASE_URL, sk: SK, bucket: 'fabrica-criativos', path: `opr/vessel-${dia}.png`, buf,
+      url: process.env.CENTRAL_API_URL, token: process.env.CENTRAL_API_TOKEN, bucket: 'fabrica-criativos', path: `opr/vessel-${dia}.png`, buf,
     });
     await mandarImagemWhatsapp(imagemUrl, `Paid Media Performance — ${periodoLabel(dia)}`);
   } catch (e) {

@@ -28,7 +28,7 @@
 import './lib/carregar-env.mjs';
 import { loginServico, blingProxy } from './lib/bling-comercial.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };

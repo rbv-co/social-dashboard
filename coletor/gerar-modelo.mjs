@@ -25,7 +25,7 @@ const MAPA_PATH = join(DIR, 'fotos-modelo-map.json');
 const NOME_CAMPANHA = '[IA] Modelo';
 const VARIANTES = ['sage', 'pearl', 'espresso'];
 
-const URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+const URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
 const SK = process.env.SUPABASE_SERVICE_KEY;
 const REST = URL + '/rest/v1';
 const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };

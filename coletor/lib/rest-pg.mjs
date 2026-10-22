@@ -71,11 +71,13 @@ const resp = (status, corpo) => ({
 
 export async function abrirRest(env = process.env, { Client } = {}) {
   if (!modoPg(env)) {
-    if (!env.SUPABASE_SERVICE_KEY) throw new Error('falta SUPABASE_SERVICE_KEY');
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
+      throw new Error('o Supabase da Central foi desligado: use REST_VIA_PG=1 (api-db) ou CENTRAL_API_URL (API); sem SUPABASE_URL/SUPABASE_SERVICE_KEY não há REST');
+    }
     const k = env.SUPABASE_SERVICE_KEY;
     return {
       via: 'rest', db: null,
-      REST: (env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co') + '/rest/v1',
+      REST: env.SUPABASE_URL + '/rest/v1',
       sb: { apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' },
       fetch: (...a) => globalThis.fetch(...a),
       fechar: async () => {},

@@ -1,6 +1,7 @@
 import { calcularModoEntrarComo } from './modo-entrar-como.js'
 import { areaNaApi } from './api.js'
 import { opcoesDoSupabase } from './opcoes-do-supabase.js'
+import { criarClienteDesligado } from './cliente-desligado.js'
 
 // O SUPABASE FOI DESLIGADO (D+14, plano 08 do pos-virada): a Central fala so com a API em Go. Estas duas constantes
 // ficam porque ~16 telas ainda as importam no ramo `areaNaApi(...) ? api : supabase` (ramo morto, o build da API
@@ -35,5 +36,8 @@ function _storageDestaAba() {
 
 const _storageEspecial = _storageDestaAba()
 export const emModoEntrarComo = !!_storageEspecial
-export const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY,
-  opcoesDoSupabase(areaNaApi('conta'), _storageEspecial))
+// O supabase-js saiu do index.html (plano 01-D, 22/10/2026): sem `window.supabase`, o cliente é o desligado, que
+// responde sem sessão/erro e não faz rede. O build de demonstração ainda instala o dele (banco de mentira).
+export const sbClient = window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, opcoesDoSupabase(areaNaApi('conta'), _storageEspecial))
+  : criarClienteDesligado()

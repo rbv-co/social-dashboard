@@ -48,7 +48,7 @@ async function banco() {
   return _pg;
 }
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const GRAPH = 'https://graph.facebook.com/v21.0';

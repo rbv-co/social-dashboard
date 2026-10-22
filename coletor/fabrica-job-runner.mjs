@@ -11,9 +11,8 @@
 //   node fabrica-job-runner.mjs --job <uuid>
 import './lib/carregar-env.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
-// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
-// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
-import { vaiParaApi, fabricaNaApi, lerFabrica, escreverFabrica, proximoLote } from './lib/fabrica-banco.mjs';
+// Tudo pela API (lib/fabrica-banco.mjs); o Supabase foi desligado em 22/10/2026 (plano 01-C).
+import { exigirApi, lerFabrica, escreverFabrica, proximoLote } from './lib/fabrica-banco.mjs';
 import { run as gerarRun } from './gerar-criativos.mjs';
 import { exportarCampanhaZoho } from './exportar-zoho.mjs';
 import { run as subirRun } from './subir-estudio.mjs';
@@ -21,59 +20,17 @@ import { run as ativarRun } from './ativar-estudio.mjs';
 import { run as excluirRun } from './excluir-estudio.mjs';
 import { run as previewRun } from './gerar-previews.mjs';
 
-const URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
-const SK = process.env.SUPABASE_SERVICE_KEY;
-const REST = URL + '/rest/v1';
-const H = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
-
-// --- Supabase REST (service key) — mesmo padrão de sbGet/sbPost dos outros .mjs do coletor
-// (subir-estudio.mjs, gerar-criativos.mjs); sbPatch é o análogo de sbPost trocando o método. ---
-async function sbGet(p) {
-  if (vaiParaApi(p)) return lerFabrica(p);
-  const r = await fetch(REST + p, { headers: H });
-  if (!r.ok) throw new Error('GET ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
-  return r.json();
-}
-async function sbPatch(p, body) {
-  if (vaiParaApi(p)) return escreverFabrica('PATCH', p, body);
-  const r = await fetch(REST + p, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error('PATCH ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
-  return r;
-}
-async function sbPost(p, body, prefer) {
-  if (vaiParaApi(p)) return escreverFabrica('POST', p, body);
-  const r = await fetch(REST + p, { method: 'POST', headers: prefer ? { ...H, Prefer: prefer } : H, body: JSON.stringify(body) });
-  if (!r.ok && ![200, 201, 204].includes(r.status)) throw new Error('POST ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
-  return r;
-}
+const sbGet = (p) => lerFabrica(p);
+const sbPatch = (p, body) => escreverFabrica('PATCH', p, body);
 
 // GERAÇÃO EM LOTES QUE SE AUTO-ENCADEIAM: quando um lote termina com trabalho restante (o teto
-// HERO_IA_MAX foi atingido), cria o job do PRÓXIMO lote (mesma campanha/params) e dispara o próprio
-// Action via GITHUB_TOKEN (workflow_dispatch é permitido pra ele). A idempotência do gerar-criativos
-// (pula os criativos já existentes) faz cada lote continuar de onde parou — do início ao fim, sem
-// travar (cada lote é curto, bem abaixo do timeout). Guard de segurança: para em 300 lotes.
-async function encadearProximoLote(params, jobId) {
-  const continuacao = (params.continuacao || 0) + 1;
-  if (continuacao > 300) { console.warn('encadeamento: limite de 300 lotes atingido — parando por segurança'); return; }
-  const prox = { ...params, continuacao };
-  let novoId;
-  if (fabricaNaApi()) {
-    // Pela API, UMA rota cria o job do próximo lote e o liga à rodada (idempotente:
-    // um segundo pedido devolve o que já existe; 409 acima de 300 lotes).
-    novoId = await proximoLote(jobId);
-  } else {
-    const novo = await sbPost('/fabrica_jobs', [{ tipo: 'gerar', params: prox, status: 'enfileirado' }], 'return=representation');
-    novoId = (await novo.json())[0].id;
-    if (prox.campanhaId) await sbPatch(`/fabrica_campanhas?id=eq.${prox.campanhaId}`, { job_id: novoId });
-  }
-  const repo = process.env.GITHUB_REPO, token = process.env.GH_TOKEN;
-  if (!repo || !token) { console.warn('sem GH_TOKEN/GITHUB_REPO — próximo lote (job ' + novoId + ') ficou enfileirado; dispare manualmente'); return; }
-  const gh = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/fabrica.yml/dispatches`, {
-    method: 'POST', headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'fabrica-runner' },
-    body: JSON.stringify({ ref: 'main', inputs: { job_id: novoId } }),
-  });
-  if (!gh.ok) console.warn('encadeamento dispatch falhou ' + gh.status + ' ' + (await gh.text()).slice(0, 150));
-  else console.log('lote ' + continuacao + ' encadeado: job ' + novoId);
+// HERO_IA_MAX foi atingido), a API cria o job do PRÓXIMO lote (mesma campanha/params) e o runner
+// imprime `PROXIMO_LOTE=<job_id>` — `coletor/vps/fabrica-lotes.sh` lê a linha e roda o próximo, cada lote
+// num processo novo. A idempotência do gerar-criativos (pula os criativos já existentes) faz cada
+// lote continuar de onde parou. Guard de segurança: a API recusa (409) acima de 300 lotes.
+async function encadearProximoLote(jobId) {
+  const novoId = await proximoLote(jobId);
+  console.log('PROXIMO_LOTE=' + novoId);
 }
 
 // --- statusCampanhaGerar(): função pura — mapeia o resultado do gerar pro status da campanha.
@@ -124,14 +81,14 @@ export function estadoTerminalExcluir(res) {
 async function main() {
   const jobId = process.env.FABRICA_JOB_ID || (process.argv.includes('--job') ? process.argv[process.argv.indexOf('--job') + 1] : null);
   if (!jobId) throw new Error('FABRICA_JOB_ID ausente (env FABRICA_JOB_ID ou --job <uuid>)');
-  if (process.env.FABRICA_EXIGE_API === '1' && !fabricaNaApi()) throw new Error('FABRICA_EXIGE_API=1 mas faltam CENTRAL_API_URL e CENTRAL_API_TOKEN (secrets do repositório): não grava no Supabase');
+  exigirApi();
 
   const job = (await sbGet(`/fabrica_jobs?select=*&id=eq.${jobId}`))[0];
   if (!job) throw new Error('job não encontrado: ' + jobId);
 
   await sbPatch(`/fabrica_jobs?id=eq.${jobId}`, {
     status: 'rodando',
-    github_run_id: process.env.GITHUB_RUN_ID || null,
+    github_run_id: process.env.GITHUB_RUN_ID || undefined,
     updated_at: new Date().toISOString(),
   });
 
@@ -168,7 +125,7 @@ async function main() {
       await sbPatch(`/fabrica_jobs?id=eq.${jobId}`, { status: 'concluido', resultado: r, updated_at: new Date().toISOString() });
       if (r.incompleto && r.novas > 0) {
         // lote parcial: encadeia o próximo automaticamente; campanha segue 'gerando' (não marca pronta)
-        await encadearProximoLote(job.params || {}, jobId);
+        await encadearProximoLote(jobId);
         await reg(r.criativos, 'criativos', 'ok', 'lote ' + ((job.params?.continuacao || 0) + 1) + ' (+' + r.novas + ')');
       } else {
         // completo (ou nada novo progrediu). Conta o TOTAL da campanha: se 0, NÃO diz "pronto pra curar"

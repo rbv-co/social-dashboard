@@ -31,7 +31,7 @@ import {
 } from './lib/zoho-da-central.mjs';
 import { abrirFontePg, NOME_DO_ROBO } from './lib/fonte-pg.mjs';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://supabase-desligado.invalid';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const WD = 'https://www.zohoapis.com/workdrive/api/v1';
