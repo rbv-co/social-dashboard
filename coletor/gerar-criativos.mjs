@@ -13,7 +13,7 @@ import './lib/carregar-env.mjs';
 import { loginServico, blingProdutos } from './lib/bling-comercial.mjs';
 // Tudo pela API (lib/fabrica-banco.mjs): tabelas `fabrica_*`, vendas/estoque por SKU e o
 // upload dos criativos. O Supabase foi desligado em 22/10/2026 (plano 01-C).
-import { exigirApi, lerFabrica, escreverFabrica, subirCriativo, lerVendasPorSku, lerEstoquePorSku } from './lib/fabrica-banco.mjs';
+import { exigirApi, lerFabrica, escreverFabrica, subirCriativo, lerVendasPorSku, lerEstoquePorSku, lerMaterialDoSku } from './lib/fabrica-banco.mjs';
 import { fotoDataUrl, fotoEhStudio } from './lib/foto-produto.mjs';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { TEMPLATES, DIM } from './templates-criativos/templates.mjs';
@@ -41,16 +41,12 @@ export function objetivoPermitePromo(objetivo) {
 }
 
 const sbGet = (p) => lerFabrica(p);
-// `vessel_lotes`: a rota da API não filtra por SKU. Lê os lotes uma vez e responde no formato do
-// `materialMaisRecenteDoSku` (o lote mais recente com material do SKU; a rota já vem do mais novo).
-let lotesDaGarantia;
+// `materialMaisRecenteDoSku` lê `/vessel_lotes?sku=eq.X…`; pela API isso é `GET /fabrica/robo/material-do-sku?sku=`
+// (uma coluna, sem dar ao robô o módulo autenticidade). Devolve no formato que ele espera.
 async function sbGetGarantia(p) {
-  const sku = decodeURIComponent(/[?&]sku=eq\.([^&]+)/.exec(p)[1]);
-  lotesDaGarantia ??= lerFabrica('/vessel_lotes?select=sku,material,criado_em');
-  return (await lotesDaGarantia).filter((l) => l.sku === sku && l.material != null).slice(0, 1);
+  const material = await lerMaterialDoSku(decodeURIComponent(/[?&]sku=eq\.([^&]+)/.exec(p)[1]));
+  return material == null ? [] : [{ material }];
 }
-// O 3º argumento (`Prefer`) era do PostgREST; a rota do robô não precisa dele.
-const sbPost = (p, body) => escreverFabrica('POST', p, body);
 
 async function subir(path, buf) {
   // Retry com backoff: o proxy na frente do storage devolve 400/5xx transitório no meio de lotes

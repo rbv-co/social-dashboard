@@ -25,7 +25,7 @@ const sbPatch = (p, body) => escreverFabrica('PATCH', p, body);
 
 // GERAÇÃO EM LOTES QUE SE AUTO-ENCADEIAM: quando um lote termina com trabalho restante (o teto
 // HERO_IA_MAX foi atingido), a API cria o job do PRÓXIMO lote (mesma campanha/params) e o runner
-// imprime `PROXIMO_LOTE=<job_id>` — `coletor/vps/fabrica.sh` lê a linha e roda o próximo, cada lote
+// imprime `PROXIMO_LOTE=<job_id>` — `coletor/vps/fabrica-lotes.sh` lê a linha e roda o próximo, cada lote
 // num processo novo. A idempotência do gerar-criativos (pula os criativos já existentes) faz cada
 // lote continuar de onde parou. Guard de segurança: a API recusa (409) acima de 300 lotes.
 async function encadearProximoLote(jobId) {

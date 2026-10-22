@@ -77,6 +77,12 @@ export async function patchJob(id, campos) {
   return chamar('PATCH', `/fabrica/robo/jobs/${encodeURIComponent(id)}`, c);
 }
 
+/** O material do lote mais recente do SKU (pílula de garantia): `GET /fabrica/robo/material-do-sku`; `null` se não há. */
+export async function lerMaterialDoSku(sku) {
+  const d = await chamar('GET', `/fabrica/robo/material-do-sku?sku=${encodeURIComponent(sku)}`);
+  return d?.material ?? null;
+}
+
 /** Cria (ou devolve, idempotente) o job do próximo lote do `gerar`. → id do job. */
 export async function proximoLote(jobId) {
   const d = await chamar('POST', `/fabrica/robo/jobs/${encodeURIComponent(jobId)}/proximo-lote`);
@@ -140,7 +146,7 @@ export async function registrarExecucaoNaApi(corpo) {
 export async function subirCriativo(path, buf, contentType = 'image/png', onRetry) {
   exigirApi();
   return subirStorageResiliente({
-    url: process.env.CENTRAL_API_URL.trim().replace(/\/+$/, ''), token: await loginServico({ naApi: true }),
+    url: process.env.CENTRAL_API_URL, token: await loginServico({ naApi: true }),
     bucket: 'fabrica-criativos', path, buf, contentType, onRetry,
   });
 }

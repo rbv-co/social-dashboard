@@ -37,12 +37,12 @@ test('sem CENTRAL_API_URL/TOKEN: falha alto, sem nenhuma requisição', async ()
   assert.equal(n, 0);
 });
 
-test('400 transitório: retenta e sucede (o bug real — nginx 400 no meio do lote)', async () => {
+test('5xx transitório: retenta e sucede (nginx 502/503 no meio do lote)', async () => {
   let n = 0; let retries = 0;
   const url = await subirStorageResiliente(base({
     fetchImpl: async () => {
       n++;
-      if (n < 3) return { ok: false, status: 400, text: async () => '<html>400 Bad Request</html>' };
+      if (n < 3) return { ok: false, status: 503, text: async () => '<html>503</html>' };
       return { ok: true, status: 200 };
     },
     onRetry: () => { retries++; },
@@ -73,8 +73,8 @@ test('falha persistente: esgota tentativas e lança o último erro', async () =>
   assert.equal(n, 3); // tentou exatamente `tentativas` vezes
 });
 
-test('401/403/413/415 são definitivos: 1 tentativa só (repetir não muda a permissão)', async () => {
-  for (const status of [401, 403, 413, 415]) {
+test('4xx (exceto 408/429) é definitivo: 1 tentativa só (repetir não muda permissão, tamanho nem caminho)', async () => {
+  for (const status of [400, 401, 403, 404, 409, 413, 415]) {
     let n = 0;
     await assert.rejects(
       subirStorageResiliente(base({ fetchImpl: async () => { n++; return { ok: false, status, text: async () => 'sem_permissao' }; } })),
@@ -82,4 +82,18 @@ test('401/403/413/415 são definitivos: 1 tentativa só (repetir não muda a per
     );
     assert.equal(n, 1, `HTTP ${status}`);
   }
+});
+
+test('408 e 429 passam: são retentados', async () => {
+  for (const status of [408, 429]) {
+    let n = 0;
+    await subirStorageResiliente(base({ fetchImpl: async () => (++n < 2 ? { ok: false, status, text: async () => 'espere' } : { ok: true, status: 200 }) }));
+    assert.equal(n, 2, `HTTP ${status}`);
+  }
+});
+
+test('url com espaço e barra no fim (variável de ambiente) é normalizada', async () => {
+  let alvo;
+  await subirStorageResiliente(base({ url: ' http://api:8080/\n', fetchImpl: async (u) => { alvo = u; return { ok: true, status: 200 }; } }));
+  assert.equal(alvo, 'http://api:8080/arquivos/fabrica-criativos/camp/produto/LV1-heroi-1080x1920.png');
 });

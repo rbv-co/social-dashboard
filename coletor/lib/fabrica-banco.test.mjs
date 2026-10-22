@@ -50,6 +50,14 @@ test('vendas por SKU: a rota só filtra por mês, o canal é filtrado aqui; esto
   for (const p of pedidos) assert.equal(p.auth, 'Bearer srv_robo')
 })
 
+test('material do SKU: rota própria do robô, sem lote vira null', async () => {
+  const pedidos = api({ 'GET /fabrica/robo/material-do-sku': [200, { material: 'canvas' }] })
+  assert.equal(await fb.lerMaterialDoSku('SS1 A'), 'canvas')
+  assert.equal(new URLSearchParams(pedidos[0].busca).get('sku'), 'SS1 A')
+  api({ 'GET /fabrica/robo/material-do-sku': [200, { material: null }] })
+  assert.equal(await fb.lerMaterialDoSku('X'), null)
+})
+
 test('subirCriativo: PUT na API com o token do robô, devolve a URL pública', async () => {
   const pedidos = []
   globalThis.fetch = async (url, init) => { pedidos.push({ url, init }); return { ok: true, status: 200 } }
