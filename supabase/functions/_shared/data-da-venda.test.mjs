@@ -128,14 +128,35 @@ test('⚠️ pedido ATENDIDO no Bling com nota rejeitada SAI da conta', () => {
   assert.equal(r.removidos, 1);
 });
 
-test('⚠️ mas nota PENDENTE fica — senão o painel amanhece vazio todo dia', () => {
-  // Negada (2, 4, 9) é diferente de pendente (1, 3, 8). A nota que ainda não
-  // voltou da Sefaz é venda em processamento; tirá-la da tela seria trocar um
-  // erro pequeno por um buraco. Vale a mesma regra do pedido sem linha nenhuma.
+test('⚠️ nota PENDENTE também sai, e é contada à parte', () => {
+  /* ⚠️ ESTE TESTE AFIRMAVA O CONTRÁRIO ATÉ 22/09/2026. Ele dizia que pendente
+   * ficava, "senão o painel amanhece vazio todo dia". O medo era razoável e a
+   * medição na base real desmentiu: existem QUATRO linhas em situação 1 no
+   * histórico inteiro, com 18, 22, 25 e 26 dias. Nenhuma de hoje. A nota que a
+   * Sefaz vai autorizar volta em segundos.
+   *
+   * E o painel não amanhece vazio porque a venda recém-feita nem tem linha
+   * ainda (o coletor roda de hora em hora) — ela passa pela regra 1, testada
+   * logo abaixo. Só sai daqui quem TEM linha e continua sem autorização.
+   *
+   * O caso concreto: o pedido #2599, de 04/09/2026, R$ 449,90, aparecia no
+   * faturamento de setembro com a nota pendente havia 18 dias — e no Bling ao
+   * vivo aquela nota responde 404, foi apagada de lá. */
   const r = ajustarPelaDataDaNota([ped(1, '2026-08-06', 500)],
     [linha(1, '2026-08-06', '2026-08-06', 500, 1)], '2026-08-06', '2026-08-06');
-  assert.equal(r.pedidos.length, 1);
-  assert.equal(r.pedidos[0].total, 500);
+  assert.equal(r.pedidos.length, 0, 'a pendente não conta como venda');
+  assert.equal(r.removidos, 1);
+  assert.equal(r.pendentes, 1, 'contada à parte, para não sumir calada');
+});
+
+test('⚠️ a venda de HOJE não corre risco: sem linha, ela fica', () => {
+  /* Este é o teste que protege a decisão de cima. Se um dia alguém apertar mais
+   * a regra da nota, ele quebra — e o motivo estará escrito aqui em vez de o
+   * dono descobrir pelo painel zerado às 9h da manhã. */
+  const r = ajustarPelaDataDaNota([ped(1, '2026-08-06', 500)], [], '2026-08-06', '2026-08-06');
+  assert.equal(r.pedidos.length, 1, 'pedido sem linha nossa continua contando');
+  assert.equal(r.semResposta, 1);
+  assert.equal(r.pendentes, 0);
 });
 
 test('pedido sem nota nenhuma (situação nula) continua como está', () => {
