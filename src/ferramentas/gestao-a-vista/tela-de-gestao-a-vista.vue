@@ -1430,7 +1430,7 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
           ${(canaisArr.length>5||_gvCanalExpandido)?`<button class="gv-canal-vermais" onclick="gvToggleCanais()">${_gvCanalExpandido?'Ver menos':('Ver mais ('+canaisArr.length+')')}</button>`:''}
         </div>
         <div class="gv-canal-scroll" id="gv-canal-scroll">
-          <div class="gv-canal-grid" id="gv-canal-grid">${smGaugesHtml}</div>
+          <div class="gv-canal-grid" id="gv-canal-grid" style="--gv-vbh:${alturaDosCards}">${smGaugesHtml}</div>
         </div>
       </div>
       <div class="gv-rankings" data-tour="gv-rankings">
@@ -2206,4 +2206,30 @@ body.dev-tv .tela-gestao-a-vista :deep(#gv-ac-toggle){font-size:max(16px, calc(2
 .tela-gestao-a-vista :deep(.gv-period-btns)::-webkit-scrollbar{display:none;}
 .tela-gestao-a-vista :deep(.gv-pbtn),.tela-gestao-a-vista :deep(.vs-ac-toggle){flex-shrink:0;}  /* mora DENTRO da barra: fundo, borda de baixo e respiro lateral sao dela */
 @media(max-width:640px){.tela-gestao-a-vista :deep(.gv-controles){padding:var(--gv-pad-y) var(--gv-pad-x);flex-direction:column;align-items:stretch;gap:var(--sp-2);}}
+
+/* ── AJUSTE 04/11/2026 — telas largas e baixas cortavam o painel ──────────────
+   O SVG do velocímetro tem altura automática (largura × proporção). Com 5 por
+   fila numa tela de ~2000px de largura e ~950 de altura, o cartão ficava mais
+   alto que o painel (55fr) e o overflow:hidden comia o rodapé: "meta R$ 50.000"
+   saía cortada. Agora o painel é um "container" e a largura do cartão é limitada
+   pela ALTURA que sobra (--gv-vbh = altura do desenho, posta pelo JS no grid).
+   Só no desktop: ≤1024px o painel cresce com o conteúdo (altura automática). */
+@media(min-width:1025px){
+  .tela-gestao-a-vista :deep(.gv-canal-panel:not(.gv-canal-expandido) .gv-canal-scroll){container-type:size;}
+  .tela-gestao-a-vista :deep(.gv-canal-panel:not(.gv-canal-expandido) .gv-canal-grid){justify-content:space-around;}
+  .tela-gestao-a-vista :deep(.gv-canal-panel:not(.gv-canal-expandido) .gv-canal-grid > .gv-sm-item){
+    flex:0 1 min(calc((100% - 40px)/5), calc((100cqh - 56px) * 100 / var(--gv-vbh, 100)));
+    max-width:min(calc((100% - 40px)/5), calc((100cqh - 56px) * 100 / var(--gv-vbh, 100)));
+  }
+}
+/* KPIs do velocímetro principal: o valor ("R$ 1.096,93") é largo e a coluna é
+   estreita — um invadia o outro. A fonte acompanha a largura da célula (1/3 da
+   caixa), sem passar do tamanho de sempre. ~7 "letras" de largura por valor. */
+.tela-gestao-a-vista :deep(.gv-main-kpi){container-type:inline-size;}
+.tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:min(max(16px, calc(20px * var(--escala-texto, 1))), calc((33.3cqw - 14px) / 7.2));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:min(max(16px, calc(48px * var(--escala-texto, 1))), calc((33.3cqw - 40px) / 7.2));}
+/* Rankings que rolam sozinhos: a linha que passa pela borda aparecia cortada
+   no meio. Esmaecer as pontas faz o corte parecer intencional. */
+.tela-gestao-a-vista :deep(.gv-rank-scroll){-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);}
+@media(max-width:1024px){ .tela-gestao-a-vista :deep(.gv-rank-scroll){-webkit-mask-image:none;mask-image:none;} }
 </style>
