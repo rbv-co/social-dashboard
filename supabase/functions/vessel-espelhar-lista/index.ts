@@ -17,10 +17,10 @@
 // toda falha é gravada em português na própria linha (`ultimo_erro`), dizendo
 // o que fazer, e a linha continua na fila.
 //
-// CORE_BLING_PROXY (padrão DESLIGADO): `true` faz as leituras e escritas de contatos
-// passarem pelo proxy do core (POST {CORE_URL}/api/interno/bling/proxy), com chave de
-// idempotência estável. Exige CORE_URL/CORE_API_TOKEN, que já existem nesta edge. Para
-// desligar, apague o secret (ou ponha false): volta o fetch direto, idêntico ao de antes.
+// CORE_BLING_PROXY=true é OBRIGATÓRIO: as leituras e escritas de contatos passam pelo proxy
+// do core (POST {CORE_URL}/api/interno/bling/proxy), com chave de idempotência estável, e o
+// espelho do core reflete a escrita. Exige CORE_URL/CORE_API_TOKEN. Sem o secret ligado a
+// função falha com erro claro (não existe mais fetch direto nem token próprio do Bling).
 // Detalhes e o contrato em _shared/core-bling-proxy.js.
 //
 // A PÁGINA NUNCA ESCREVE NO BLING NEM NO ZOHO. Quem escreve é este robô, com
@@ -87,21 +87,16 @@ import { montarXlsx, bytesIguais } from '../_shared/planilha-xlsx.js';
 import { linhasDoVigia, ROBO_ETAPAS_LIKE, DIAS_DE_HISTORICO } from '../_shared/vigia-do-espelho.js';
 import { celularParaOBling } from '../_shared/celular-do-bling.js';
 import { completarContato } from '../_shared/completar-contato-do-bling.js';
-import { blingDoCore } from '../_shared/core-bling-token.js';
-import { blingViaCore, chaveIdempotente } from '../_shared/core-bling-proxy.js';
+import { blingSoPeloProxy, chaveIdempotente } from '../_shared/core-bling-proxy.js';
 import { colocarContato } from '../_shared/put-contato-bling.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const WD = 'https://www.zohoapis.com/workdrive/api/v1';
 const BLING = 'https://api.bling.com.br/Api/v3';
-// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
-const CORE_BLING = blingDoCore(Deno.env.toObject());
-// CORE_BLING_PROXY=true: leituras e escritas de contatos passam pelo proxy do core (ver _shared/core-bling-proxy.js).
-// Desligada = o fetch direto de sempre. Ligada, o core põe o token: esta edge nem lê nem renova o do Bling.
-const BLING_PROXY = blingViaCore(Deno.env.toObject(), {
-  base: BLING, direto: (url: string, init: any) => CORE_BLING.fetch(url, init),
-});
+// Toda leitura e escrita do Bling passa pelo proxy do core (ver _shared/core-bling-proxy.js). SEM `CORE_BLING_PROXY=true`
+// a função FALHA com erro claro: não há mais fetch direto nem token próprio do Bling (plano 03, ESPELHO-BLING-ESCRITAS).
+const BLING_PROXY = blingSoPeloProxy(Deno.env.toObject(), { base: BLING });
 const ORIGEM_CHAVE = 'espelhar-lista';
 
 // O CAMINHO DA PASTA VAI POR NOME, NUNCA POR ID ESCRITO AQUI. Se alguém
@@ -307,34 +302,10 @@ async function lerTudo(sb: any, { tabela, colunas, ordem }: any): Promise<any[]>
 
 // ── Bling ───────────────────────────────────────────────────────────────────
 
-function tokenBling(sb: any): Promise<string> {
-  if (BLING_PROXY.ligada) return Promise.resolve(''); // o proxy do core é quem tem o token
-  return CORE_BLING.token(() => renovarSeVencido(sb));
-}
-
-async function renovarSeVencido(sb: any): Promise<string> {
-  const { data } = await sb.from('bling_tokens').select('*').order('id', { ascending: false }).limit(1).maybeSingle();
-  if (!data?.access_token) throw new Error('Não há token do Bling guardado.');
-  if (new Date(data.expires_at) > new Date(Date.now() + 5 * 60 * 1000)) return data.access_token;
-
-  // Renovar ROTACIONA o refresh_token: se renovar e não gravar de volta, o
-  // próximo que usar o antigo é recusado. Por isso a gravação vem junto.
-  const creds = btoa(`${data.client_id}:${data.client_secret}`);
-  const r = await fetch(`${BLING}/oauth/token`, {
-    method: 'POST',
-    // enable-jwt: sem isso o Bling devolve token opaco (descontinuado)
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${creds}`, 'enable-jwt': '1' },
-    body: `grant_type=refresh_token&refresh_token=${data.refresh_token}`,
-  });
-  if (!r.ok) throw new Error('Não consegui renovar o acesso ao Bling.');
-  const t = await r.json();
-  await sb.from('bling_tokens').update({
-    access_token: t.access_token,
-    refresh_token: t.refresh_token,
-    expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
-    updated_at: new Date().toISOString(),
-  }).eq('id', data.id);
-  return t.access_token;
+// O proxy do core é quem tem o token: aqui só se exige que ele esteja ligado (senão lança ERRO_PROXY_OBRIGATORIO).
+function tokenBling(): Promise<string> {
+  BLING_PROXY.exigir();
+  return Promise.resolve('');
 }
 
 const FALTA_PERMISSAO_BLING =
@@ -612,7 +583,7 @@ async function rodada(sb: any): Promise<Response> {
       .limit(25);   // teto por rodada: são 4 rodadas por hora, e a fila anda.
 
     if (paraCompletar?.length) {
-      const tb = await tokenBling(sb);
+      const tb = await tokenBling();
       let completados = 0, semContato = 0, semMudanca = 0, limitado = false;
       const incertos: string[] = [];
 
@@ -695,7 +666,7 @@ async function rodada(sb: any): Promise<Response> {
   // ── 2. O BLING ────────────────────────────────────────────────────────────
   if (pendentesBling.length) {
     try {
-      const tb = await tokenBling(sb);
+      const tb = await tokenBling();
       let ok = 0;
       // ⚠️ O BLING PERMITE 3 CHAMADAS POR SEGUNDO, e ele mesmo diz isso no erro:
       // {"type":"TOO_MANY_REQUESTS","limit":3,"period":"second"}. Sem respiro, um

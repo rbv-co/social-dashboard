@@ -90,13 +90,21 @@ Dá para gerar o mesmo arquivo pela mão, do computador, com o mesmo código:
   node coletor/espelhar-vessel-no-zoho.mjs             (envia para o Zoho)
 
 
-PROXY DO CORE (CORE_BLING_PROXY)
-Desligado por padrão. Para ligar: secret CORE_BLING_PROXY=true nesta edge (usa os
-CORE_URL e CORE_API_TOKEN que ela já tem). Aí o cadastro (POST /contatos), a busca por
-CPF, a releitura e o PUT de /contatos/{id} vão pelo proxy do core, com chave de
-idempotência estável (pessoa + operação + hash do corpo). Resposta 504 "incerto" NÃO é
-reenviada: a linha mostra o aviso e alguém confere o contato no Bling. Para desligar:
-remover o secret ou pôr false. Código em _shared/core-bling-proxy.js.
+PROXY DO CORE (CORE_BLING_PROXY) — OBRIGATÓRIO (plano 03 do ESPELHO-BLING-ESCRITAS, 24/11/2026)
+Esta função NÃO escreve mais direto no Bling: não há fetch direto nem token próprio (bling_tokens
+não é lido nem renovado aqui). Com o secret CORE_BLING_PROXY=true (e CORE_URL/CORE_API_TOKEN), o
+cadastro (POST /contatos), a busca por CPF, a releitura e o PUT de /contatos/{id} vão pelo proxy
+do core, com chave de idempotência estável (pessoa + operação + hash do corpo), e o core espelha
+a escrita. SEM o secret ligado a etapa do Bling falha com a frase "CORE_BLING_PROXY=true é
+obrigatório…" (gravada em `ultimo_erro` e no resultado da rodada) e nada sai pela rede. Resposta
+504 "incerto" NÃO é reenviada: a linha mostra o aviso e alguém confere o contato no Bling.
+Código em _shared/core-bling-proxy.js (`blingSoPeloProxy`).
+
+ESTADO E ESCRITOR ÚNICO DE CONTATO: o Supabase está congelado desde 20/10/2026 (última rodada
+desta função: 20/10 03:51 UTC; o cron não roda mais) e a lista de espera foi para o banco da API.
+O escritor vivo de contato da lista é o robô `coletor/vessel-contatos-no-bling.mjs` (VPS, flag
+VESSEL_CONTATOS_BLING, sempre pelo proxy). Esta função fica só como histórico/reserva: NÃO ligue
+os dois ao mesmo tempo. Se o Supabase for apagado, apague a função junto.
 PUT do contato com resultado incerto (504 resultado_incerto, queda ou timeout), em _shared/put-contato-bling.js:
 a linha de vessel_registros SAI da fila (bling_atualizado_em) para não ocupar um dos 25 slots a cada rodada, e o
 aviso "resultado incerto (conferir o contato no Bling, NÃO será reenviado)" com código, contato e chave vai no

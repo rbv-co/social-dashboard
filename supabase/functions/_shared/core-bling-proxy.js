@@ -108,6 +108,26 @@ export function blingViaCore(env, { fetchImpl = globalThis.fetch, direto, base, 
   return { ligada: liga, chamar };
 }
 
+export const ERRO_PROXY_OBRIGATORIO =
+  'CORE_BLING_PROXY=true é obrigatório: esta função escreve no Bling e só escreve pelo proxy do core '
+  + '(POST /api/interno/bling/proxy). Sem o secret ligado ela se recusa a rodar e nenhum token do Bling é lido ou renovado aqui.';
+
+/**
+ * Como `blingViaCore`, mas SEM o modo direto: desligada, `chamar` e `exigir` FALHAM com `ERRO_PROXY_OBRIGATORIO`
+ * e nada sai pela rede. Para quem ESCREVE no Bling (toda escrita passa pelo core, que espelha a mudança).
+ */
+export function blingSoPeloProxy(env, { fetchImpl, base = BLING_BASE, timeoutMs } = {}) {
+  const b = blingViaCore(env, {
+    fetchImpl, base, ...(timeoutMs ? { timeoutMs } : {}),
+    direto: () => { throw new Error(ERRO_PROXY_OBRIGATORIO); },
+  });
+  return {
+    ligada: b.ligada,
+    chamar: b.chamar,
+    exigir() { if (!b.ligada) throw new Error(ERRO_PROXY_OBRIGATORIO); },
+  };
+}
+
 /**
  * 401/403 que NÃO é do Bling nem do proxy: o core recusou a credencial DESTA API (CORE_API_TOKEN).
  * Repassar esse 401/403 à tela a faria dizer "você não tem acesso a vendas" (chamada-do-bling.js) por defeito nosso.

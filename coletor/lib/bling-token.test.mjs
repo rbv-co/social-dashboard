@@ -53,6 +53,7 @@ for (const p of ['trazer-vendedores-do-bling', 'classificar-material-dos-lotes',
 
 // Trava de regressao: todo ponto que fala com o Bling passa pelo helper. Se alguem
 // adicionar um `fetch` cru ao Bling (ou um POST em oauth/token fora do `senao`), cai aqui.
+// vessel-espelhar-lista saiu desta lista (plano 03, ESPELHO-BLING-ESCRITAS): só escreve pelo proxy; ver sem-escrita-direta.test.mjs.
 const PONTOS = [
   'coletor/trazer-vendedores-do-bling.mjs',
   'coletor/classificar-material-dos-lotes.mjs',
@@ -61,7 +62,6 @@ const PONTOS = [
   'coletor/fotos-do-selo-do-bling.mjs',
   'supabase/functions/bling-proxy/index.ts',
   'supabase/functions/vessel-registrar-garantia/index.ts',
-  'supabase/functions/vessel-espelhar-lista/index.ts',
   'supabase/functions/estoque-do-site/index.ts',
   'supabase/functions/enviar-push-vendas/index.ts',
 ];
