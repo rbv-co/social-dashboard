@@ -17,6 +17,9 @@ test('a edge não renova nem lê token próprio do Bling', () => {
 test('todo acesso ao Bling é por blingSoPeloProxy, e tokenBling exige o proxy ligado', () => {
   assert.match(codigo, /blingSoPeloProxy\(Deno\.env\.toObject\(\)/)
   assert.match(codigo, /function tokenBling\(\)[\s\S]{0,200}BLING_PROXY\.exigir\(\)/)
-  assert.doesNotMatch(codigo, /fetch\(`\$\{BLING\}/)
+  // mesmo filtro de coletor/lib/bling-token.test.mjs: nenhum fetch( cru em linha que cite BLING/api.bling
+  const crus = codigo.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    .filter((l) => /(?<![.\w])fetch\(/.test(l) && /BLING|api\.bling/.test(l));
+  assert.deepEqual(crus, []);
   assert.doesNotMatch(codigo, /direto:\s*\(/)
 })
